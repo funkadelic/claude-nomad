@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome, type PathMap, repoHome } from '../../config.ts';
+import { claudeHome, type PathMap, repoHome } from '../../core/config.ts';
 import {
   disableActions,
   ghAuthStatus,
@@ -13,8 +13,8 @@ import {
 } from './gh-actions.ts';
 import { DEFAULT_REPO_NAME, ensureOriginRepo } from './gh-onboard.ts';
 import { snapshotIntoShared } from './snapshot.ts';
-import { die, item, log } from '../../utils.ts';
-import { writeJsonAtomic } from '../../utils.fs.ts';
+import { die, item, log } from '../../core/utils.ts';
+import { writeJsonAtomic } from '../../core/utils.fs.ts';
 
 /**
  * The HTML comment line that anchors `shared/CLAUDE.md` on a fresh scaffold.
@@ -42,7 +42,7 @@ const GITATTRIBUTES =
 /**
  * Subdirectories under `shared/` that get a `.gitkeep` placeholder on a fresh
  * scaffold so the empty dirs survive git and materialize on every host. Pairs
- * with the SHARED_LINKS contract in `src/config.ts` (those same names are
+ * with the SHARED_LINKS contract in `src/core/config.ts` (those same names are
  * symlinked into `~/.claude/` on every pull).
  */
 const SHARED_KEEP_DIRS = ['agents', 'skills', 'commands', 'rules', 'hooks'] as const;

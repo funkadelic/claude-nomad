@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { errOutput, makePushEnv, teardownPushEnv, type PushEnv } from './test-helpers.ts';
-import { stubPlatform } from '../../test-helpers.platform.ts';
+import { stubPlatform } from '../../core/test-helpers.platform.ts';
 
 import type * as childProcessModule from 'node:child_process';
 import type * as linksMirrorModule from '../../sync/links.mirror.ts';
@@ -21,7 +21,7 @@ import type * as pushAllowlistModule from './allowlist.ts';
 import type * as pushGlobalConfigModule from './global-config.ts';
 import type * as leakVerdictModule from './leak-verdict.ts';
 import type * as pushManifestModule from './manifest.ts';
-import type * as utilsModule from '../../utils.ts';
+import type * as utilsModule from '../../core/utils.ts';
 
 // A "posix (non-win32)" sanity test below deliberately does not override
 // process.platform, relying on the host actually being posix to prove the
@@ -47,11 +47,11 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
   });
 
   it('throws (via die) when --redact-all and --allow-all are both set', async () => {
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -67,7 +67,7 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
   });
 
   it('throws (via die) when --redact-all and --allow <rule> are both set', async () => {
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -83,7 +83,7 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
   });
 
   it('throws (via die) when --allow-all and --allow <rule> are both set', async () => {
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -99,7 +99,7 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
   });
 
   it('throws (via die) when --dry-run and --allow-all are both set', async () => {
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -115,7 +115,7 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
   });
 
   it('throws (via die) when --dry-run and --allow <rule> are both set', async () => {
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -131,7 +131,7 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
   });
 
   it('throws (via die) when --dry-run and --redact-all are both set', async () => {
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -149,7 +149,7 @@ describe('cmdPush: guardResolutionModeConflicts defense-in-depth', () => {
   it('runPushCore itself enforces the guard, so the compose seam cannot bypass it', async () => {
     // The guard lives in runPushCore (not just cmdPush), so a caller that
     // reaches runPushCore directly (the cmdSync compose seam) is still checked.
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -224,7 +224,7 @@ describe('cmdPush: extras pipeline integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -270,7 +270,7 @@ describe('cmdPush: extras pipeline integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -333,7 +333,7 @@ function mockPipelineBase(
       return { ...actual, enforceAllowList: opts.enforceAllowListFn };
     });
   }
-  vi.doMock('../../utils.ts', async (importOriginal) => {
+  vi.doMock('../../core/utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
     return {
       ...actual,
@@ -449,7 +449,7 @@ describe('cmdPush: status-based allow-list guard (L240/L260)', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -514,7 +514,7 @@ describe('cmdPush: dry-run no-map die path (L253)', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -565,7 +565,7 @@ describe('cmdPush: NomadFatal catch boundary (L266)', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual };
     });
@@ -625,7 +625,7 @@ describe('cmdPush: skills pipeline integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -663,7 +663,7 @@ describe('cmdPush: skills pipeline integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -714,7 +714,7 @@ describe('cmdPush: skills pipeline integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -754,7 +754,7 @@ describe('cmdPush: skills pipeline integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -820,7 +820,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -868,7 +868,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -925,7 +925,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -968,7 +968,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -1025,7 +1025,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
         callOrder.push('syncSkillsPush');
       }),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
     });
@@ -1071,7 +1071,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
         syncSkillsPull: vi.fn(),
         syncSkillsPush: vi.fn(),
       }));
-      vi.doMock('../../utils.ts', async (importOriginal) => {
+      vi.doMock('../../core/utils.ts', async (importOriginal) => {
         const actual = await importOriginal<typeof utilsModule>();
         return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
       });
@@ -1134,7 +1134,7 @@ describe('cmdPush: gsd-dropped paths are unstaged before commit (issue #294)', (
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -1217,7 +1217,7 @@ describe('cmdPush: gsd-dropped paths are unstaged before commit (issue #294)', (
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -1490,7 +1490,7 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
     });
     // gitStatusPorcelainZ: first call (allow-list) returns a staged base path,
     // second call (commitAndPush gsd-drop scan) returns the same path.
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -1738,7 +1738,7 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
     // Status returns empty: simulates a clean tree with nothing else pending.
     // With the old ordering, strip never ran (early return fired first).
     // With the new ordering, strip runs before this call, base is already clean.
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -1790,7 +1790,7 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
       const actual = await importOriginal<typeof pushGlobalConfigModule>();
       return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -1902,7 +1902,7 @@ describe('cmdPush: manifest write-on-success', () => {
         }),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -2008,7 +2008,7 @@ describe('cmdPush: manifest write-on-success', () => {
         execFileSync: vi.fn(() => Buffer.from('')),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -2149,7 +2149,7 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
         execFileSync: vi.fn(() => Buffer.from('')),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -2312,7 +2312,7 @@ describe('cmdPush: dry-run absent path-map', () => {
     vi.doUnmock('../../sync/skills-sync.ts');
     vi.doUnmock('./global-config.ts');
     vi.doUnmock('node:child_process');
-    vi.doUnmock('../../utils.ts');
+    vi.doUnmock('../../core/utils.ts');
   });
 
   it('dry-run with no path-map renders no-scan tree without writing manifest', async () => {
@@ -2358,7 +2358,7 @@ describe('cmdPush: dry-run absent path-map', () => {
       const actual = await importOriginal<typeof pushGlobalConfigModule>();
       return { ...actual, collectGlobalConfigChanges: vi.fn(() => []) };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -2470,7 +2470,7 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
         execFileSync: vi.fn(() => Buffer.from('')),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0') };
     });
@@ -2535,7 +2535,7 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
         execFileSync: vi.fn(() => Buffer.from('')),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => `A  ${gsdHook}\0`) };
     });
@@ -2612,7 +2612,7 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
         execFileSync: vi.fn(() => Buffer.from('')),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => 'M  shared/CLAUDE.md\0') };
     });
@@ -2676,7 +2676,7 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
         execFileSync: vi.fn(() => Buffer.from('')),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => `A  ${gsdHook}\0`) };
     });

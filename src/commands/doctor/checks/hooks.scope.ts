@@ -3,7 +3,7 @@ import { dirname, extname, join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
-import { claudeHome } from '../../../config.ts';
+import { claudeHome } from '../../../core/config.ts';
 
 /**
  * WARN-only `nomad doctor` reporter that catches the ESM/CommonJS module-scope

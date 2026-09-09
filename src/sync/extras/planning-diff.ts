@@ -1,7 +1,7 @@
 import { join, normalize, sep } from 'node:path';
 
 import { assertSafeLocalRoot, assertSafeLogical } from './guards.ts';
-import { NomadFatal } from '../../utils.ts';
+import { NomadFatal } from '../../core/utils.ts';
 
 /**
  * Parsed result of `git diff --name-status -z` output, split into

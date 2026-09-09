@@ -1,4 +1,4 @@
-import { HOST, manifestPath, type PathMap } from '../../config.ts';
+import { HOST, manifestPath, type PathMap } from '../../core/config.ts';
 import { type Manifest, type ManifestDiff, writeManifest } from './manifest.ts';
 import { isGsdDropped, parsePorcelainZ } from './allowlist.ts';
 import { leakBlockedFatal, resolveLeakFindings } from './recovery/recovery.ts';
@@ -14,7 +14,7 @@ import { collectGlobalConfigChanges } from './global-config.ts';
 import { scanPushVerdict } from './leak-verdict.ts';
 import { previewPushLeaks } from './preview.ts';
 import { withSpinner } from '../../render/spinner.ts';
-import { fail, gitOrFatal, gitStatusPorcelainZ, log, warn } from '../../utils.ts';
+import { fail, gitOrFatal, gitStatusPorcelainZ, log, warn } from '../../core/utils.ts';
 
 /**
  * Staged-tree leak gate + commit/push. Stages with `git add -A`, scans, and

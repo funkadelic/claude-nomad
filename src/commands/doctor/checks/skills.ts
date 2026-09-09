@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addChildItem, addItem, type DoctorSection } from '../format.ts';
-import { claudeHome, GSD_PREFIX, repoHome } from '../../../config.ts';
+import { claudeHome, GSD_PREFIX, repoHome } from '../../../core/config.ts';
 import { listDivergingFiles } from '../../../sync/extras/diff.ts';
 
 /**

@@ -5,13 +5,13 @@
  * Allow-dispatch half lives in `commands/push/recovery/actions.ts`.
  */
 
-import type { PathMap } from '../../../config.ts';
+import type { PathMap } from '../../../core/config.ts';
 import { applyRedact, preflightRedactable } from './redact.ts';
 import { applyMemoryRedact, memoryFileFromFinding, preflightMemoryRedactable } from './memory.ts';
 import { applySkillRedact, preflightSkillRedactable, skillFileFromFinding } from './skills.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
-import { NomadFatal } from '../../../utils.ts';
+import { NomadFatal } from '../../../core/utils.ts';
 import { findingKey, sessionIdFromFinding } from './seams.ts';
 
 /**

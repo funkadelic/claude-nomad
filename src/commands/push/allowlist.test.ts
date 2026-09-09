@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import type * as pathModule from 'node:path';
 
-import type { PathMap } from '../../config.ts';
-import { stubPlatform } from '../../test-helpers.platform.ts';
+import type { PathMap } from '../../core/config.ts';
+import { stubPlatform } from '../../core/test-helpers.platform.ts';
 
 /** Run a git command in `cwd`, surfacing stderr on failure. Test-only helper
  * for the real-repo regression suites (no production code path uses it). */
@@ -37,7 +37,7 @@ describe('enforceAllowList NEVER_SYNC settings.local.json', () => {
 
   it('rejects settings.local.json as NEVER_SYNC at repo root AND under shared/', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // Porcelain -z records for untracked files. NUL-terminated to match
     // git status -z output (parsePorcelainZ splits on \0). The shared/
     // case is the load-bearing one for this PR: defense-in-depth against an
@@ -155,7 +155,7 @@ describe('issue #111: untracked extras subtree porcelain collapse', () => {
   });
 
   it('default porcelain collapses the untracked subtree to a bare parent record', async () => {
-    const { gitStatusPorcelainZ } = await import('../../utils.ts');
+    const { gitStatusPorcelainZ } = await import('../../core/utils.ts');
     const { parsePorcelainZ } = await import('./allowlist.ts');
     const paths = parsePorcelainZ(gitStatusPorcelainZ(repo));
     // The collapse: a single `shared/extras/` directory record, no per-file paths.
@@ -164,7 +164,7 @@ describe('issue #111: untracked extras subtree porcelain collapse', () => {
   });
 
   it('untrackedAll porcelain expands the subtree to per-file paths the allow-list accepts', async () => {
-    const { gitStatusPorcelainZ } = await import('../../utils.ts');
+    const { gitStatusPorcelainZ } = await import('../../core/utils.ts');
     const { parsePorcelainZ, enforceAllowList } = await import('./allowlist.ts');
     const status = gitStatusPorcelainZ(repo, { untrackedAll: true });
     const paths = parsePorcelainZ(status);
@@ -196,7 +196,7 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     // shared/hooks/ was removed from PUSH_ALLOWED_STATIC because gsd owns hooks per-host;
     // an out-of-band gsd write to shared/hooks/ must be rejected.
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).toThrow(NomadFatal);
   });
@@ -225,7 +225,7 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
 
   it('does NOT add an allow entry for an invalid sharedDirs entry ("../escape")', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['../escape'] };
     // The invalid entry is filtered out, so shared/escape/... is still rejected.
     expect(() => enforceAllowList('M  shared/escape/file.txt\0', map)).toThrow(NomadFatal);
@@ -239,7 +239,7 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     // the NEVER_SYNC-specific message, not just the violations-path text
     // (`add to PUSH_ALLOWED`), which both branches' messages would otherwise share.
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['.env'] };
     expect(() => enforceAllowList('M  shared/.env/token\0', map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
@@ -254,7 +254,7 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
       // is not a NomadFatal, so it would write a crash report for what is only
       // a malformed config. The string case must not substring-match either.
       const { enforceAllowList } = await import('./allowlist.ts');
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       const map = { projects: {}, sharedDirs: bad } as unknown as PathMap;
       expect(() => enforceAllowList('M  shared/gsd/cli.js\0', map)).toThrow(NomadFatal);
     },
@@ -273,11 +273,13 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     // rather than by the never-sync hard block. The rejection did not go
     // away; only the layer that produces it did.
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['todos'] };
     expect(() => enforceAllowList('M  shared/todos/a.md\0', map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync shared/todos/a.md, add to PUSH_ALLOWED in src/config.ts'),
+      expect.stringContaining(
+        'to sync shared/todos/a.md, add to PUSH_ALLOWED in src/core/config.ts',
+      ),
     );
     expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
   });
@@ -286,7 +288,7 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     // The floor holds on this path too: even though 'todos' content is no
     // longer never-sync-blocked, the five ALWAYS_NEVER_SYNC names still are.
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['todos'] };
     expect(() => enforceAllowList('M  shared/todos/settings.local.json\0', map)).toThrow(
       NomadFatal,
@@ -361,7 +363,7 @@ describe('enforceAllowList gsd-dropped path handling (issue #294)', () => {
     // file literally named `lib` directly under shared/hooks/ must NOT be silently
     // dropped from a push; it stays a violation.
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('A  shared/hooks/lib\0', map)).toThrow(NomadFatal);
   });
@@ -370,14 +372,14 @@ describe('enforceAllowList gsd-dropped path handling (issue #294)', () => {
     // User-authored hooks would be dangerous to push (gsd owns hooks per-host).
     // Only gsd-owned names are silently dropped; foreign names stay violations.
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).toThrow(NomadFatal);
   });
 
   it('still rejects shared/agents/my-agent.md (non-gsd-prefixed agent)', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('M  shared/agents/my-agent.md\0', map)).toThrow(NomadFatal);
   });
@@ -431,7 +433,7 @@ describe('enforceAllowList: shared-name branch admits a widened NEVER_SYNC-only 
 
   it('still throws the never-sync message for a floor name under the same entry', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
     expect(() => enforceAllowList('A  shared/my-tools/settings.local.json\0', map)).toThrow(
       NomadFatal,
@@ -454,7 +456,7 @@ describe('enforceAllowList: shared-name branch admits a widened NEVER_SYNC-only 
   // both match axes, nested rather than at the tree root.
   it('keeps the credential floor and the shape axis nested under a shared name', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['my-tools'] };
     expect(() => enforceAllowList('A  shared/my-tools/deep/.credentials.json\0', map)).toThrow(
       NomadFatal,
@@ -594,7 +596,7 @@ describe('enforceAllowList .gitleaksignore allow-list entry', () => {
 
   it('rejects .gitleaksignore.bak (exact-match only, no prefix leak)', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('M  .gitleaksignore.bak\0', map)).toThrow(NomadFatal);
   });
@@ -627,7 +629,7 @@ describe('enforceAllowList .gitattributes allow-list entry', () => {
 
   it('rejects .gitattributes.bak (exact-match only, no prefix leak)', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('M  .gitattributes.bak\0', map)).toThrow(NomadFatal);
   });
@@ -659,7 +661,7 @@ describe('enforceAllowList on a win32 stub: forward-slash porcelain paths unchan
   it('still rejects an out-of-allowlist path on win32 (no widened acceptance)', async () => {
     stubPlatform('win32');
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList('M  shared/hooks/foo.sh\0', map)).toThrow(NomadFatal);
   });
@@ -709,21 +711,21 @@ describe('assertSafeLocalRoot / assertSafeLogical: win32-shaped path-map values'
   it('rejects a Windows-shaped traversal path-map value (backslash form)', async () => {
     mockWin32PathSemantics();
     const { assertSafeLocalRoot } = await import('../../sync/extras/guards.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => assertSafeLocalRoot('C:\\Users\\..\\..\\x', 'myproj')).toThrow(NomadFatal);
   });
 
   it('rejects a Windows-shaped traversal path-map value (forward-slash form)', async () => {
     mockWin32PathSemantics();
     const { assertSafeLocalRoot } = await import('../../sync/extras/guards.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => assertSafeLocalRoot('C:/Users/../../x', 'myproj')).toThrow(NomadFatal);
   });
 
   it('assertSafeLogical is unaffected by the win32 path swap: still rejects a backslash-bearing key', async () => {
     mockWin32PathSemantics();
     const { assertSafeLogical } = await import('../../sync/extras/guards.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => assertSafeLogical('foo\\bar')).toThrow(NomadFatal);
   });
 });

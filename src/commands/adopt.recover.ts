@@ -13,13 +13,13 @@ import { rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { deniedEntriesRefusal, scanOrFatal } from './adopt.scan.ts';
-import { ALWAYS_NEVER_SYNC, claudeHome } from '../config.ts';
-import { errorText } from '../error-text.ts';
-import { EXIT } from '../exit-codes.ts';
+import { ALWAYS_NEVER_SYNC, claudeHome } from '../core/config.ts';
+import { errorText } from '../core/error-text.ts';
+import { EXIT } from '../core/exit-codes.ts';
 import { copyExtrasFiltered } from '../sync/extras/core.ts';
-import { lexists } from '../fs-presence.ts';
+import { lexists } from '../core/fs-presence.ts';
 import { copySharedLinkPull } from '../sync/links.ts';
-import { warn, NomadFatal } from '../utils.ts';
+import { warn, NomadFatal } from '../core/utils.ts';
 
 /**
  * Whether `abs` is a direct child of `root`, both resolved first.

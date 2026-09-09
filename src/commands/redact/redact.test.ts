@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as fsModule from 'node:fs';
-import type * as utilsFsModule from '../../utils.fs.ts';
-import type * as lockfileModule from '../../utils.lockfile.ts';
+import type * as utilsFsModule from '../../core/utils.fs.ts';
+import type * as lockfileModule from '../../core/utils.lockfile.ts';
 import type { Finding } from '../push/gitleaks.scan.ts';
 
 /**
@@ -449,7 +449,7 @@ describe('cmdRedact', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
-    vi.doUnmock('../../utils.fs.ts');
+    vi.doUnmock('../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -636,7 +636,7 @@ describe('cmdRedact', () => {
     );
 
     const backupSpy = vi.fn();
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
     });
@@ -676,7 +676,7 @@ describe('cmdRedact', () => {
 
     // Capture the ts value that freshBackupTs receives as its base argument.
     let capturedBase: string | undefined;
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return {
         ...actual,
@@ -723,7 +723,7 @@ describe('cmdRedact', () => {
       }),
     );
 
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
     });
@@ -798,7 +798,7 @@ describe('cmdRedact standalone (scan DI)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
-    vi.doUnmock('../../utils.fs.ts');
+    vi.doUnmock('../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -818,7 +818,7 @@ describe('cmdRedact standalone (scan DI)', () => {
     );
 
     const backupSpy = vi.fn();
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
     });
@@ -851,7 +851,7 @@ describe('cmdRedact standalone (scan DI)', () => {
       '{"text":"clean"}\n',
     );
 
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
     });
@@ -889,7 +889,7 @@ describe('cmdRedact standalone (scan DI)', () => {
     );
 
     const backupSpy = vi.fn();
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
     });
@@ -931,7 +931,7 @@ describe('cmdRedact standalone (scan DI)', () => {
       '{"text":"secret-val"}\n',
     );
 
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
     });
@@ -961,7 +961,7 @@ describe('cmdRedact standalone (scan DI)', () => {
       '{"text":"[REDACTED:github-pat]"}\n',
     );
 
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
     });
@@ -1167,7 +1167,7 @@ describe('cmdRedact: branch and error coverage', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../utils.lockfile.ts');
+    vi.doUnmock('../../core/utils.lockfile.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -1182,13 +1182,13 @@ describe('cmdRedact: branch and error coverage', () => {
   it('throws NomadFatal (die) when REPO_HOME does not exist', async () => {
     process.env.NOMAD_REPO = join(testHome, 'does-not-exist');
     const { cmdRedact } = await import('./redact.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => cmdRedact({ id: 'abc123' })).toThrow(NomadFatal);
   });
 
   it('exits 0 without mutation when the lock is already held', async () => {
     process.env.NOMAD_REPO = testHome;
-    vi.doMock('../../utils.lockfile.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.lockfile.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: () => null };
     });
@@ -1209,7 +1209,7 @@ describe('cmdRedact: branch and error coverage', () => {
     );
     expect(transcriptPath).toContain('sess-fatal');
     const { cmdRedact } = await import('./redact.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const throwingScan = (_p: string): Finding[] => {
       throw new NomadFatal('scan blew up');
     };
@@ -1267,7 +1267,7 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../utils.fs.ts');
+    vi.doUnmock('../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -1297,7 +1297,7 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
     );
 
     const backupSpy = vi.fn();
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
     });
@@ -1386,7 +1386,7 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
     );
 
     const backupSpy = vi.fn();
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
     });
@@ -1450,7 +1450,7 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
     );
 
     const backupSpy = vi.fn();
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
     });
@@ -1509,7 +1509,7 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
     );
 
     const backupSpy = vi.fn();
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-fixed' };
     });
@@ -1562,7 +1562,7 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
       JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
     );
 
-    vi.doMock('../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-fixed' };
     });
@@ -1632,7 +1632,7 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
 
 describe('assertSafeLogical (security guard regex anchor/quantifier pin)', () => {
   it('accepts valid logical names: alphanum, dot, dash, underscore', async () => {
-    const { assertSafeLogical } = await import('../../config.sharedDirs.guard.ts');
+    const { assertSafeLogical } = await import('../../core/config.sharedDirs.guard.ts');
     // Must not throw for normal project names.
     expect(() => assertSafeLogical('my-project')).not.toThrow();
     expect(() => assertSafeLogical('proj_v2')).not.toThrow();
@@ -1644,14 +1644,14 @@ describe('assertSafeLogical (security guard regex anchor/quantifier pin)', () =>
     // Regex mutation /^[A-Za-z0-9._-]+/ (no $) accepts "valid/trailing" because
     // the pattern matches from ^ up to the slash, then stops; ^ anchor is ok but
     // the missing $ lets the slash through. Must throw.
-    const { assertSafeLogical } = await import('../../config.sharedDirs.guard.ts');
+    const { assertSafeLogical } = await import('../../core/config.sharedDirs.guard.ts');
     expect(() => assertSafeLogical('valid/trailing')).toThrow();
   });
 
   it('rejects a name with a leading slash (kills missing ^ start anchor)', async () => {
     // Regex mutation /[A-Za-z0-9._-]+$/ (no ^) accepts "/leading" because it
     // matches "leading" as a suffix. Must throw.
-    const { assertSafeLogical } = await import('../../config.sharedDirs.guard.ts');
+    const { assertSafeLogical } = await import('../../core/config.sharedDirs.guard.ts');
     expect(() => assertSafeLogical('/leading')).toThrow();
   });
 
@@ -1659,7 +1659,7 @@ describe('assertSafeLogical (security guard regex anchor/quantifier pin)', () =>
     // Regex mutation /^[A-Za-z0-9._-]$/ (+ -> nothing) only matches exactly one
     // character. A two-char name like "ab" must still be accepted by the real
     // regex; this test is green with the real regex and red with the mutation.
-    const { assertSafeLogical } = await import('../../config.sharedDirs.guard.ts');
+    const { assertSafeLogical } = await import('../../core/config.sharedDirs.guard.ts');
     expect(() => assertSafeLogical('ab')).not.toThrow();
     expect(() => assertSafeLogical('abc123')).not.toThrow();
   });
@@ -1668,35 +1668,35 @@ describe('assertSafeLogical (security guard regex anchor/quantifier pin)', () =>
     // Regex mutation /^[^A-Za-z0-9._-]+$/ (negated class) accepts e.g. "!!!"
     // (all outside the safe set) and rejects "abc" (all inside). Must throw for
     // an all-special name.
-    const { assertSafeLogical } = await import('../../config.sharedDirs.guard.ts');
+    const { assertSafeLogical } = await import('../../core/config.sharedDirs.guard.ts');
     expect(() => assertSafeLogical('!@#')).toThrow();
   });
 });
 
 describe('isValidSharedDir (SAFE_SEGMENT regex anchor/quantifier pin)', () => {
   it('accepts a valid segment name', async () => {
-    const { isValidSharedDir } = await import('../../config.sharedDirs.guard.ts');
+    const { isValidSharedDir } = await import('../../core/config.sharedDirs.guard.ts');
     expect(isValidSharedDir('my-custom-dir')).toBe(true);
     expect(isValidSharedDir('tool.kit')).toBe(true);
   });
 
   it('rejects a segment with a trailing slash (kills missing $ end anchor)', async () => {
-    const { isValidSharedDir } = await import('../../config.sharedDirs.guard.ts');
+    const { isValidSharedDir } = await import('../../core/config.sharedDirs.guard.ts');
     expect(isValidSharedDir('safe/trailing')).toBe(false);
   });
 
   it('rejects a segment with a leading slash (kills missing ^ start anchor)', async () => {
-    const { isValidSharedDir } = await import('../../config.sharedDirs.guard.ts');
+    const { isValidSharedDir } = await import('../../core/config.sharedDirs.guard.ts');
     expect(isValidSharedDir('/leading')).toBe(false);
   });
 
   it('accepts a multi-char segment (kills single-char quantifier mutation)', async () => {
-    const { isValidSharedDir } = await import('../../config.sharedDirs.guard.ts');
+    const { isValidSharedDir } = await import('../../core/config.sharedDirs.guard.ts');
     expect(isValidSharedDir('abcde')).toBe(true);
   });
 
   it('rejects a name whose every char is NOT in [A-Za-z0-9._-] (kills negated char class)', async () => {
-    const { isValidSharedDir } = await import('../../config.sharedDirs.guard.ts');
+    const { isValidSharedDir } = await import('../../core/config.sharedDirs.guard.ts');
     expect(isValidSharedDir('!@#')).toBe(false);
   });
 });

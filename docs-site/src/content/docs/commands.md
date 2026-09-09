@@ -45,7 +45,7 @@ section (one `captured  <local> -> <repo>` row per name), so the copy is visible
 silent. Without that step the rebase-then-overlay sequence would overwrite an edit you had not
 published yet. That mirror skips your Claude login and credential files, your per-host settings,
 your local history and stats cache, and any file that looks like a credential by name (a `.env`, a
-private key, a `.netrc`); see `src/config.never-sync.ts` for the exact lists. An ordinary directory
+private key, a `.netrc`); see `src/core/config.never-sync.ts` for the exact lists. An ordinary directory
 of your own inside a shared name is carried, not skipped. A name whose `shared/<name>` counterpart
 is in the repo but leads nowhere, or cannot be read at all, is left alone too, and the pull warns
 naming it, so a local edit does not quietly stop being captured; the `nomad diff` and `--dry-run`
@@ -273,7 +273,7 @@ belongs, so adopt stops with an error and exits 1, having staged `shared/<name>`
 `nomad pull`, which backs that directory up and replaces it with the symlink.
 
 Before touching anything, adopt checks the whole `~/.claude/<name>` tree against two separate lists,
-both in `src/config.never-sync.ts`. The first is a list of exact names, `ALWAYS_NEVER_SYNC`, and it
+both in `src/core/config.never-sync.ts`. The first is a list of exact names, `ALWAYS_NEVER_SYNC`, and it
 is narrower than you might expect: it holds only the credential and per-host settings files
 (`.claude.json`, `.credentials.json`, `settings.local.json`, `history.jsonl`, `stats-cache.json`).
 Your own folders named `plans`, `tasks`, `cache`, `sessions` or `todos` inside the directory you are
@@ -287,7 +287,7 @@ secret it found. Both kinds are exactly what the sync repo refuses to publish, s
 
 The two lists answer two different questions, and adopt uses both. Is `<name>` itself, the directory
 you are pointing adopt at, safe to share at all? That is checked against the full set in
-`src/config.never-sync.ts`, so `nomad adopt sessions` or `nomad adopt cache` is still refused as a
+`src/core/config.never-sync.ts`, so `nomad adopt sessions` or `nomad adopt cache` is still refused as a
 NAME, unchanged by any of this. Is the CONTENT inside a directory you have already chosen to share
 safe to carry? That is the narrower check above, and it is what changed: a `sessions/` or `plans/`
 folder inside your own `my-tools/` now adopts along with everything else.
@@ -313,7 +313,7 @@ identically.
 Replace every managed `~/.claude/` symlink with a real dereferenced copy so your setup keeps
 working after you delete the `~/claude-nomad/` checkout and uninstall the CLI. The set of managed
 names is the union of `SHARED_LINKS` and validated `sharedDirs` entries that `nomad pull` manages
-(the authoritative list is `allSharedLinks` in `src/config.ts`), widened with anything an older
+(the authoritative list is `allSharedLinks` in `src/core/config.ts`), widened with anything an older
 version of nomad already linked under a looser rule. That widening is deliberate: eject
 materializes what this host already has, so a name sync now refuses is still dereferenced into a
 real copy rather than left as a symlink into a checkout you are about to delete. Names that are

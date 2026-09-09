@@ -67,8 +67,8 @@ not have to be reverse-engineered from them.
   newer-Node-only API typecheck cleanly and then crash at runtime on the supported floor.
 - **Hard pins are reserved for behavior-sensitive externals that are not npm range deps.** Two
   cases are pinned exactly rather than ranged: the gitleaks version, kept as a single
-  `GITLEAKS_PINNED_VERSION` in `src/config.ts` and mirrored in both workflow YAMLs, with
-  `src/config.gitleaks-pin.test.ts` asserting the three stay in lockstep so a CI bump that misses
+  `GITLEAKS_PINNED_VERSION` in `src/core/config.ts` and mirrored in both workflow YAMLs, with
+  `src/core/config.gitleaks-pin.test.ts` asserting the three stay in lockstep so a CI bump that misses
   the constant fails the suite; and first-party GitHub Actions, which are SHA-pinned for
   supply-chain integrity (Dependabot still proposes the bumps).
 - **Do not exact-pin runtime dependencies in `package.json`.** claude-nomad is published to npm,
@@ -115,7 +115,7 @@ resume a multi-session sweep without re-running completed modules.
 
 ### Mutation testing and HOME-based test isolation
 
-[`src/config.ts`](https://github.com/funkadelic/claude-nomad/blob/main/src/config.ts) resolves
+[`src/core/config.ts`](https://github.com/funkadelic/claude-nomad/blob/main/src/core/config.ts) resolves
 `home()`, `claudeHome()`, and `repoHome()` on every call, reading `process.env.HOME` (and
 `USERPROFILE` on win32) before falling back to `os.homedir()`. That read is deliberate: it lets a
 test swap `process.env.HOME` to a tmpdir and see the change immediately, including inside Stryker's
@@ -153,8 +153,8 @@ tests without further analysis.
 
 **Security modules default to keep.** Tests in `src/commands/push/checks.ts`,
 `src/commands/push/gitleaks*.ts`, `src/commands.redact*.ts`,
-`src/commands/push/recovery/*.ts`, `src/utils.lockfile*.ts`, and
-`src/config.sharedDirs.guard.ts` are never bulk-deleted. A zero-kill result in a security module
+`src/commands/push/recovery/*.ts`, `src/core/utils.lockfile*.ts`, and
+`src/core/config.sharedDirs.guard.ts` are never bulk-deleted. A zero-kill result in a security module
 often documents a refusal or containment invariant that mutation testing does not exercise (for
 example, a traversal-guard rejection path). Delete a security-module test only with an explicit
 recorded rationale.

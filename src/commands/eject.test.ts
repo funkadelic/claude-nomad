@@ -16,8 +16,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { cmdEject, ejectChecklist, ejectNames, errMessage, previewMaterialize } from './eject.ts';
-import type { PathMap } from '../config.ts';
-import { stubPlatform } from '../test-helpers.platform.ts';
+import type { PathMap } from '../core/config.ts';
+import { stubPlatform } from '../core/test-helpers.platform.ts';
 
 // Windows chmod only toggles the read-only attribute: a 0o500 dir still
 // accepts writes and a 0o000 file stays readable, so chmod-based

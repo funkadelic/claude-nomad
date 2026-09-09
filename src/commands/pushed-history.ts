@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { log } from '../utils.ts';
+import { log } from '../core/utils.ts';
 
 /**
  * Resolve the remote-tracking ref that represents pushed history (the upstream

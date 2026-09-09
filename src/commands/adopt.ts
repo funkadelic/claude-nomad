@@ -16,14 +16,14 @@ import {
   sharedDirEntries,
   SHARED_LINKS,
   type PathMap,
-} from '../config.ts';
-import { isValidSharedDir, validateSharedDirEntry } from '../config.sharedDirs.guard.ts';
-import { EXIT } from '../exit-codes.ts';
-import { classifyPresence, isUnusableTarget, type PresenceState } from '../fs-presence.ts';
-import { fail, gitOrFatal, log, NomadFatal, warn } from '../utils.ts';
-import { backupBeforeWrite, ensureSymlink, freshBackupTs } from '../utils.fs.ts';
-import { acquireLock, releaseLock } from '../utils.lockfile.ts';
-import { readPathMap } from '../utils.json.ts';
+} from '../core/config.ts';
+import { isValidSharedDir, validateSharedDirEntry } from '../core/config.sharedDirs.guard.ts';
+import { EXIT } from '../core/exit-codes.ts';
+import { classifyPresence, isUnusableTarget, type PresenceState } from '../core/fs-presence.ts';
+import { fail, gitOrFatal, log, NomadFatal, warn } from '../core/utils.ts';
+import { backupBeforeWrite, ensureSymlink, freshBackupTs } from '../core/utils.fs.ts';
+import { acquireLock, releaseLock } from '../core/utils.lockfile.ts';
+import { readPathMap } from '../core/utils.json.ts';
 
 /**
  * Follow-up hint printed after a successful adopt. Exported so Plan 02's

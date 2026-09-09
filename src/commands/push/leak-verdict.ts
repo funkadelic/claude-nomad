@@ -19,7 +19,7 @@
  */
 
 import { failGlyph, green, okGlyph, red } from '../../render/color.ts';
-import { EXIT } from '../../exit-codes.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 import { gitleaksInstallHint } from './checks.ts';
 import {
   type Finding,

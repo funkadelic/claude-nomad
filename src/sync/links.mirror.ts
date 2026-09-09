@@ -14,13 +14,13 @@ import {
   repoHome,
   ALWAYS_NEVER_SYNC,
   type PathMap,
-} from '../config.ts';
-import { errorText } from '../error-text.ts';
+} from '../core/config.ts';
+import { errorText } from '../core/error-text.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras/core.ts';
-import { classifyPresence, isUnusableTarget, type PresenceState } from '../fs-presence.ts';
-import { gitProbe } from '../git-probe.ts';
-import { log, warn } from '../utils.ts';
-import { backupRepoWrite } from '../utils.fs.ts';
+import { classifyPresence, isUnusableTarget, type PresenceState } from '../core/fs-presence.ts';
+import { gitProbe } from '../core/git-probe.ts';
+import { log, warn } from '../core/utils.ts';
+import { backupRepoWrite } from '../core/utils.fs.ts';
 
 /**
  * Event emitted by the win32 host-to-repo mirror (`stageLocalSharedEdits`,

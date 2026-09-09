@@ -9,7 +9,7 @@ import {
   red,
   warnGlyph,
   yellow,
-} from './render/color.ts';
+} from '../render/color.ts';
 import { EXIT, type ExitCode } from './exit-codes.ts';
 
 /**

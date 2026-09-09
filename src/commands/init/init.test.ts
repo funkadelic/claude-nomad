@@ -117,7 +117,7 @@ describe('cmdInit empty-scaffold mode', () => {
     mkdirSync(join(repo, 'shared'), { recursive: true });
     writeFileSync(join(repo, 'shared', 'settings.base.json'), '{"model":"opus"}\n');
     const { cmdInit } = await import('./init.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeOriginExistsRun();
     expect(() => cmdInit({ run })).toThrow(NomadFatal);
     try {
@@ -136,7 +136,7 @@ describe('cmdInit empty-scaffold mode', () => {
     const repo = join(env.testHome, 'claude-nomad');
     mkdirSync(join(repo, 'shared'), { recursive: true });
     const { cmdInit } = await import('./init.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeOriginExistsRun();
     expect(() => cmdInit({ run })).toThrow(NomadFatal);
     try {
@@ -155,7 +155,7 @@ describe('cmdInit empty-scaffold mode', () => {
     const repo = join(env.testHome, 'claude-nomad');
     mkdirSync(join(repo, 'shared'), { recursive: true });
     const { cmdInit } = await import('./init.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const run = makeOriginExistsRun();
     expect(() => cmdInit({ run })).toThrow(NomadFatal);
     expect(existsSync(join(repo, '.gitattributes'))).toBe(false);
@@ -466,7 +466,7 @@ describe('cmdInit snapshot mode', () => {
     mkdirSync(join(repo, 'shared'), { recursive: true });
     writeFileSync(join(repo, 'shared', 'settings.base.json'), '{"model":"opus"}\n');
     const { cmdInit } = await import('./init.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     let caught: Error | undefined;
     try {
       cmdInit({ snapshot: true, run: makeOriginExistsRun() });
@@ -519,7 +519,7 @@ describe('cmdInit snapshot mode', () => {
   it('throws NomadFatal naming the malformed settings file on parse failure', async () => {
     seedClaudeHome(env.testHome, { settings: '{not valid json' });
     const { cmdInit } = await import('./init.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     let caught: Error | undefined;
     try {
       cmdInit({ snapshot: true, run: makeOriginExistsRun() });

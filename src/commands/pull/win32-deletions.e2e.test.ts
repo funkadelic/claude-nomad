@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PullCoreResult } from './pull.ts';
 
-import { EXIT } from '../../exit-codes.ts';
-import { stubPlatform } from '../../test-helpers.platform.ts';
+import { EXIT } from '../../core/exit-codes.ts';
+import { stubPlatform } from '../../core/test-helpers.platform.ts';
 import {
   buildSyncedSharedWorld,
   pushUpstreamChange,
@@ -197,7 +197,7 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
     // guard fires before anything in this run touches the host or the repo.
     wedgeExistingRepo(world.repo);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const { runPullCore } = await import('./pull.ts');
     let fatal: unknown;
     try {
@@ -236,7 +236,7 @@ describe('runPullCore: win32 shared-config deletion parity', () => {
     );
     rmSync(join(world.claudeDir, 'commands', 'doomed.md'), { force: true });
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const { runPullCore } = await import('./pull.ts');
     let outcome: 'aborted' | 'resolved';
     try {

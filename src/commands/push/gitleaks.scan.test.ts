@@ -302,7 +302,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    const { GITLEAKS_SCAN_TIMEOUT_MS } = await import('../../config.ts');
+    const { GITLEAKS_SCAN_TIMEOUT_MS } = await import('../../core/config.ts');
     scanFile('/some/file.jsonl');
     expect(capturedOpts?.timeout).toBe(GITLEAKS_SCAN_TIMEOUT_MS);
   });
@@ -508,7 +508,7 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
       };
     });
     const { scanStagedTree } = await import('./gitleaks.scan.ts');
-    const { GITLEAKS_SCAN_TIMEOUT_MS } = await import('../../config.ts');
+    const { GITLEAKS_SCAN_TIMEOUT_MS } = await import('../../core/config.ts');
     scanStagedTree(testHome);
     const gitCalls = capturedCalls.filter((c) => c.bin === 'git');
     const gitleaksCalls = capturedCalls.filter((c) => c.bin === 'gitleaks');

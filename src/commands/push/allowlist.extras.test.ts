@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import type { PathMap } from '../../config.ts';
+import type { PathMap } from '../../core/config.ts';
 
 // Extras allow-list widening: `enforceAllowList` builds its runtime allowed
 // array by spreading `Object.keys(map.extras ?? {})` into one prefix per
@@ -32,7 +32,7 @@ describe('enforceAllowList: extras prefix', () => {
 
   it('rejects shared/extras/<logical>/ paths when logical is not in extras map', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // `bar` is not in extras, so the runtime allowed array has no entry for
     // it. The classifier surfaces the existing `to sync ...` FATAL.
     const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
@@ -46,7 +46,7 @@ describe('enforceAllowList: extras prefix', () => {
 
   it('legacy path-map.json without extras key produces no extras allow-list entries', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // Absence of the `extras` key is an additive, opt-in contract: it means
     // no `shared/extras/` prefixes are generated; any such path is rejected.
     const map: PathMap = { projects: {} };
@@ -57,7 +57,7 @@ describe('enforceAllowList: extras prefix', () => {
 
   it('rejects non-whitelisted dirnames under a declared extras logical', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // Declaring `foo: ['.planning']` only widens the allow-list for the
     // whitelisted dirname; manually staged content under `random-dir` (or any
     // name outside `SUPPORTED_EXTRAS`) must still surface as FATAL so the
@@ -74,7 +74,7 @@ describe('enforceAllowList: extras prefix', () => {
 
   it('drops non-whitelisted dirnames from the allow-list even when declared in path-map.json', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // If `path-map.json` declares a dirname outside `SUPPORTED_EXTRAS`,
     // `remapExtrasPush` skips it with a log line, so it never reaches the
     // staged tree on a clean run. The allow-list filters by the same
@@ -97,7 +97,7 @@ describe('enforceAllowList: extras prefix', () => {
 
   it('still rejects an arbitrary sibling file under the same logical when a file extra is declared', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // Declaring `foo: ['CLAUDE.md']` adds an exact entry for CLAUDE.md and a
     // prefix entry for the CLAUDE.md/ subtree, NOT a logical-only
     // `shared/extras/foo/` prefix. An unrelated sibling file must still FATAL,
@@ -131,7 +131,7 @@ describe('isNeverSync: extras scope', () => {
     // Asserted on the predicate directly and end-to-end through the gate: a
     // path that would otherwise hit the `todos` segment hard-block must pass
     // when it lives under `shared/extras/`.
-    const { isNeverSync } = await import('../../config.never-sync.ts');
+    const { isNeverSync } = await import('../../core/config.never-sync.ts');
     expect(isNeverSync('shared/extras/foo/.planning/todos/2026-05-22-task.md')).toBe(false);
     const { enforceAllowList } = await import('./allowlist.ts');
     const map: PathMap = { projects: {}, extras: { foo: ['.planning'] } };
@@ -152,7 +152,7 @@ describe('isNeverSync: extras scope', () => {
 
   it('still hard-blocks NEVER_SYNC segments outside shared/extras/ (regression guard)', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // A path NOT prefixed with `shared/extras/` that contains a NEVER_SYNC
     // segment must still trigger the hard-block. This proves the early-return
     // narrows scope rather than removing the guard wholesale.
@@ -193,7 +193,7 @@ describe('isNeverSync: ALWAYS_NEVER_SYNC enforced under extras', () => {
 
   it('hard-blocks .credentials.json nested under shared/extras/', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() =>
       enforceAllowList('A  shared/extras/foo/.planning/.credentials.json\0', map),
     ).toThrow(NomadFatal);
@@ -202,7 +202,7 @@ describe('isNeverSync: ALWAYS_NEVER_SYNC enforced under extras', () => {
 
   it('hard-blocks settings.local.json nested under shared/extras/', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() =>
       enforceAllowList('A  shared/extras/foo/.planning/settings.local.json\0', map),
     ).toThrow(NomadFatal);
@@ -211,7 +211,7 @@ describe('isNeverSync: ALWAYS_NEVER_SYNC enforced under extras', () => {
 
   it('hard-blocks .claude.json nested under shared/extras/', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => enforceAllowList('A  shared/extras/foo/.planning/.claude.json\0', map)).toThrow(
       NomadFatal,
     );
@@ -220,7 +220,7 @@ describe('isNeverSync: ALWAYS_NEVER_SYNC enforced under extras', () => {
 
   it('hard-blocks history.jsonl nested under shared/extras/', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => enforceAllowList('A  shared/extras/foo/.planning/history.jsonl\0', map)).toThrow(
       NomadFatal,
     );
@@ -229,7 +229,7 @@ describe('isNeverSync: ALWAYS_NEVER_SYNC enforced under extras', () => {
 
   it('hard-blocks stats-cache.json nested under shared/extras/', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() =>
       enforceAllowList('A  shared/extras/foo/.planning/stats-cache.json\0', map),
     ).toThrow(NomadFatal);
@@ -259,7 +259,7 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
 
   it('hard-blocks shell-snapshots/ under a .claude extra (NEVER_SYNC-only segment)', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() =>
       enforceAllowList('A  shared/extras/foo/.claude/shell-snapshots/snap.sh\0', map),
     ).toThrow(NomadFatal);
@@ -268,7 +268,7 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
 
   it('hard-blocks sessions/ under a .claude extra (NEVER_SYNC-only segment)', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => enforceAllowList('A  shared/extras/foo/.claude/sessions/s.json\0', map)).toThrow(
       NomadFatal,
     );
@@ -277,7 +277,7 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
 
   it('hard-blocks projects/ under a .claude extra (transcripts; CLAUDE_EXTRA_NEVER_SYNC adds it)', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // `projects` is NOT in base NEVER_SYNC (it is the path-remap destination),
     // so this proves the .claude denylist is the CLAUDE_EXTRA_NEVER_SYNC superset.
     expect(() =>
@@ -321,7 +321,7 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
 
   it('rejects a stray file sitting directly at the extras logical level', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // `shared/extras/foo` has no <dirname> segment at all, so the per-extra
     // denylist choice has no name to inspect. It must fall back to the narrow
     // subset rather than throwing on an absent segment, leaving the path to be
@@ -332,7 +332,7 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
 
   it('rejects a trailing-dot spelling of a denied name inside an extras tree', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     // isNeverSync -> isDeniedName's exact-name axis (blockSet.has(stripped))
     // must fire through the push gate itself, not just the copy-layer filter:
     // `settings.local.json.` is a distinct real name to node:fs but the same

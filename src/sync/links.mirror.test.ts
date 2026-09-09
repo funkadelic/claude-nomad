@@ -12,8 +12,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import type * as fsModule from 'node:fs';
-import type * as gitProbeModule from '../git-probe.ts';
-import type * as utilsFsModule from '../utils.fs.ts';
+import type * as gitProbeModule from '../core/git-probe.ts';
+import type * as utilsFsModule from '../core/utils.fs.ts';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { g, gitInit, gitOut } from '../test-support/git.ts';
-import { stubPlatform } from '../test-helpers.platform.ts';
+import { stubPlatform } from '../core/test-helpers.platform.ts';
 
 /**
  * Returns `true` when the `git` binary is present on PATH. Gates the one
@@ -1313,8 +1313,8 @@ describe('revertDeniedMirrorPaths', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:fs');
-    vi.doUnmock('../git-probe.ts');
-    vi.doUnmock('../utils.fs.ts');
+    vi.doUnmock('../core/git-probe.ts');
+    vi.doUnmock('../core/utils.fs.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalUserProfile !== undefined) process.env.USERPROFILE = originalUserProfile;
@@ -1456,7 +1456,7 @@ describe('revertDeniedMirrorPaths', () => {
     const dir = join(repo, 'shared', 'commands', 'credentials');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
-    vi.doMock('../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return {
         ...actual,
@@ -1970,7 +1970,7 @@ describe('revertDeniedMirrorPaths', () => {
     commitBase();
     writeFileSync(abs, 'token=abc\n');
     const before = stagedIndex();
-    vi.doMock('../git-probe.ts', async (importOriginal) => ({
+    vi.doMock('../core/git-probe.ts', async (importOriginal) => ({
       ...(await importOriginal<typeof gitProbeModule>()),
       gitProbe: () => null,
     }));
@@ -2097,7 +2097,7 @@ describe('revertDeniedMirrorPaths', () => {
     const dir = join(repo, 'shared', 'commands', 'credentials');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
-    vi.doMock('../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return {
         ...actual,
@@ -2242,7 +2242,7 @@ describe('a win32 mirror capture vs the push half empty-status short-circuit', (
       writeFileSync(join(claudeDir, 'CLAUDE.md'), '# unpublished host edit\n');
 
       const events = await runMirror();
-      const { gitStatusPorcelainZ } = await import('../utils.ts');
+      const { gitStatusPorcelainZ } = await import('../core/utils.ts');
       const status = gitStatusPorcelainZ(repoUnderHome, { untrackedAll: true });
 
       expect(events).toHaveLength(1);
@@ -2258,7 +2258,7 @@ describe('a win32 mirror capture vs the push half empty-status short-circuit', (
       writeFileSync(join(claudeDir, 'CLAUDE.md'), '# published shared\n');
 
       const events = await runMirror();
-      const { gitStatusPorcelainZ } = await import('../utils.ts');
+      const { gitStatusPorcelainZ } = await import('../core/utils.ts');
       const status = gitStatusPorcelainZ(repoUnderHome, { untrackedAll: true });
 
       // The mirror still emits its event (it copies unconditionally), so the

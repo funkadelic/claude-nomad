@@ -35,16 +35,16 @@ import {
 } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
-import type { PathMap } from '../../../config.ts';
-import { claudeHome, HOST, repoHome } from '../../../config.ts';
-import { assertSafeLogical } from '../../../config.sharedDirs.guard.ts';
+import type { PathMap } from '../../../core/config.ts';
+import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
+import { assertSafeLogical } from '../../../core/config.sharedDirs.guard.ts';
 import { applyRedactions } from '../../redact/core.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
-import { isSafeRelPath } from '../../../rel-path-guard.ts';
-import { backupBeforeWrite } from '../../../utils.fs.ts';
-import { encodePath } from '../../../utils.json.ts';
-import { log, warn } from '../../../utils.ts';
+import { isSafeRelPath } from '../../../core/rel-path-guard.ts';
+import { backupBeforeWrite } from '../../../core/utils.fs.ts';
+import { encodePath } from '../../../core/utils.json.ts';
+import { log, warn } from '../../../core/utils.ts';
 
 /**
  * Matches a repo-relative POSIX finding path of the form

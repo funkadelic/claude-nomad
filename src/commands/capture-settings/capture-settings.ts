@@ -2,13 +2,13 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
-import { backupBase, claudeHome, HOST, repoHome } from '../../config.ts';
+import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
 import { buildCaptureSubset } from './core.ts';
 import { regenerateSettings } from '../../sync/links.ts';
-import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../utils.fs.ts';
-import { deepMerge, readJson } from '../../utils.json.ts';
-import { acquireLock, releaseLock } from '../../utils.lockfile.ts';
-import { die, log, warn } from '../../utils.ts';
+import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
+import { deepMerge, readJson } from '../../core/utils.json.ts';
+import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
+import { die, log, warn } from '../../core/utils.ts';
 
 /** Confirmation seam: given the destination label and sorted key list, return true to proceed. */
 type CaptureConfirm = (destLabel: string, keys: string[]) => Promise<boolean>;

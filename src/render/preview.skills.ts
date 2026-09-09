@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome, repoHome } from '../config.ts';
+import { claudeHome, repoHome } from '../core/config.ts';
 import { addItem, section, type DoctorSection } from './output-tree.ts';
 import { isSkillExcluded } from '../sync/skills-sync.ts';
 

@@ -8,7 +8,7 @@ import { errOutput, makePushEnv, teardownPushEnv, type PushEnv } from './test-he
 import type * as childProcessModule from 'node:child_process';
 import type * as pushChecksModule from './checks.ts';
 import type * as leakVerdictModule from './leak-verdict.ts';
-import type * as utilsModule from '../../utils.ts';
+import type * as utilsModule from '../../core/utils.ts';
 
 // Coverage for cmdPush's failure-path terminators: the repo-absent
 // precondition (fatal before lock acquisition), the singular/plural
@@ -36,7 +36,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     rmSync(env.repoUnderHome, { recursive: true, force: true });
     expect(existsSync(env.repoUnderHome)).toBe(false);
     const { cmdPush } = await import('./push.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     await expect(cmdPush()).rejects.toThrow(NomadFatal);
     await expect(cmdPush()).rejects.toThrow(/repo not cloned at/);
     expect(existsSync(env.lockPath)).toBe(false);
@@ -114,7 +114,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
         })),
       };
     });
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,

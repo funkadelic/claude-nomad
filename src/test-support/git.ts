@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { encodePath } from '../utils.json.ts';
+import { encodePath } from '../core/utils.json.ts';
 
 /**
  * Hermetic environment for every harness git invocation. Neutralizes the real

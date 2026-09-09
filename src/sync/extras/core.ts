@@ -10,11 +10,11 @@ import {
   repoHome,
   SUPPORTED_EXTRAS,
   type PathMap,
-} from '../../config.ts';
+} from '../../core/config.ts';
 import { cpSyncGuarded, stripCollidingDstSymlinks } from './collision.ts';
 import { assertSafeLocalRoot, assertSafeLogical } from './guards.ts';
-import { log } from '../../utils.ts';
-import { readPathMap } from '../../utils.json.ts';
+import { log } from '../../core/utils.ts';
+import { readPathMap } from '../../core/utils.json.ts';
 
 export {
   cpSyncGuarded,

@@ -1,10 +1,10 @@
 import { copyFileSync, cpSync, existsSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, claudeHome, HOST, repoHome, type PathMap } from '../../config.ts';
-import { die, log } from '../../utils.ts';
-import { writeJsonAtomic } from '../../utils.fs.ts';
-import { readJson } from '../../utils.json.ts';
+import { allSharedLinks, claudeHome, HOST, repoHome, type PathMap } from '../../core/config.ts';
+import { die, log } from '../../core/utils.ts';
+import { writeJsonAtomic } from '../../core/utils.fs.ts';
+import { readJson } from '../../core/utils.json.ts';
 
 /**
  * Overlay `~/.claude/` entries for every name in `allSharedLinks(map)` (the

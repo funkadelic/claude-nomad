@@ -17,11 +17,11 @@
  * this scan (defense-in-depth mid-flow).
  */
 
-import { repoHome } from '../../config.ts';
-import { EXIT } from '../../exit-codes.ts';
+import { repoHome } from '../../core/config.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 import { gitleaksInstallHint } from './checks.ts';
 import { type Finding, scanStagedTree } from './gitleaks.scan.ts';
-import { NomadFatal } from '../../utils.ts';
+import { NomadFatal } from '../../core/utils.ts';
 
 // Re-export the staged-scan primitives (moved to commands/push/gitleaks.scan.ts to
 // keep both this module and commands/doctor/checks/shared.ts under the 200-line

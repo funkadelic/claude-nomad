@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { claudeHome, repoHome, HOST, type PathMap } from '../config.ts';
-import { fail } from '../utils.ts';
-import { readJson, validatePathMapShape } from '../utils.json.ts';
+import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
+import { fail } from '../core/utils.ts';
+import { readJson, validatePathMapShape } from '../core/utils.json.ts';
 
 type TranscriptLine = { type?: string; cwd?: string };
 

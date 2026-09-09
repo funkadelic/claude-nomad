@@ -236,7 +236,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect((err as InstanceType<typeof NomadFatal>).message).toContain(
       'nomad pull could not fetch',
@@ -260,7 +260,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, []);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect((err as InstanceType<typeof NomadFatal>).message).toBe('git pull --rebase failed');
     // Nothing was removed on the ordinary path.
@@ -274,7 +274,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md', 'shared/commands/only-here.md']);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     // Only the genuinely colliding path is named...
     expect((err as InstanceType<typeof NomadFatal>).message).toContain(
@@ -294,7 +294,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     // A failure that never reached the remote leaves no fetched update to
     // collide with, so the created set cannot be misread as one.
@@ -309,7 +309,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect((err as InstanceType<typeof NomadFatal>).message).toContain(
       'nomad pull could not fetch',
@@ -330,7 +330,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect(existsSync(join(repo, 'shared', 'commands', 'mine.md'))).toBe(true);
     expect((err as InstanceType<typeof NomadFatal>).message).toContain(
@@ -344,7 +344,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     // Nothing local to have been copied from, so the mirror cannot own it.
     expect(existsSync(join(repo, 'shared', 'commands', 'mine.md'))).toBe(true);
@@ -359,7 +359,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['hosts/other.json']);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     expect(existsSync(join(repo, 'hosts', 'other.json'))).toBe(true);
   });
@@ -379,7 +379,7 @@ describe('pullWithCollisionRunbook', () => {
 
     const err = await runPull(repo, ['shared/commands/mine.md']);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(err).toBeInstanceOf(NomadFatal);
     const text = (err as InstanceType<typeof NomadFatal>).message;
     expect(text).toContain('nomad pull could not fetch');

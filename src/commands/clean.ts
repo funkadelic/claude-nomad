@@ -1,10 +1,10 @@
 import { existsSync, lstatSync, readdirSync, rmSync, statSync, type Dirent } from 'node:fs';
 import { join } from 'node:path';
 
-import { backupBase as getBackupBase } from '../config.ts';
-import { EXIT } from '../exit-codes.ts';
-import { fail, item, log } from '../utils.ts';
-import { acquireLock, releaseLock } from '../utils.lockfile.ts';
+import { backupBase as getBackupBase } from '../core/config.ts';
+import { EXIT } from '../core/exit-codes.ts';
+import { fail, item, log } from '../core/utils.ts';
+import { acquireLock, releaseLock } from '../core/utils.lockfile.ts';
 
 /**
  * Shape of a `<ts>` backup directory name as produced by `freshBackupTs`:

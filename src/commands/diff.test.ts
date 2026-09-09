@@ -15,8 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import type * as childProcessModule from 'node:child_process';
 
-import { stubPlatform } from '../test-helpers.platform.ts';
-import { encodePath } from '../utils.json.ts';
+import { stubPlatform } from '../core/test-helpers.platform.ts';
+import { encodePath } from '../core/utils.json.ts';
 
 const realPlatform = process.platform;
 
@@ -212,7 +212,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
       }),
     }));
     const { cmdDiff } = await import('./diff.ts');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     let thrown: unknown;
     try {
       cmdDiff();

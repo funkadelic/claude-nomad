@@ -510,7 +510,7 @@ describe('copyExtrasFiltered ALWAYS_NEVER_SYNC filter', () => {
 
   it('extrasDenySet returns CLAUDE_EXTRA_NEVER_SYNC for .claude and ALWAYS_NEVER_SYNC for others', async () => {
     const { extrasDenySet } = await import('./core.ts');
-    const { CLAUDE_EXTRA_NEVER_SYNC, ALWAYS_NEVER_SYNC } = await import('../../config.ts');
+    const { CLAUDE_EXTRA_NEVER_SYNC, ALWAYS_NEVER_SYNC } = await import('../../core/config.ts');
     expect(extrasDenySet('.claude')).toBe(CLAUDE_EXTRA_NEVER_SYNC);
     expect(extrasDenySet('.planning')).toBe(ALWAYS_NEVER_SYNC);
     expect(extrasDenySet('CLAUDE.md')).toBe(ALWAYS_NEVER_SYNC);
@@ -942,7 +942,7 @@ describe('copyExtrasOverlayFiltered filtered overlay copy', () => {
     writeFileSync(join(tmpDst, 'foo', 'existing.md'), 'nested\n');
 
     const { copyExtrasOverlayFiltered } = await import('./core.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => copyExtrasOverlayFiltered(tmpSrc, tmpDst, new Set())).toThrow(NomadFatal);
   });
 
@@ -1125,7 +1125,7 @@ describe('copyExtrasFilteredPreservingBy repo-side dir/file type-flip guard', ()
     writeFileSync(join(tmpDst, 'nested', 'existing.md'), 'local\n');
 
     const { copyExtrasFilteredPreservingBy } = await import('./core.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => copyExtrasFilteredPreservingBy(tmpSrc, tmpDst, () => false)).toThrow(NomadFatal);
     try {
       copyExtrasFilteredPreservingBy(tmpSrc, tmpDst, () => false);

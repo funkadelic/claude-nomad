@@ -12,14 +12,14 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EXIT } from '../../../exit-codes.ts';
+import { EXIT } from '../../../core/exit-codes.ts';
 
 import type * as recoveryActionsModule from './actions.ts';
 import type * as recoveryRedactAllModule from './redact-all.ts';
 import type * as redactModule from '../../redact/core.ts';
-import type * as utilsModule from '../../../utils.ts';
-import type * as utilsFsModule from '../../../utils.fs.ts';
-import type { PathMap } from '../../../config.ts';
+import type * as utilsModule from '../../../core/utils.ts';
+import type * as utilsFsModule from '../../../core/utils.fs.ts';
+import type { PathMap } from '../../../core/config.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import type { LeakVerdict } from '../leak-verdict.ts';
 
@@ -156,7 +156,7 @@ describe('resolveLeakFindings - non-TTY path', () => {
 
   it('throws NomadFatal carrying verdict.recovery when not a TTY', async () => {
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const verdict = {
       leak: true,
       verdictRow: '✗ leak',
@@ -199,7 +199,7 @@ describe('resolveLeakFindings - TTY scan-crash guard', () => {
 
   it('rejects with NomadFatal carrying the recovery text when leak:true and findings is empty', async () => {
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const verdict = {
       leak: true,
       verdictRow: '✗ scan failed, no parseable report',
@@ -319,7 +319,7 @@ describe('resolveLeakFindings - TTY all-Skip -> NomadFatal', () => {
 
   it('throws NomadFatal when all findings are Skipped', async () => {
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const finding = makeFinding();
     const verdict = {
       leak: true,
@@ -425,7 +425,7 @@ describe('resolveLeakFindings - while loop exits when leak=false regardless of f
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('../../redact/core.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
   });
 
   it('exits the recovery loop when leak=false even if findings array is non-empty', async () => {
@@ -439,7 +439,7 @@ describe('resolveLeakFindings - while loop exits when leak=false regardless of f
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: vi.fn() };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -490,7 +490,7 @@ describe('resolveLeakFindings - while loop exits when leak=false regardless of f
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: vi.fn() };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -534,7 +534,7 @@ describe('resolveLeakFindings - TTY Allow action -> re-scan clean -> returns', (
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('../../redact/core.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
   });
 
   it('calls appendGitleaksIgnore with the fingerprint and returns when re-scan is clean', async () => {
@@ -543,7 +543,7 @@ describe('resolveLeakFindings - TTY Allow action -> re-scan clean -> returns', (
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: appendMock };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -586,7 +586,7 @@ describe('resolveLeakFindings - TTY Redact action -> re-scan clean -> returns fi
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./actions.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
   });
 
   it('returns the final clean LeakVerdict after a successful Redact', async () => {
@@ -598,7 +598,7 @@ describe('resolveLeakFindings - TTY Redact action -> re-scan clean -> returns fi
         dispatchActions: vi.fn(),
       };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -638,7 +638,7 @@ describe('resolveLeakFindings - --redact-all non-interactive batch redact', () =
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./redact-all.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
   });
 
   it('calls redactAllFindings and does not invoke the prompt, returns on clean re-scan', async () => {
@@ -647,7 +647,7 @@ describe('resolveLeakFindings - --redact-all non-interactive batch redact', () =
       const actual = await importOriginal<typeof recoveryRedactAllModule>();
       return { ...actual, redactAllFindings: redactAllMock };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -681,13 +681,13 @@ describe('resolveLeakFindings - --redact-all non-interactive batch redact', () =
       const actual = await importOriginal<typeof recoveryRedactAllModule>();
       return { ...actual, redactAllFindings: vi.fn() };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
 
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const finding = makeFinding();
     const verdict = {
       leak: true,
@@ -774,7 +774,7 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -788,7 +788,7 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
     });
@@ -828,7 +828,7 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
     });
@@ -862,7 +862,7 @@ describe('applyRedact: injected scan returning real findings rewrites file', () 
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy, freshBackupTs: () => 'ts-x' };
     });
@@ -916,8 +916,8 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -930,12 +930,12 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
   it('returns false, no mutation, and emits live-session guidance when session is live', async () => {
     const { transcriptPath, map } = makeApplyRedactFixture(testHome);
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -972,12 +972,12 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
   it('returns false and emits scan-failed message when scan returns null', async () => {
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -1014,12 +1014,12 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
   it('returns false and emits nothing-to-redact message when scan returns []', async () => {
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -1055,12 +1055,12 @@ describe('applyRedact: live-session refusal emits guidance message', () => {
 
   it('happy path: no log message emitted on success', async () => {
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn() };
     });
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -1105,12 +1105,12 @@ describe('applyRedact: unresolvable session-id emits guidance message', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
   });
 
   it('returns false and emits transcript-not-found message when session id cannot be extracted', async () => {
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -1139,7 +1139,7 @@ describe('applyRedact: unresolvable session-id emits guidance message', () => {
 
   it('returns false and emits transcript-not-found message when local transcript is absent', async () => {
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -1191,7 +1191,7 @@ describe('resolveLeakFindings - live session + Redact then Skip aborts with Noma
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
     vi.doUnmock('./actions.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
@@ -1208,7 +1208,7 @@ describe('resolveLeakFindings - live session + Redact then Skip aborts with Noma
     const liveClock = () => statSync(transcriptPath).mtimeMs + 1000;
 
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy, gitOrFatal: vi.fn() };
     });
@@ -1226,7 +1226,7 @@ describe('resolveLeakFindings - live session + Redact then Skip aborts with Noma
     };
 
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
 
     // Prompt sequence: first call returns 'r' (Redact), second returns '' (Skip).
     let promptCall = 0;
@@ -1295,12 +1295,12 @@ describe('resolveLeakFindings - legend emission', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
     vi.doUnmock('./redact-all.ts');
   });
 
   it('calls printLegend exactly once on the TTY interactive path', async () => {
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1329,7 +1329,7 @@ describe('resolveLeakFindings - legend emission', () => {
 
   it('does NOT call printLegend on the non-TTY path', async () => {
     const { resolveLeakFindings } = await import('./recovery.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const verdict = {
       leak: true,
       verdictRow: '✗ leak',
@@ -1350,7 +1350,7 @@ describe('resolveLeakFindings - legend emission', () => {
   });
 
   it('does NOT call printLegend on the --redact-all path', async () => {
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1482,16 +1482,16 @@ describe('dispatchActions - drop wins at session level', () => {
     process.env.NOMAD_HOST = 'test-host';
     vi.doUnmock('./actions.ts');
     vi.doUnmock('./redact-all.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
     vi.resetModules();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     vi.doUnmock('./actions.ts');
     vi.doUnmock('./redact-all.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -1740,7 +1740,7 @@ describe('dispatchActions - Drop action uses dropSessionFromStaged', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./drop.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
   });
 
   it('calls dropSessionFromStaged and logs the drop message', async () => {
@@ -1802,7 +1802,7 @@ describe('resolveLeakFindings - Drop action -> clean re-scan -> returns', () => 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('./actions.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.ts');
   });
 
   it('returns a clean verdict when user drops the only finding', async () => {
@@ -1818,7 +1818,7 @@ describe('resolveLeakFindings - Drop action -> clean re-scan -> returns', () => 
         dispatchActions: vi.fn(),
       };
     });
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitOrFatal: vi.fn() };
     });
@@ -1871,8 +1871,8 @@ describe('applyRedact: no map-match returns false and emits message', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -1904,12 +1904,12 @@ describe('applyRedact: no map-match returns false and emits message', () => {
     const farFuture = Date.now() + 10 * 60 * 1000;
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -1976,7 +1976,7 @@ describe('applyRedact: no map-match returns false and emits message', () => {
     };
     const farFuture = Date.now() + 10 * 60 * 1000;
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn() };
     });
@@ -2085,7 +2085,7 @@ describe('redactAllFindings - batch redaction branches', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -2104,7 +2104,7 @@ describe('redactAllFindings - batch redaction branches', () => {
 
   it('aborts the whole batch (no scan, no mutation) when a finding has no session id', async () => {
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const map: PathMap = { projects: {} };
     const scanSpy = vi.fn().mockReturnValue([]);
     const finding = makeFinding({ File: 'shared/other/not-a-session.txt' });
@@ -2118,12 +2118,12 @@ describe('redactAllFindings - batch redaction branches', () => {
 
   it('aborts before mutating any session when another session transcript is missing', async () => {
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const original = readFileSync(transcriptPath, 'utf8');
     const scanSpy = vi.fn().mockReturnValue([]);
     // A redactable mapped session plus a second session whose local transcript
@@ -2141,12 +2141,12 @@ describe('redactAllFindings - batch redaction branches', () => {
 
   it('aborts (no mutation) when a session looks active (recently modified)', async () => {
     const { transcriptPath, map } = makeApplyRedactFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const original = readFileSync(transcriptPath, 'utf8');
     const scanSpy = vi.fn().mockReturnValue([]);
     const f = makeFinding({ File: 'shared/projects/myproject/sid123.jsonl', StartLine: 1 });
@@ -2172,12 +2172,12 @@ describe('redactAllFindings - batch redaction branches', () => {
         projects: { otherproject: { 'test-host': '/home/norm/git/otherproject' } },
       }),
     );
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
     const { redactAllFindings } = await import('./redact-all.ts');
-    const { NomadFatal } = await import('../../../utils.ts');
+    const { NomadFatal } = await import('../../../core/utils.ts');
     const map: PathMap = { projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } };
     const farFuture = Date.now() + 10 * 60 * 1000;
     const scanSpy = vi.fn().mockReturnValue([]);
@@ -2189,7 +2189,7 @@ describe('redactAllFindings - batch redaction branches', () => {
 
   it('redacts the first finding per session and de-duplicates the rest', async () => {
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -2219,7 +2219,7 @@ describe('redactAllFindings - batch redaction branches', () => {
 
   it('does not mark a session redacted when applyRedact fails (scan returns null)', async () => {
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -2261,7 +2261,7 @@ describe('dispatchActions - remaining dispatchOne branches', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -2308,7 +2308,7 @@ describe('dispatchActions - remaining dispatchOne branches', () => {
 
   it('redacts a session once and de-duplicates a second redact for the same session', async () => {
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -2346,7 +2346,7 @@ describe('dispatchActions - remaining dispatchOne branches', () => {
 
   it('leaves the session unmarked when applyRedact fails (scan null), retrying the next finding', async () => {
     const { transcriptPath, farFuture, map } = makeApplyRedactFixture(testHome);
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn(), freshBackupTs: () => 'ts-x' };
     });
@@ -2398,8 +2398,8 @@ describe('applyRedact - copy-back loop skips a project with no entry for this ho
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -2430,12 +2430,12 @@ describe('applyRedact - copy-back loop skips a project with no entry for this ho
     };
     const farFuture = Date.now() + 10 * 60 * 1000;
 
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: vi.fn() };
     });
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });

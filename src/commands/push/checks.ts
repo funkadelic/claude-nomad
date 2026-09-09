@@ -10,7 +10,7 @@
  *
  * All execFileSync-backed helpers use argv-array form with
  * `stdio: ['ignore', 'pipe', 'pipe']` (no shell). Same shape as
- * `gitStatusPorcelainZ` in src/utils.ts so the audit surface is uniform.
+ * `gitStatusPorcelainZ` in src/core/utils.ts so the audit surface is uniform.
  *
  * Used by `cmdPush` for refuse-on-hit safety and by `cmdDoctor` for
  * read-only diagnostics (doctor only consumes `findGitlinks` and
@@ -23,10 +23,10 @@ import { homedir, platform } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 import { resolveTomlConfig } from './gitleaks.config.ts';
-import { assertNoAutostashConflict } from '../../autostash-guard.ts';
+import { assertNoAutostashConflict } from '../../core/autostash-guard.ts';
 import { classifyWedge, unmergedIndexRunbookText, wedgeMarkerRunbookText } from '../pull/wedge.ts';
-import { EXIT } from '../../exit-codes.ts';
-import { NomadFatal } from '../../utils.ts';
+import { EXIT } from '../../core/exit-codes.ts';
+import { NomadFatal } from '../../core/utils.ts';
 
 /**
  * Platform-aware "gitleaks not on PATH" hint, mirroring the scaffold

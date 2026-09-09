@@ -2,12 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { repoHome } from '../../config.ts';
+import { repoHome } from '../../core/config.ts';
 import { expandStagedDir, isInIndex, isTrackedInHead } from './git.ts';
 import { reportScrubHint } from './scrub-hint.ts';
 import { warnIfSessionPushed } from '../pushed-history.ts';
-import { die, fail, item, NomadFatal } from '../../utils.ts';
-import { acquireLock, releaseLock } from '../../utils.lockfile.ts';
+import { die, fail, item, NomadFatal } from '../../core/utils.ts';
+import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 
 /**
  * Surgical removal of a contaminated session from the staged tree of

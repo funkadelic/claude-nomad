@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { EXIT } from '../exit-codes.ts';
+import { EXIT } from '../core/exit-codes.ts';
 import { refuseDeniedEntries, scanDeniedEntries } from './adopt.scan.ts';
 
 // This file must stay free of any child-process-spawning API, so
@@ -157,7 +157,7 @@ describe('refuseDeniedEntries', () => {
   it('uses singular wording ("that path") when exactly one entry is denied', async () => {
     root = makeRoot();
     mkdirSync(join(root, 'credentials'));
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -174,7 +174,7 @@ describe('refuseDeniedEntries', () => {
     writeFileSync(join(root, 'stats-cache.json'), '{}\n');
     mkdirSync(join(root, 'a', 'b'), { recursive: true });
     writeFileSync(join(root, 'a', 'b', 'history.jsonl'), '{}\n');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -204,7 +204,7 @@ describe('refuseDeniedEntries', () => {
     // list-collision wording exists to avoid.
     root = makeRoot();
     writeFileSync(join(root, 'deploy.key'), 'PRIVATE\n');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -227,7 +227,7 @@ describe('refuseDeniedEntries', () => {
     root = makeRoot();
     writeFileSync(join(root, 'settings.local.json'), '{}\n');
     writeFileSync(join(root, 'server.pem'), 'CERT\n');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -250,7 +250,7 @@ describe('refuseDeniedEntries', () => {
     // matches Settings.local.json") names no entry to rename away from.
     root = makeRoot();
     writeFileSync(join(root, 'Settings.local.json'), '{}\n');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -287,7 +287,7 @@ describe('refuseDeniedEntries', () => {
     mkdirSync(join(root, 'cache'), { recursive: true });
     mkdirSync(join(root, 'todos'), { recursive: true });
     writeFileSync(join(root, 'settings.local.json'), '{}\n');
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
 
     let caught: unknown;
     try {
@@ -339,7 +339,7 @@ describe('refuseDeniedEntries', () => {
       });
       vi.resetModules();
       const { refuseDeniedEntries: refuseAfterMock } = await import('./adopt.scan.ts');
-      const { NomadFatal } = await import('../utils.ts');
+      const { NomadFatal } = await import('../core/utils.ts');
 
       let caught: unknown;
       try {
@@ -387,7 +387,7 @@ describe('refuseDeniedEntries', () => {
       });
       vi.resetModules();
       const { refuseDeniedEntries: refuseAfterMock } = await import('./adopt.scan.ts');
-      const { NomadFatal } = await import('../utils.ts');
+      const { NomadFatal } = await import('../core/utils.ts');
 
       let caught: unknown;
       try {

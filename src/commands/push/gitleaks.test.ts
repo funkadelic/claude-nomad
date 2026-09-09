@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { EXIT } from '../../exit-codes.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
@@ -129,7 +129,7 @@ describe('runGitleaksScan (mocked child_process)', () => {
     expect(() => runGitleaksScan()).toThrow(/gitleaks detected secrets/);
     expect(() => runGitleaksScan()).toThrow(/git diff --cached/);
     // A confirmed non-empty finding carries EXIT.LEAK_BLOCKED, not the default.
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     try {
       runGitleaksScan();
       expect.unreachable();
@@ -228,7 +228,7 @@ describe('runGitleaksScan (mocked child_process)', () => {
     expect(() => runGitleaksScan()).not.toThrow(/drop-session/);
     // A scan-failed/no-parseable-report outcome is a dependency/environment
     // problem, not a confirmed leak, so it stays GENERIC_FAILURE.
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     try {
       runGitleaksScan();
       expect.unreachable();
@@ -393,7 +393,7 @@ describe('runGitleaksScan (mocked child_process)', () => {
     expect(() => runGitleaksScan()).toThrow(/Install:/);
     // A missing binary is a dependency problem, not a confirmed leak: it must
     // NOT be mistaken for EXIT.LEAK_BLOCKED.
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     try {
       runGitleaksScan();
       expect.unreachable();

@@ -12,7 +12,7 @@ import {
 } from './test-helpers.ts';
 
 import type * as pushChecksModule from './checks.ts';
-import type * as utilsModule from '../../utils.ts';
+import type * as utilsModule from '../../core/utils.ts';
 
 // Integration coverage for cmdPush's pre-staging safety gates in order:
 //   probeGitleaks -> rebaseBeforePush -> remapPush -> findGitlinks ->
@@ -50,7 +50,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
     vi.doMock('./gitleaks.ts', () => ({
       runGitleaksScan: runGitleaksScanMock,
     }));
-    vi.doMock('../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
@@ -78,7 +78,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof pushChecksModule>();
       // Import NomadFatal here so it shares identity with the copy that
       // freshly-loaded commands/push/push.ts catches via `instanceof`.
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       return {
         ...actual,
         probeGitleaks: vi.fn(() => 'v8.18.2'),
@@ -115,7 +115,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
   it('Test 3: gitleaks ENOENT on probe -> FATAL with install hint; lock released', async () => {
     vi.doMock('./checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
-      const { NomadFatal } = await import('../../utils.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
       return {
         ...actual,
         probeGitleaks: vi.fn(() => {

@@ -3,8 +3,8 @@ import { type ExecFileSyncOptions } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { cmdUpdate, readInstalledVersion } from './update.ts';
-import { stubPlatform } from '../test-helpers.platform.ts';
-import { NomadFatal } from '../utils.ts';
+import { stubPlatform } from '../core/test-helpers.platform.ts';
+import { NomadFatal } from '../core/utils.ts';
 
 // The default-platform test below asserts the literal 'npm' bin without
 // overriding process.platform, so it is posix-only by construction; the

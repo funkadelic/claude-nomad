@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { relativeRequireTargetsBroken } from './hooks.preserve-symlinks.probe.ts';
-import { allSharedLinks, claudeHome, home, repoHome, type PathMap } from '../../../config.ts';
+import { allSharedLinks, claudeHome, home, repoHome, type PathMap } from '../../../core/config.ts';
 
 /**
  * WARN-only `nomad doctor` reporter that catches the symlink-broken-relative-require

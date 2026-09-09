@@ -10,8 +10,8 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve, sep } from 'node:path';
 
-import type { PathMap } from '../../../config.ts';
-import { repoHome } from '../../../config.ts';
+import type { PathMap } from '../../../core/config.ts';
+import { repoHome } from '../../../core/config.ts';
 import { appendGitleaksIgnore } from '../../redact/core.ts';
 import { applyDeferredAllows } from './allow-gate.ts';
 import { applyRedact } from './redact.ts';
@@ -20,7 +20,7 @@ import { applyMemoryRedact, isMemoryFindingPath, memoryFileFromFinding } from '.
 import { applySkillRedact, isSkillFindingPath, skillFileFromFinding } from './skills.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
-import { log } from '../../../utils.ts';
+import { log } from '../../../core/utils.ts';
 import { buildPromptHeader, groupFindingsForPrompt, sharedFingerprintPeers } from './display.ts';
 import {
   type FindingAction,

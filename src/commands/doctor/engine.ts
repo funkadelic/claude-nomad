@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { green, okGlyph, warnGlyph, yellow } from '../../render/color.ts';
 import { addItem, type DoctorSection } from './format.ts';
 import { compareSemver } from './version.ts';
-import { packageRoot } from '../../package-root.ts';
+import { packageRoot } from '../../core/package-root.ts';
 
 /**
  * Soft host-fitness check appended to the Version section of `nomad doctor`.

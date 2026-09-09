@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as lockfileModule from '../../utils.lockfile.ts';
+import type * as lockfileModule from '../../core/utils.lockfile.ts';
 
 // Covers the lock-contention skip path for cmdPush, symmetric to cmdPull's
 // contention skip covered in commands/pull/pull.test.ts. acquireLock returns null
@@ -37,8 +37,8 @@ describe('cmdPush lock-contention skip path', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../utils.ts');
-    vi.doUnmock('../../utils.lockfile.ts');
+    vi.doUnmock('../../core/utils.ts');
+    vi.doUnmock('../../core/utils.lockfile.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -55,7 +55,7 @@ describe('cmdPush lock-contention skip path', () => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     const acquireSpy = vi.fn(() => null);
-    vi.doMock('../../utils.lockfile.ts', async (importOriginal) => {
+    vi.doMock('../../core/utils.lockfile.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: acquireSpy };
     });

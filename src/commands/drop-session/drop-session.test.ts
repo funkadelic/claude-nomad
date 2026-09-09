@@ -61,7 +61,7 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
     rmSync(env.repoUnderHome, { recursive: true, force: true });
 
     const { cmdDropSession } = await import('./drop-session.ts');
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => cmdDropSession('sid-A')).toThrow(NomadFatal);
     expect(() => cmdDropSession('sid-A')).toThrow(/repo not cloned/);
     // No lock should have been acquired (die fires before acquireLock).

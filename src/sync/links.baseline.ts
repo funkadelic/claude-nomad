@@ -27,7 +27,7 @@ import {
   sharedBaselinePath,
   ALWAYS_NEVER_SYNC,
   type PathMap,
-} from '../config.ts';
+} from '../core/config.ts';
 import {
   buildManifest,
   hashFile,
@@ -36,7 +36,7 @@ import {
   type Manifest,
   type ManifestEntry,
 } from '../commands/push/manifest.ts';
-import { warn } from '../utils.ts';
+import { warn } from '../core/utils.ts';
 
 /**
  * Producer tag written into the manifest's `scannerVersion` field, and required

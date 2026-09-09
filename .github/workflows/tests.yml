@@ -126,7 +126,7 @@ jobs:
           #
           # `.github/` is deliberately NOT in this set even though the
           # github-actions ecosystem only ever touches it:
-          # `src/config.gitleaks-pin.test.ts` reads `.github/workflows/tests.yml`
+          # `src/core/config.gitleaks-pin.test.ts` reads `.github/workflows/tests.yml`
           # and `.github/workflows/gitleaks.yml` to assert their GITLEAKS_VERSION
           # matches GITLEAKS_PINNED_VERSION in `config.ts`. Skipping on a
           # workflow change would let that pin drift silently, which is the

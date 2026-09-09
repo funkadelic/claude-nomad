@@ -1,6 +1,6 @@
 import { failGlyph, red } from '../../render/color.ts';
 import { addItem, type DoctorSection } from '../../render/output-tree.ts';
-import { readJson } from '../../utils.json.ts';
+import { readJson } from '../../core/utils.json.ts';
 
 export {
   section,

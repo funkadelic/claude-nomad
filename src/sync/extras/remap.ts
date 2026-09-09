@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
-import { repoHome } from '../../config.ts';
+import { repoHome } from '../../core/config.ts';
 import {
   copyExtrasFileSkipDiverged,
   copyExtrasFiltered,
@@ -16,8 +16,8 @@ import {
 } from './core.ts';
 import { listDivergingModified } from './diff.ts';
 import { planningDeleteTargets } from './planning-diff.ts';
-import { backupExtrasWrite, backupRepoWrite } from '../../utils.fs.ts';
-import { gitCaptureBuffer, gitCaptureRaw, NomadFatal, warn } from '../../utils.ts';
+import { backupExtrasWrite, backupRepoWrite } from '../../core/utils.fs.ts';
+import { gitCaptureBuffer, gitCaptureRaw, NomadFatal, warn } from '../../core/utils.ts';
 
 /** Detail lists returned by an extras op: items copied (wet) and would-copy (dry). */
 type ExtrasDetail = ExtrasCounts & { done: string[]; would: string[] };

@@ -25,7 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * clean for that smoke test and document the canonical env-toggle pattern
  * even though picocolors is the dependency that resists it.
  *
- * Mirrors the env-toggle scaffold at src/utils.test.ts:70-113 (the
+ * Mirrors the env-toggle scaffold at src/core/utils.test.ts:70-113 (the
  * "HOST resolution" block) plus the spawn-on-env-toggle escape hatch.
  */
 

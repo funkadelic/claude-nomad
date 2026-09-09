@@ -24,16 +24,16 @@ import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 
 import { dim, infoGlyph } from '../../render/color.ts';
-import { claudeHome, repoHome, HOST, SUPPORTED_EXTRAS, type PathMap } from '../../config.ts';
-import { assertSafeLogical } from '../../config.sharedDirs.guard.ts';
+import { claudeHome, repoHome, HOST, SUPPORTED_EXTRAS, type PathMap } from '../../core/config.ts';
+import { assertSafeLogical } from '../../core/config.sharedDirs.guard.ts';
 import { copyExtras } from '../../sync/extras/extras.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { copyDirJsonlOnly, copyFileAtomic } from '../../sync/remap.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './leak-verdict.ts';
 import { scanStagedTree } from './gitleaks.ts';
 import { copySkillsPush, isSkillExcluded } from '../../sync/skills-sync.ts';
-import { nowTimestamp } from '../../utils.fs.ts';
-import { encodePath } from '../../utils.json.ts';
+import { nowTimestamp } from '../../core/utils.fs.ts';
+import { encodePath } from '../../core/utils.json.ts';
 
 /** Rendered neutral Leak scan row when there was nothing to scan. */
 const NOTHING_TO_SCAN_ROW = `${dim(infoGlyph)} nothing to scan, no leaks`;

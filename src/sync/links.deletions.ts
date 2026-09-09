@@ -25,10 +25,10 @@ import {
   repoHome,
   ALWAYS_NEVER_SYNC,
   type PathMap,
-} from '../config.ts';
+} from '../core/config.ts';
 import { enumerateLocalSharedScan, readSharedBaseline } from './links.baseline.ts';
-import { warn } from '../utils.ts';
-import { backupRepoWrite } from '../utils.fs.ts';
+import { warn } from '../core/utils.ts';
+import { backupRepoWrite } from '../core/utils.fs.ts';
 
 /**
  * One repo file the pass will remove, with the local absence that authorized

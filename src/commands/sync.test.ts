@@ -12,11 +12,11 @@ import type * as recoveryModule from './push/recovery/recovery.ts';
 import type * as previewModule from '../render/preview.ts';
 import type * as wedgeModule from './pull/wedge.ts';
 import type * as extrasSyncModule from '../sync/extras/extras.ts';
-import type * as lockfileModule from '../utils.lockfile.ts';
-import type * as utilsModule from '../utils.ts';
+import type * as lockfileModule from '../core/utils.lockfile.ts';
+import type * as utilsModule from '../core/utils.ts';
 
-import { EXIT } from '../exit-codes.ts';
-import { stubPlatform } from '../test-helpers.platform.ts';
+import { EXIT } from '../core/exit-codes.ts';
+import { stubPlatform } from '../core/test-helpers.platform.ts';
 
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 
@@ -78,12 +78,12 @@ function teardownSyncEnv(env: SyncEnv): void {
   vi.doUnmock('./pull/pull.ts');
   vi.doUnmock('./push/push.ts');
   vi.doUnmock('../render/preview.ts');
-  vi.doUnmock('../utils.lockfile.ts');
+  vi.doUnmock('../core/utils.lockfile.ts');
   vi.doUnmock('./push/checks.ts');
   vi.doUnmock('../sync/remap.ts');
   vi.doUnmock('../sync/extras/extras.ts');
   vi.doUnmock('../sync/skills-sync.ts');
-  vi.doUnmock('../utils.ts');
+  vi.doUnmock('../core/utils.ts');
   vi.doUnmock('./push/global-config.ts');
   vi.doUnmock('./push/leak-verdict.ts');
   vi.doUnmock('./push/recovery/recovery.ts');
@@ -140,7 +140,7 @@ describe('cmdSync preconditions and lock contention', () => {
       throw new Error(`process.exit:${code}`);
     }) as never);
     const acquireSpy = vi.fn(() => null);
-    vi.doMock('../utils.lockfile.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.lockfile.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: acquireSpy };
     });
@@ -469,7 +469,7 @@ describe('cmdSync: wet composition', () => {
   });
 
   it('pull-half failure: does not call the push half, exits 1, surfaces the force-remote hint', async () => {
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     const pushSpy = vi.fn(() => ({ tag: 'nothing' }));
     vi.doMock('./pull/pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
@@ -491,7 +491,7 @@ describe('cmdSync: wet composition', () => {
   });
 
   it('push-half failure after pull applied: prints the two-phase status and exits 1, no rollback', async () => {
-    const { NomadFatal } = await import('../utils.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     vi.doMock('./pull/pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a' })),
@@ -800,7 +800,7 @@ describe('cmdSync: dry-run composition', () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit:${code}`);
     }) as never);
-    vi.doMock('../utils.lockfile.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.lockfile.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: acquireSpy };
     });
@@ -872,7 +872,7 @@ function mockDrySeams(
       probeUnmergedIndex: vi.fn(() => 'clean'),
     };
   });
-  vi.doMock('../utils.ts', async (importOriginal) => {
+  vi.doMock('../core/utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
     return {
       ...actual,
@@ -1071,7 +1071,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
       syncSkillsPush: vi.fn(),
       syncSkillsPull: vi.fn(),
     }));
-    vi.doMock('../utils.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => `M  shared/CLAUDE.md\0`) };
     });

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { g, gitInit, gitOut, makeBareOrigin, setTestIdentity } from './test-support/git.ts';
+import { g, gitInit, gitOut, makeBareOrigin, setTestIdentity } from '../test-support/git.ts';
 import { EXIT } from './exit-codes.ts';
 
 /**
@@ -152,7 +152,7 @@ describe('conflicted autostash pop (real git + real cmdPush/cmdPull call sites)'
     // `git commit` sequence downstream or from the throw itself.
     const preConflictTip = gitOut(['rev-parse', 'main'], origin);
 
-    const { rebaseBeforePush } = await import('./commands/push/checks.ts');
+    const { rebaseBeforePush } = await import('../commands/push/checks.ts');
     let caught: unknown;
     try {
       rebaseBeforePush(local);
@@ -179,7 +179,7 @@ describe('conflicted autostash pop (real git + real cmdPush/cmdPull call sites)'
     process.env.HOME = tmp;
     process.env.NOMAD_REPO = local;
 
-    const { runPullCore } = await import('./commands/pull/pull.ts');
+    const { runPullCore } = await import('../commands/pull/pull.ts');
     let caught: unknown;
     try {
       runPullCore();
@@ -200,12 +200,12 @@ describe('conflicted autostash pop (real git + real cmdPush/cmdPull call sites)'
     const pullLocal = cleanClone(tmp, origin, 'pull-clean');
     process.env.HOME = tmp;
 
-    const { rebaseBeforePush } = await import('./commands/push/checks.ts');
+    const { rebaseBeforePush } = await import('../commands/push/checks.ts');
     expect(() => rebaseBeforePush(pushLocal)).not.toThrow();
 
     process.env.NOMAD_REPO = pullLocal;
     vi.resetModules();
-    const { runPullCore } = await import('./commands/pull/pull.ts');
+    const { runPullCore } = await import('../commands/pull/pull.ts');
     expect(() => runPullCore()).not.toThrow();
   });
 });

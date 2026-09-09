@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, backupBase, HOST, manifestPath, repoHome } from '../../config.ts';
+import { allSharedLinks, backupBase, HOST, manifestPath, repoHome } from '../../core/config.ts';
 import { computeConfigHash, readManifest } from './manifest.ts';
 import { loadSelectionForPush } from './selection.ts';
 import { enforceAllowList } from './allowlist.ts';
@@ -16,9 +16,16 @@ import { syncSkillsPush } from '../../sync/skills-sync.ts';
 import { probeGitleaks, rebaseBeforePush } from './checks.ts';
 import { remapPush } from '../../sync/remap.ts';
 import { withSpinner } from '../../render/spinner.ts';
-import { die, fail, gitCaptureRaw, gitStatusPorcelainZ, log, NomadFatal } from '../../utils.ts';
-import { freshBackupTs } from '../../utils.fs.ts';
-import { acquireLock, releaseLock } from '../../utils.lockfile.ts';
+import {
+  die,
+  fail,
+  gitCaptureRaw,
+  gitStatusPorcelainZ,
+  log,
+  NomadFatal,
+} from '../../core/utils.ts';
+import { freshBackupTs } from '../../core/utils.fs.ts';
+import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 
 export { reportSettingsAheadDrift } from './settings.ts';
 

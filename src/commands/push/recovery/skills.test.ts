@@ -12,8 +12,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as utilsFsModule from '../../../utils.fs.ts';
-import type * as utilsModule from '../../../utils.ts';
+import type * as utilsFsModule from '../../../core/utils.fs.ts';
+import type * as utilsModule from '../../../core/utils.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 
 /**
@@ -332,8 +332,8 @@ describe('applySkillRedact', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../utils.fs.ts');
-    vi.doUnmock('../../../utils.ts');
+    vi.doUnmock('../../../core/utils.fs.ts');
+    vi.doUnmock('../../../core/utils.ts');
     rmSync(testHome, { recursive: true, force: true });
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
@@ -345,7 +345,7 @@ describe('applySkillRedact', () => {
     const { skillPath } = makeSkillFixture(testHome);
 
     const backupSpy = vi.fn();
-    vi.doMock('../../../utils.fs.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
       return { ...actual, backupBeforeWrite: backupSpy };
     });
@@ -414,7 +414,7 @@ describe('applySkillRedact', () => {
   it('returns false and logs a refusal (no raw secret) when the finding is not a skill file', async () => {
     makeSkillFixture(testHome);
     const logSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, log: logSpy };
     });
@@ -462,7 +462,7 @@ describe('applySkillRedact', () => {
   it('warns (no raw secret) via the warning channel when the finding Match is not located in the file', async () => {
     const { skillPath } = makeSkillFixture(testHome);
     const warnSpy = vi.fn();
-    vi.doMock('../../../utils.ts', async (importOriginal) => {
+    vi.doMock('../../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, warn: warnSpy };
     });

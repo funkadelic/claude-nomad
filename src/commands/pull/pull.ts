@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { assertNoAutostashConflict } from '../../autostash-guard.ts';
+import { assertNoAutostashConflict } from '../../core/autostash-guard.ts';
 import {
   buildExtrasSection,
   buildSessionsSection,
   buildSettingsSection,
 } from '../push/sections.ts';
-import { backupBase, HOST, repoHome, type PathMap } from '../../config.ts';
+import { backupBase, HOST, repoHome, type PathMap } from '../../core/config.ts';
 import { divergenceCheckExtras, remapExtrasPull } from '../../sync/extras/extras.ts';
 import { applySharedLinks, regenerateSettings } from '../../sync/links.ts';
 import { writeSharedBaseline } from '../../sync/links.baseline.ts';
@@ -34,11 +34,11 @@ import {
 } from './wedge.ts';
 import { recoverForceRemote } from './recovery.ts';
 import { recoverUnmergedIndex } from './recovery.unmerged.ts';
-import { EXIT } from '../../exit-codes.ts';
-import { die, fail, gitCaptureRaw, log, NomadFatal } from '../../utils.ts';
-import { discardEmptyBackupDir, freshBackupTs } from '../../utils.fs.ts';
-import { acquireLock, releaseLock } from '../../utils.lockfile.ts';
-import { readPathMap } from '../../utils.json.ts';
+import { EXIT } from '../../core/exit-codes.ts';
+import { die, fail, gitCaptureRaw, log, NomadFatal } from '../../core/utils.ts';
+import { discardEmptyBackupDir, freshBackupTs } from '../../core/utils.fs.ts';
+import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
+import { readPathMap } from '../../core/utils.json.ts';
 
 /**
  * The pull half's grouped-tree summary-section header. Exported so

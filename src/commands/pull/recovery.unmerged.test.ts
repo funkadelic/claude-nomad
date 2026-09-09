@@ -268,7 +268,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     // recovery must refuse rather than let the pull publish them to ~/.claude/.
     buildUnmergedIndexFixture(tmp);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const thrown = recoverSwallowingFatal(tmp);
 
     expect(thrown).toBeInstanceOf(NomadFatal);
@@ -289,7 +289,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     }).toString();
     writeFileSync(join(tmp, 'file.txt'), headContent);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const thrown = recoverSwallowingFatal(tmp);
 
     expect(thrown).toBeInstanceOf(NomadFatal);
@@ -319,7 +319,7 @@ describe('recoverUnmergedIndex - index cleared via reset --mixed HEAD only', () 
     }).toString();
     writeFileSync(join(tmp, 'file.txt'), headContent);
 
-    const { NomadFatal } = await import('../../utils.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
     const thrown = recoverSwallowingFatal(tmp);
 
     expect(thrown).toBeInstanceOf(NomadFatal);

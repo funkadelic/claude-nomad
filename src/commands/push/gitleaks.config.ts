@@ -16,9 +16,9 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { repoHome } from '../../config.ts';
-import { packageRoot } from '../../package-root.ts';
-import { NomadFatal, warn } from '../../utils.ts';
+import { repoHome } from '../../core/config.ts';
+import { packageRoot } from '../../core/package-root.ts';
+import { NomadFatal, warn } from '../../core/utils.ts';
 
 /**
  * Two-tier `.gitleaks.toml` lookup: returns `REPO_HOME/.gitleaks.toml` when
