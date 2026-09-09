@@ -19,13 +19,13 @@ describe('evaluateDocsSync', () => {
   const { evaluateDocsSync } = loadModule();
 
   it('passes when no canary file changed', () => {
-    const v = evaluateDocsSync(['src/commands.doctor.ts', 'src/utils.ts']);
+    const v = evaluateDocsSync(['src/commands/doctor/doctor.ts', 'src/utils.ts']);
     expect(v.ok).toBe(true);
     expect(v.canaryChanged).toBe(false);
   });
 
   it('fails when the canary changed but no doc surface did', () => {
-    const v = evaluateDocsSync(['src/nomad.help.ts', 'src/commands.doctor.ts']);
+    const v = evaluateDocsSync(['src/nomad.help.ts', 'src/commands/doctor/doctor.ts']);
     expect(v.ok).toBe(false);
     expect(v.canaryChanged).toBe(true);
     expect(v.reason).toMatch(/without a documentation update/);

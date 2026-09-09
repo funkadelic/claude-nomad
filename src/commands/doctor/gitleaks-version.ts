@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { green, okGlyph, warnGlyph, yellow } from '../../color.ts';
 import { addItem, type DoctorSection } from './format.ts';
 import { GITLEAKS_PINNED_VERSION, repoHome } from '../../config.ts';
-import type { SpawnSyncFn } from '../../gh-actions.ts';
+import type { SpawnSyncFn } from '../init/gh-actions.ts';
 
 /**
  * Soft gitleaks version-drift check appended to the Version section of

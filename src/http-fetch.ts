@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import type { SpawnSyncFn } from './gh-actions.ts';
+import type { SpawnSyncFn } from './commands/init/gh-actions.ts';
 
 /**
  * Shared transport-only HTTP fetcher for `nomad doctor`. Tries curl first,

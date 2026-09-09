@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { warnGlyph } from '../../color.ts';
 import { section } from './format.ts';
 import { reportActionsDrift } from './actions-drift.ts';
-import type { SpawnSyncFn } from '../../gh-actions.ts';
+import type { SpawnSyncFn } from '../init/gh-actions.ts';
 
 // Gate-matrix unit tests for the Actions-drift reporter. The reporter is
 // driven directly with an injected `run` that

@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { crashDir, HOST, home } from './config.ts';
 import { buildCrashReport } from './crash-report.ts';
 import { redactWithGitleaks } from './crash-report.redact.ts';
-import { prunableByCount } from './commands.clean.ts';
+import { prunableByCount } from './commands/clean.ts';
 import { nowTimestamp } from './utils.fs.ts';
 import { fail, item } from './utils.ts';
 

@@ -38,7 +38,7 @@ import { dirname, join, sep } from 'node:path';
 import type { PathMap } from '../../../config.ts';
 import { claudeHome, HOST, repoHome } from '../../../config.ts';
 import { assertSafeLogical } from '../../../config.sharedDirs.guard.ts';
-import { applyRedactions } from '../../../commands.redact.core.ts';
+import { applyRedactions } from '../../redact/core.ts';
 import type { Finding } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { isSafeRelPath } from '../../../rel-path-guard.ts';

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as recoveryActionsModule from './actions.ts';
-import type * as redactModule from '../../../commands.redact.core.ts';
+import type * as redactModule from '../../redact/core.ts';
 import type * as memoryModule from './memory.ts';
 import type * as skillsModule from './skills.ts';
 import type * as utilsModule from '../../../utils.ts';
@@ -494,12 +494,12 @@ describe('allowAllFindings - calls appendGitleaksIgnore for each finding', () =>
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.doUnmock('../../../commands.redact.core.ts');
+    vi.doUnmock('../../redact/core.ts');
   });
 
   it('calls appendGitleaksIgnore with each finding Fingerprint', async () => {
     const appendMock = vi.fn();
-    vi.doMock('../../../commands.redact.core.ts', async (importOriginal) => {
+    vi.doMock('../../redact/core.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: appendMock };
     });
@@ -907,7 +907,7 @@ describe('dispatchActions - memory finding dispatch', () => {
     vi.restoreAllMocks();
     vi.doUnmock('./memory.ts');
     vi.doUnmock('../../../utils.ts');
-    vi.doUnmock('../../../commands.redact.core.ts');
+    vi.doUnmock('../../redact/core.ts');
   });
 
   it('memory Redact invokes applyMemoryRedact exactly once for two findings in the same memory file', async () => {
@@ -1019,7 +1019,7 @@ describe('dispatchActions - memory finding dispatch', () => {
 
   it('memory Allow still appends the fingerprint via applyAllow (unchanged, no sid dependency)', async () => {
     const appendMock = vi.fn();
-    vi.doMock('../../../commands.redact.core.ts', async (importOriginal) => {
+    vi.doMock('../../redact/core.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: appendMock };
     });
@@ -1160,7 +1160,7 @@ describe('dispatchActions - skill finding dispatch', () => {
     vi.restoreAllMocks();
     vi.doUnmock('./skills.ts');
     vi.doUnmock('../../../utils.ts');
-    vi.doUnmock('../../../commands.redact.core.ts');
+    vi.doUnmock('../../redact/core.ts');
   });
 
   it('skill Redact invokes applySkillRedact exactly once for two findings in the same skill file', async () => {
@@ -1272,7 +1272,7 @@ describe('dispatchActions - skill finding dispatch', () => {
 
   it('skill Allow still appends the fingerprint via applyAllow (unchanged, no sid dependency)', async () => {
     const appendMock = vi.fn();
-    vi.doMock('../../../commands.redact.core.ts', async (importOriginal) => {
+    vi.doMock('../../redact/core.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof redactModule>();
       return { ...actual, appendGitleaksIgnore: appendMock };
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { fetchUrl } from './http-fetch.ts';
-import type { SpawnSyncFn } from './gh-actions.ts';
+import type { SpawnSyncFn } from './commands/init/gh-actions.ts';
 
 // Transport-only fetcher unit tests.
 // All three branches are driven with injected SpawnSyncFn factories so no

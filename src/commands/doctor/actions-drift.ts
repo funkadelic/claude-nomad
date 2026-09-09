@@ -10,7 +10,7 @@ import {
   parseGitHubRemote,
   readOriginRemote,
   type SpawnSyncFn,
-} from '../../gh-actions.ts';
+} from '../init/gh-actions.ts';
 
 /**
  * Drift check appended to the Repository section of `nomad doctor`. WARNs (never

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { okGlyph, warnGlyph } from '../../../color.ts';
 import { section } from '../format.ts';
 import { reportOptionalDeps } from './deps.ts';
-import type { SpawnSyncFn } from '../../../gh-actions.ts';
+import type { SpawnSyncFn } from '../../init/gh-actions.ts';
 
 // Presence/absence/unparseable matrix for reportOptionalDeps (gh + HTTP fetcher).
 // The reporter is driven with injected SpawnSyncFn factories (no real spawn).
