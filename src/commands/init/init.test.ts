@@ -11,7 +11,7 @@ type LogSpy = MockInstance<(...args: unknown[]) => void>;
 /**
  * Sandbox the env for `cmdInit` tests by pointing HOME at a fresh temp dir and
  * resetting the module cache so `./init.ts` re-reads `REPO_HOME` from the
- * mutated HOME. The pattern mirrors `src/links.test.ts` and the dynamic-import
+ * mutated HOME. The pattern mirrors `src/sync/links.test.ts` and the dynamic-import
  * convention shared by every command-level test in this repo.
  */
 function makeInitEnv(): { testHome: string; logSpy: LogSpy } {

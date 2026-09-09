@@ -15,7 +15,7 @@ import { errOutput, makePushEnv, teardownPushEnv, type PushEnv } from './test-he
 import { stubPlatform } from '../../test-helpers.platform.ts';
 
 import type * as childProcessModule from 'node:child_process';
-import type * as linksMirrorModule from '../../links.mirror.ts';
+import type * as linksMirrorModule from '../../sync/links.mirror.ts';
 import type * as pushChecksModule from './checks.ts';
 import type * as pushAllowlistModule from './allowlist.ts';
 import type * as pushGlobalConfigModule from './global-config.ts';
@@ -215,11 +215,11 @@ describe('cmdPush: extras pipeline integration', () => {
     vi.doMock('./gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: remapPushMock,
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: remapExtrasPushMock,
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -261,11 +261,11 @@ describe('cmdPush: extras pipeline integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: remapExtrasPushMock,
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -296,7 +296,7 @@ describe('cmdPush: extras pipeline integration', () => {
 /**
  * Minimal pipeline mock for a cmdPush that proceeds past the safety guards.
  * Sets up push-checks (probeGitleaks, rebaseBeforePush, findGitlinks),
- * remap.ts, extras-sync.ts, and utils.ts with a non-empty status so the
+ * remap.ts, sync/extras/extras.ts, and utils.ts with a non-empty status so the
  * allow-list step runs.
  */
 function mockPipelineBase(
@@ -318,11 +318,11 @@ function mockPipelineBase(
       findGitlinks: vi.fn(() => []),
     };
   });
-  vi.doMock('../../remap.ts', () => ({
+  vi.doMock('../../sync/remap.ts', () => ({
     remapPull: vi.fn(),
     remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
   }));
-  vi.doMock('../../extras-sync.ts', () => ({
+  vi.doMock('../../sync/extras/extras.ts', () => ({
     remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
     remapExtrasPull: vi.fn(),
     divergenceCheckExtras: vi.fn(),
@@ -440,11 +440,11 @@ describe('cmdPush: status-based allow-list guard (L240/L260)', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -505,11 +505,11 @@ describe('cmdPush: dry-run no-map die path (L253)', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -559,8 +559,8 @@ describe('cmdPush: NomadFatal catch boundary (L266)', () => {
         }),
       };
     });
-    vi.doMock('../../remap.ts', () => ({ remapPull: vi.fn(), remapPush: vi.fn() }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({ remapPull: vi.fn(), remapPush: vi.fn() }));
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -603,7 +603,7 @@ describe('cmdPush: skills pipeline integration', () => {
     mkdirSync(sharedSkills, { recursive: true });
 
     const syncSkillsPushMock = vi.fn();
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
       syncSkillsPush: syncSkillsPushMock,
     }));
@@ -616,11 +616,11 @@ describe('cmdPush: skills pipeline integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -641,7 +641,7 @@ describe('cmdPush: skills pipeline integration', () => {
     // dryRun forwards false to syncSkillsPush via the `if (!dryRun)` guard,
     // so no files are written to shared/skills on a dry-run.
     const syncSkillsPushMock = vi.fn();
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
       syncSkillsPush: syncSkillsPushMock,
     }));
@@ -654,11 +654,11 @@ describe('cmdPush: skills pipeline integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -686,7 +686,7 @@ describe('cmdPush: skills pipeline integration', () => {
     const syncSkillsPushMock = vi.fn(() => {
       callOrder.push('syncSkillsPush');
     });
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
       syncSkillsPush: syncSkillsPushMock,
     }));
@@ -702,11 +702,11 @@ describe('cmdPush: skills pipeline integration', () => {
         }),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => {
         callOrder.push('remapExtrasPush');
         return { unmapped: 0, skipped: 0, pushed: [], wouldPush: [] };
@@ -745,11 +745,11 @@ describe('cmdPush: skills pipeline integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -807,16 +807,16 @@ describe('cmdPush: shared-links push mirror integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(),
     }));
@@ -855,16 +855,16 @@ describe('cmdPush: shared-links push mirror integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(),
     }));
@@ -912,16 +912,16 @@ describe('cmdPush: shared-links push mirror integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(),
     }));
@@ -942,7 +942,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
   it('dry-run push: syncSharedLinksPush is NOT called (zero-mutation contract)', async () => {
     const syncSharedLinksPushMock = vi.fn();
     stubPlatform('win32');
-    vi.doMock('../../links.mirror.ts', async (importOriginal) => {
+    vi.doMock('../../sync/links.mirror.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return { ...actual, syncSharedLinksPush: syncSharedLinksPushMock };
     });
@@ -955,16 +955,16 @@ describe('cmdPush: shared-links push mirror integration', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(),
     }));
@@ -986,7 +986,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
   it('WET push: syncSharedLinksPush is called after syncSkillsPush and before the gitlink walk (call order)', async () => {
     const callOrder: string[] = [];
     stubPlatform('win32');
-    vi.doMock('../../links.mirror.ts', async (importOriginal) => {
+    vi.doMock('../../sync/links.mirror.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return {
         ...actual,
@@ -1007,11 +1007,11 @@ describe('cmdPush: shared-links push mirror integration', () => {
         }),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => {
         callOrder.push('remapExtrasPush');
         return { unmapped: 0, skipped: 0, pushed: [], wouldPush: [] };
@@ -1019,7 +1019,7 @@ describe('cmdPush: shared-links push mirror integration', () => {
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
       syncSkillsPush: vi.fn(() => {
         callOrder.push('syncSkillsPush');
@@ -1058,16 +1058,16 @@ describe('cmdPush: shared-links push mirror integration', () => {
           findGitlinks: vi.fn(() => []),
         };
       });
-      vi.doMock('../../remap.ts', () => ({
+      vi.doMock('../../sync/remap.ts', () => ({
         remapPull: vi.fn(),
         remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
       }));
-      vi.doMock('../../extras-sync.ts', () => ({
+      vi.doMock('../../sync/extras/extras.ts', () => ({
         remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
         remapExtrasPull: vi.fn(),
         divergenceCheckExtras: vi.fn(),
       }));
-      vi.doMock('../../skills-sync.ts', () => ({
+      vi.doMock('../../sync/skills-sync.ts', () => ({
         syncSkillsPull: vi.fn(),
         syncSkillsPush: vi.fn(),
       }));
@@ -1125,11 +1125,11 @@ describe('cmdPush: gsd-dropped paths are unstaged before commit (issue #294)', (
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -1208,11 +1208,11 @@ describe('cmdPush: gsd-dropped paths are unstaged before commit (issue #294)', (
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -1471,16 +1471,16 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -1524,7 +1524,7 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
   afterEach(() => {
     teardownPushEnv(env);
     vi.doUnmock('./leak-verdict.ts');
-    vi.doUnmock('../../skills-sync.ts');
+    vi.doUnmock('../../sync/skills-sync.ts');
     vi.doUnmock('./global-config.ts');
   });
 
@@ -1641,7 +1641,7 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
 
     // Import regenerateSettings (the pull-side fn) and run it.
     vi.resetModules();
-    const { regenerateSettings } = await import('../../links.ts');
+    const { regenerateSettings } = await import('../../sync/links.ts');
     regenerateSettings('test-ts');
 
     // The base file must be byte-for-byte unchanged.
@@ -1722,16 +1722,16 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -1773,16 +1773,16 @@ describe('stripGsdHooksFromBase (push write-path base strip)', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -1831,7 +1831,7 @@ describe('cmdPush: manifest write-on-success', () => {
     teardownPushEnv(env);
     vi.doUnmock('./manifest.ts');
     vi.doUnmock('./leak-verdict.ts');
-    vi.doUnmock('../../skills-sync.ts');
+    vi.doUnmock('../../sync/skills-sync.ts');
     vi.doUnmock('./global-config.ts');
     vi.doUnmock('node:child_process');
     vi.doUnmock('./preview.ts');
@@ -1867,16 +1867,16 @@ describe('cmdPush: manifest write-on-success', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -1981,11 +1981,11 @@ describe('cmdPush: manifest write-on-success', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
@@ -2040,7 +2040,7 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
     teardownPushEnv(env);
     vi.doUnmock('./manifest.ts');
     vi.doUnmock('./leak-verdict.ts');
-    vi.doUnmock('../../skills-sync.ts');
+    vi.doUnmock('../../sync/skills-sync.ts');
     vi.doUnmock('./global-config.ts');
     vi.doUnmock('node:child_process');
   });
@@ -2109,7 +2109,7 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
     });
     let capturedChangedPaths = new Set<string>();
     let capturedSelection: { changed: Set<string>; deleted: string[] } | undefined;
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(
         (
@@ -2122,12 +2122,12 @@ describe('cmdPush: cold start and full-rescan triggers', () => {
         },
       ),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -2307,9 +2307,9 @@ describe('cmdPush: dry-run absent path-map', () => {
     teardownPushEnv(env);
     vi.doUnmock('./manifest.ts');
     vi.doUnmock('./checks.ts');
-    vi.doUnmock('../../remap.ts');
-    vi.doUnmock('../../extras-sync.ts');
-    vi.doUnmock('../../skills-sync.ts');
+    vi.doUnmock('../../sync/remap.ts');
+    vi.doUnmock('../../sync/extras/extras.ts');
+    vi.doUnmock('../../sync/skills-sync.ts');
     vi.doUnmock('./global-config.ts');
     vi.doUnmock('node:child_process');
     vi.doUnmock('../../utils.ts');
@@ -2341,16 +2341,16 @@ describe('cmdPush: dry-run absent path-map', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -2397,7 +2397,7 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
     teardownPushEnv(env);
     vi.doUnmock('./manifest.ts');
     vi.doUnmock('./leak-verdict.ts');
-    vi.doUnmock('../../skills-sync.ts');
+    vi.doUnmock('../../sync/skills-sync.ts');
     vi.doUnmock('./global-config.ts');
     vi.doUnmock('node:child_process');
   });
@@ -2439,16 +2439,16 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -2504,16 +2504,16 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -2576,16 +2576,16 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));
@@ -2645,16 +2645,16 @@ describe('runPushCore: return-tag contract and lock-free behavior', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../../extras-sync.ts', () => ({
+    vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../../skills-sync.ts', () => ({
+    vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       copySkillsPull: vi.fn(),
     }));

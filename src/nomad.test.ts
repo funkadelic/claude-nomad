@@ -40,7 +40,7 @@ describe('nomad.ts push dispatcher', () => {
     vi.doUnmock('./commands/drop-session/drop-session.ts');
     vi.doUnmock('./commands/diff.ts');
     vi.doUnmock('./commands/init/init.ts');
-    vi.doUnmock('./resume.ts');
+    vi.doUnmock('./sync/resume.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     process.argv = originalArgv;
@@ -116,7 +116,7 @@ describe('nomad.ts push dispatcher', () => {
     }));
     vi.doMock('./commands/init/init.ts', () => ({ cmdInit: cmdInitMock }));
     vi.doMock('./commands/diff.ts', () => ({ cmdDiff: cmdDiffMock }));
-    vi.doMock('./resume.ts', () => ({ resumeCmd: resumeCmdMock }));
+    vi.doMock('./sync/resume.ts', () => ({ resumeCmd: resumeCmdMock }));
     process.argv = ['node', 'nomad.ts'];
     const rejected = import('./nomad.ts');
     // Assert the crash-boundary contract: the rejection is the ProcessExit

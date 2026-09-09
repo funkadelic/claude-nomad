@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { SHARED_BASELINE_KIND } from '../links.baseline.ts';
+import { SHARED_BASELINE_KIND } from '../sync/links.baseline.ts';
 
 /**
  * Write a per-host shared-links baseline manifest into a fixture HOME, at the

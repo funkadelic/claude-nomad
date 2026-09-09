@@ -668,7 +668,7 @@ describe('enforceAllowList on a win32 stub: forward-slash porcelain paths unchan
 // win32 path audit: prove the path-map trust-boundary
 // guards (assertSafeLocalRoot / assertSafeLogical) accept a Windows-shaped
 // absolute path-map value on either separator style, and still reject a
-// Windows-shaped traversal value. `extras-sync.guards.ts` imports
+// Windows-shaped traversal value. `sync/extras/guards.ts` imports
 // isAbsolute/normalize/sep from the bare 'node:path' module, which resolves
 // to posix semantics on this (non-Windows) test host regardless of a
 // process.platform stub -- node:path's default export is fixed at Node's own
@@ -696,33 +696,33 @@ describe('assertSafeLocalRoot / assertSafeLogical: win32-shaped path-map values'
 
   it('accepts a backslash-form Windows absolute path-map value (C:\\Users\\name\\project)', async () => {
     mockWin32PathSemantics();
-    const { assertSafeLocalRoot } = await import('../../extras-sync.guards.ts');
+    const { assertSafeLocalRoot } = await import('../../sync/extras/guards.ts');
     expect(() => assertSafeLocalRoot('C:\\Users\\name\\project', 'myproj')).not.toThrow();
   });
 
   it('accepts a forward-slash-form Windows absolute path-map value (C:/Users/name/project)', async () => {
     mockWin32PathSemantics();
-    const { assertSafeLocalRoot } = await import('../../extras-sync.guards.ts');
+    const { assertSafeLocalRoot } = await import('../../sync/extras/guards.ts');
     expect(() => assertSafeLocalRoot('C:/Users/name/project', 'myproj')).not.toThrow();
   });
 
   it('rejects a Windows-shaped traversal path-map value (backslash form)', async () => {
     mockWin32PathSemantics();
-    const { assertSafeLocalRoot } = await import('../../extras-sync.guards.ts');
+    const { assertSafeLocalRoot } = await import('../../sync/extras/guards.ts');
     const { NomadFatal } = await import('../../utils.ts');
     expect(() => assertSafeLocalRoot('C:\\Users\\..\\..\\x', 'myproj')).toThrow(NomadFatal);
   });
 
   it('rejects a Windows-shaped traversal path-map value (forward-slash form)', async () => {
     mockWin32PathSemantics();
-    const { assertSafeLocalRoot } = await import('../../extras-sync.guards.ts');
+    const { assertSafeLocalRoot } = await import('../../sync/extras/guards.ts');
     const { NomadFatal } = await import('../../utils.ts');
     expect(() => assertSafeLocalRoot('C:/Users/../../x', 'myproj')).toThrow(NomadFatal);
   });
 
   it('assertSafeLogical is unaffected by the win32 path swap: still rejects a backslash-bearing key', async () => {
     mockWin32PathSemantics();
-    const { assertSafeLogical } = await import('../../extras-sync.guards.ts');
+    const { assertSafeLogical } = await import('../../sync/extras/guards.ts');
     const { NomadFatal } = await import('../../utils.ts');
     expect(() => assertSafeLogical('foo\\bar')).toThrow(NomadFatal);
   });

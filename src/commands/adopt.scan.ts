@@ -92,7 +92,7 @@ function walk(root: string): DeniedEntry[] {
  * `readdirSync` on a file throws `ENOTDIR`, so both the absent and the
  * file-root cases are answered the same clean way rather than by letting
  * that throw escape. The root's own basename is never tested, matching
- * {@link copyExtrasFiltered}'s root-keep rule in `extras-sync.core.ts`. The
+ * {@link copyExtrasFiltered}'s root-keep rule in `sync/extras/core.ts`. The
  * root is probed with `lstatSync` rather than `existsSync`, so a symlinked
  * root (already refused upstream by the precondition matrix) is answered as
  * not-a-directory here too rather than followed.

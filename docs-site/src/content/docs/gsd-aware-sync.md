@@ -42,7 +42,7 @@ The practical effect: a live working tree of unpushed plans survives a pull from
 `.planning/` file that only the other host has pushed is added to your tree. Files you have edited
 locally or have not yet pushed stay untouched.
 
-This behavior is implemented in `src/extras-sync.ts`. It applies to any project that lists
+This behavior is implemented in `src/sync/extras/extras.ts`. It applies to any project that lists
 `.planning` in its `extras` array; it is not conditional on GSD being installed.
 
 ## gsd-owned hooks and agents are not synced
@@ -55,8 +55,8 @@ This behavior is implemented in `src/extras-sync.ts`. It applies to any project 
   `@opengsd/gsd-core` install.
 - The sync repo does not accumulate gsd-generated hook and agent churn.
 
-This is implemented via the `SHARED_LINKS` constant in `src/config.ts`, applied by `src/links.ts`
-(with the win32 mirror in `src/links.mirror.ts`). The names `hooks` and
+This is implemented via the `SHARED_LINKS` constant in `src/config.ts`, applied by `src/sync/links.ts`
+(with the win32 mirror in `src/sync/links.mirror.ts`). The names `hooks` and
 `agents` are also reserved in the `sharedDirs` validation logic, so you cannot accidentally
 re-add them through the opt-in path.
 
@@ -87,13 +87,13 @@ Nomad treats a hook entry as gsd-owned when its command runs a script whose base
   comparing, so GSD's per-session hook self-heal never shows up as a phantom `hooks` removal. What
   the preview shows is what a real pull would actually write.
 
-This is implemented in `src/hooks-filter.ts` (the `isGsdHookEntry` detector and the
+This is implemented in `src/sync/hooks-filter.ts` (the `isGsdHookEntry` detector and the
 `stripGsdHookEntries` walker), wired into the pull-side settings write, the diff and dry-run
 preview, the drift comparison, and the push-time base self-clean.
 
 ## gsd-prefixed skills are excluded
 
-`skills/` is copy-synced (not symlinked) via `src/skills-sync.ts`. The ownership predicate is the
+`skills/` is copy-synced (not symlinked) via `src/sync/skills-sync.ts`. The ownership predicate is the
 `gsd-` name prefix: any skill whose directory name starts with `gsd-` is treated as gsd-owned and
 excluded from both push and pull.
 

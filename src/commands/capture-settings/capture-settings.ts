@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../config.ts';
 import { buildCaptureSubset } from './core.ts';
-import { regenerateSettings } from '../../links.ts';
+import { regenerateSettings } from '../../sync/links.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../utils.fs.ts';
 import { deepMerge, readJson } from '../../utils.json.ts';
 import { acquireLock, releaseLock } from '../../utils.lockfile.ts';

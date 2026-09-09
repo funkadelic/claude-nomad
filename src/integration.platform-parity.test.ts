@@ -360,7 +360,7 @@ describe.skipIf(!hasGit)('parity: shared config materializes and reads back', ()
   it('makes every shared name readable under ~/.claude after applySharedLinks', async () => {
     const seeded = SHARED_LINKS.map((name) => seedShared(sandbox.sharedDir, name));
 
-    const { applySharedLinks } = await import('./links.ts');
+    const { applySharedLinks } = await import('./sync/links.ts');
     applySharedLinks('20260730-000000', { projects: {} });
 
     for (const { probe, content } of seeded) {
@@ -374,7 +374,7 @@ describe.skipIf(!hasGit)('parity: shared config materializes and reads back', ()
   it('reports no FAIL for the shared links a clean apply just materialized', async () => {
     for (const name of SHARED_LINKS) seedShared(sandbox.sharedDir, name);
 
-    const { applySharedLinks } = await import('./links.ts');
+    const { applySharedLinks } = await import('./sync/links.ts');
     applySharedLinks('20260730-000001', { projects: {} });
 
     // "Healthy" is inverted between the modalities: a real non-symlink entry is
@@ -491,7 +491,7 @@ describe.skipIf(!hasGit)(
       seedShared(sandbox.sharedDir, 'CLAUDE.md');
       writeFileSync(join(sandbox.claudeHome, 'CLAUDE.md'), '# host edit, not yet pushed\n');
 
-      const { stageLocalSharedEdits } = await import('./links.mirror.ts');
+      const { stageLocalSharedEdits } = await import('./sync/links.mirror.ts');
       const before = snapshotFiles(sandbox.sharedDir);
 
       const dryEvents: { name: string }[] = [];

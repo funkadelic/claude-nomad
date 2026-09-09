@@ -36,7 +36,7 @@ import { emitClean, scanAndReport } from './shared.scan.ts';
 import { reportCommittedSkills } from './shared.skills.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome, type PathMap } from '../../../config.ts';
-import { copyDirJsonlOnly } from '../../../remap.ts';
+import { copyDirJsonlOnly } from '../../../sync/remap.ts';
 import { nowTimestamp } from '../../../utils.fs.ts';
 import { encodePath, readJson } from '../../../utils.json.ts';
 

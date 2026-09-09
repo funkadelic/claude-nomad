@@ -11,7 +11,7 @@ import type * as leakVerdictModule from './push/leak-verdict.ts';
 import type * as recoveryModule from './push/recovery/recovery.ts';
 import type * as previewModule from '../render/preview.ts';
 import type * as wedgeModule from './pull/wedge.ts';
-import type * as extrasSyncModule from '../extras-sync.ts';
+import type * as extrasSyncModule from '../sync/extras/extras.ts';
 import type * as lockfileModule from '../utils.lockfile.ts';
 import type * as utilsModule from '../utils.ts';
 
@@ -80,9 +80,9 @@ function teardownSyncEnv(env: SyncEnv): void {
   vi.doUnmock('../render/preview.ts');
   vi.doUnmock('../utils.lockfile.ts');
   vi.doUnmock('./push/checks.ts');
-  vi.doUnmock('../remap.ts');
-  vi.doUnmock('../extras-sync.ts');
-  vi.doUnmock('../skills-sync.ts');
+  vi.doUnmock('../sync/remap.ts');
+  vi.doUnmock('../sync/extras/extras.ts');
+  vi.doUnmock('../sync/skills-sync.ts');
   vi.doUnmock('../utils.ts');
   vi.doUnmock('./push/global-config.ts');
   vi.doUnmock('./push/leak-verdict.ts');
@@ -883,7 +883,7 @@ function mockDrySeams(
       }),
     };
   });
-  vi.doMock('../extras-sync.ts', async (importOriginal) => {
+  vi.doMock('../sync/extras/extras.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof extrasSyncModule>();
     return { ...actual, divergenceCheckExtras: divergenceSpy };
   });
@@ -1058,16 +1058,16 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
         findGitlinks: vi.fn(() => []),
       };
     });
-    vi.doMock('../remap.ts', () => ({
+    vi.doMock('../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0, pushed: [], wouldPush: [] })),
     }));
-    vi.doMock('../extras-sync.ts', () => ({
+    vi.doMock('../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
       divergenceCheckExtras: vi.fn(),
     }));
-    vi.doMock('../skills-sync.ts', () => ({
+    vi.doMock('../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),
       syncSkillsPull: vi.fn(),
     }));

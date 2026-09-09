@@ -33,7 +33,7 @@ describe('cmdDropSession (validation, idempotency, lock)', () => {
   it('rejects invalid session ids at function entry with `✗ invalid session id`', async () => {
     // Defense-in-depth: nomad.ts already validates argv, but cmdDropSession
     // also rejects ids that contain `/`, `..`, empty string, or other
-    // non-allowlist chars. Mirrors src/resume.ts.
+    // non-allowlist chars. Mirrors src/sync/resume.ts.
     const { cmdDropSession } = await import('./drop-session.ts');
 
     expect(() => cmdDropSession('../etc/passwd')).toThrow('exit:1');

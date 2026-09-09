@@ -81,7 +81,7 @@ Exit codes:
 What it does NOT do: touch the local `~/.claude/projects/<encoded>/<id>.jsonl` file or the local
 `<id>/` subagent tree. The local copies are preserved for `claude --resume`, grep recovery, or
 whatever the user wants. If the underlying secret is real, scrubbing or removing the local files
-is REQUIRED for durability, not optional housekeeping: `remapPush` (in `src/remap.ts`)
+is REQUIRED for durability, not optional housekeeping: `remapPush` (in `src/sync/remap.ts`)
 re-mirrors the local content into the staged tree on the next push, so a drop without a local
 scrub re-stages the same secret.
 
@@ -177,7 +177,7 @@ Two branches from here:
 1. **Real secret.** Rotate the credential at its provider first (revoke in dashboard, issue
    replacement) before touching anything else. Running `nomad drop-session <sid-aaaa>` clears the
    contaminated copy from the current staged tree, but that alone is NOT durable: `remapPush` (in
-   `src/remap.ts`) does a full rm-and-copy mirror of your LOCAL transcripts into
+   `src/sync/remap.ts`) does a full rm-and-copy mirror of your LOCAL transcripts into
    `shared/projects/` on every push, so the next `nomad push` re-copies the un-scrubbed local
    file forward and re-stages the same secret. The durable fix is to rotate AND scrub the local
    transcript. The easiest way is `nomad redact <sid-aaaa>` (see above), which rewrites the secret

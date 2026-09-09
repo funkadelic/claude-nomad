@@ -231,7 +231,7 @@ export function isDeniedName(blockSet: Set<string>, name: string): boolean {
  * `isDeniedName` hardened *membership* in a deny set on the case and
  * trailing-character axes; this closes the same two axes for the sibling
  * *selection* comparisons in `blockSetFor` below and in
- * `extras-sync.core.ts` that choose WHICH deny set (`CLAUDE_EXTRA_NEVER_SYNC`
+ * `sync/extras/core.ts` that choose WHICH deny set (`CLAUDE_EXTRA_NEVER_SYNC`
  * vs `ALWAYS_NEVER_SYNC`) applies to a `.claude` extra's contents. Without
  * this, a spelling like `.Claude` (same directory as `.claude` on
  * case-insensitive filesystems) or `.claude.` silently downgrades to the
@@ -306,7 +306,7 @@ function isExtrasScoped(segments: string[]): boolean {
  * listed here anyway, so this predicate reads correctly on its own rather
  * than only because that branch happens to run first.
  *
- * `projects` holds session transcripts. `copyDirJsonlOnly` (`src/remap.ts`)
+ * `projects` holds session transcripts. `copyDirJsonlOnly` (`src/sync/remap.ts`)
  * restricts to `*.jsonl` at depth zero only, then copies every subdirectory
  * underneath that recursively with no further filtering (its own docstring
  * says so), so this push gate is the ONLY deny-set boundary a
@@ -389,7 +389,7 @@ function isSharedNameScoped(segments: string[]): boolean {
  * `.claude` extra: its subtree mirrors `~/.claude/` semantics, so its
  * ephemeral segment names (`projects`, `shell-snapshots`, `sessions`,
  * `todos`, ...) get the full `NEVER_SYNC` boundary. Mirrors `extrasDenySet`
- * in `extras-sync.core.ts` so the push gate and the copy filter agree on the
+ * in `sync/extras/core.ts` so the push gate and the copy filter agree on the
  * boundary. The `.claude` comparison runs through `isClaudeExtraName`
  * (case-insensitive, trailing dot/whitespace normalized) rather than a raw
  * `===`, so a spelling like `.Claude` or `.claude.` cannot silently downgrade

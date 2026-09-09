@@ -8,9 +8,9 @@ import {
   buildSettingsSection,
 } from '../push/sections.ts';
 import { backupBase, HOST, repoHome, type PathMap } from '../../config.ts';
-import { divergenceCheckExtras, remapExtrasPull } from '../../extras-sync.ts';
-import { applySharedLinks, regenerateSettings } from '../../links.ts';
-import { writeSharedBaseline } from '../../links.baseline.ts';
+import { divergenceCheckExtras, remapExtrasPull } from '../../sync/extras/extras.ts';
+import { applySharedLinks, regenerateSettings } from '../../sync/links.ts';
+import { writeSharedBaseline } from '../../sync/links.baseline.ts';
 import {
   buildMirrorSection,
   describeSkippedMirrorDiscard,
@@ -20,10 +20,10 @@ import {
   reconcileSharedLinksBeforePull,
 } from './win32.ts';
 import { pullWithCollisionRunbook } from './collision.ts';
-import { syncSkillsPull } from '../../skills-sync.ts';
+import { syncSkillsPull } from '../../sync/skills-sync.ts';
 import { renderTree, section, addItem, type DoctorSection } from '../../render/output-tree.ts';
 import { computePreview } from '../../render/preview.ts';
-import { remapPull, scanLocalOnly } from '../../remap.ts';
+import { remapPull, scanLocalOnly } from '../../sync/remap.ts';
 import { withSpinner } from '../../render/spinner.ts';
 import { summaryRow } from '../../render/summary.ts';
 import {

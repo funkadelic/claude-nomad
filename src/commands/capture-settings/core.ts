@@ -10,7 +10,7 @@
  * - `CAPTURE_EXCLUDED_KEYS`: sensitive keys never eligible for capture.
  */
 
-import { stripGsdHookEntries } from '../../hooks-filter.ts';
+import { stripGsdHookEntries } from '../../sync/hooks-filter.ts';
 
 // ---------------------------------------------------------------------------
 // Deep-equality helpers (dep-free). This module owns the single drift

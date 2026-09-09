@@ -101,7 +101,7 @@ unsynced `hooks/` and `agents/` are all part of nomad's GSD-aware handling. See
 Pointers and specifics:
 
 - **Synced (symlinked)** link names live in `SHARED_LINKS` (and the optional `sharedDirs` field in
-  `path-map.json`); the **skills filtered copy** is driven by `src/skills-sync.ts`
+  `path-map.json`); the **skills filtered copy** is driven by `src/sync/skills-sync.ts`
   (`syncSkillsPull`/`syncSkillsPush`); **whitelisted extras** names in `SUPPORTED_EXTRAS`
   (currently `.planning`, `CLAUDE.md`, and `.claude`); and the full **never-synced** set in
   `NEVER_SYNC` (in `src/config.never-sync.ts`; the other three are in `src/config.ts`).

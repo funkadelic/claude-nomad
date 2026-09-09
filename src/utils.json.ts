@@ -45,7 +45,7 @@ export function readPathMap(mapPath: string): PathMap {
  * `readPathMap`, so the error vocabulary is uniform across the CLI.
  *
  * The optional `extras`/`sharedDirs` fields are not checked here; their
- * consumers (`extras-sync`, `allSharedLinks`) guard those independently.
+ * consumers (`sync/extras/`, `allSharedLinks`) guard those independently.
  *
  * @param raw The JSON-parsed candidate value.
  * @returns null when valid, else a `path-map.json invalid schema: ...` reason.

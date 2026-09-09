@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as gitProbeModule from '../../git-probe.ts';
-import type * as linksDeletionsModule from '../../links.deletions.ts';
-import type * as linksMirrorModule from '../../links.mirror.ts';
+import type * as linksDeletionsModule from '../../sync/links.deletions.ts';
+import type * as linksMirrorModule from '../../sync/links.mirror.ts';
 
 import { backupBase, SHARED_LINKS } from '../../config.ts';
 import { renderTree } from '../../render/output-tree.ts';
@@ -76,8 +76,8 @@ describe('reconcileSharedLinksBeforePull', () => {
     vi.restoreAllMocks();
     // vi.restoreAllMocks does NOT clear doMock registrations, and a leaked one
     // fails an unrelated test in a different file in the same worker.
-    vi.doUnmock('../../links.mirror.ts');
-    vi.doUnmock('../../links.deletions.ts');
+    vi.doUnmock('../../sync/links.mirror.ts');
+    vi.doUnmock('../../sync/links.deletions.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -112,7 +112,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     // outside this function's try/catch, and a bare `{ stageLocalSharedEdits }`
     // factory leaves that export undefined, only silently inert here because
     // these fixtures are not git checkouts (gitProbe returns null first).
-    vi.doMock('../../links.mirror.ts', async (importOriginal) => {
+    vi.doMock('../../sync/links.mirror.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return { ...actual, stageLocalSharedEdits: mirror };
     });
@@ -120,7 +120,7 @@ describe('reconcileSharedLinksBeforePull', () => {
     // other half of this module and is reachable from the plan-only entry
     // point, so a bare `{ applySharedLinkDeletions }` factory would leave it
     // undefined and fail on a real Windows runner rather than off it.
-    vi.doMock('../../links.deletions.ts', async (importOriginal) => {
+    vi.doMock('../../sync/links.deletions.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksDeletionsModule>();
       return { ...actual, applySharedLinkDeletions: deletions };
     });
@@ -329,7 +329,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     vi.restoreAllMocks();
     // vi.restoreAllMocks does NOT clear a vi.doMock registration, and a leaked
     // one fails an unrelated test in a different file in the same worker.
-    vi.doUnmock('../../links.deletions.ts');
+    vi.doUnmock('../../sync/links.deletions.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -366,7 +366,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     // The deletion applier's real path needs a trusted baseline, which is out
     // of scope for this end-to-end capture test; give the spy a return value
     // instead of replacing the factory, so the real planner stays reachable.
-    vi.doMock('../../links.deletions.ts', async (importOriginal) => {
+    vi.doMock('../../sync/links.deletions.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksDeletionsModule>();
       return {
         ...actual,
@@ -404,7 +404,7 @@ describe('reconcileSharedLinksBeforePull -> buildMirrorSection (end-to-end)', ()
     writeFileSync(localClaudeMd, '# host edit\n');
 
     stubPlatform('win32');
-    const { stageLocalSharedEdits } = await import('../../links.mirror.ts');
+    const { stageLocalSharedEdits } = await import('../../sync/links.mirror.ts');
     const events: { name: string }[] = [];
     stageLocalSharedEdits({ projects: {} }, TS, {
       dryRun: true,
@@ -517,7 +517,7 @@ describe('describeSkippedMirrorDiscard', () => {
     // See the top describe block's afterEach: vi.restoreAllMocks does NOT
     // clear a vi.doMock registration, and a leaked one fails an unrelated
     // test in a different file in the same worker.
-    vi.doUnmock('../../links.mirror.ts');
+    vi.doUnmock('../../sync/links.mirror.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -616,7 +616,7 @@ describe('describeSkippedMirrorDiscard', () => {
   });
 
   it('returns null rather than throwing when the underlying mirror computation fails', async () => {
-    vi.doMock('../../links.mirror.ts', async (importOriginal) => {
+    vi.doMock('../../sync/links.mirror.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return {
         ...actual,

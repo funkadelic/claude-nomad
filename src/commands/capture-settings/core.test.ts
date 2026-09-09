@@ -9,7 +9,7 @@ import {
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from './core.ts';
-import { stripGsdHookEntries } from '../../hooks-filter.ts';
+import { stripGsdHookEntries } from '../../sync/hooks-filter.ts';
 import { deepMerge } from '../../utils.json.ts';
 
 /**

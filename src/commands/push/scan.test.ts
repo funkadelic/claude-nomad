@@ -137,7 +137,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof spinnerModule>();
       return { ...actual, withSpinner: withSpinnerSpy };
     });
-    vi.doMock('../../remap.ts', () => ({
+    vi.doMock('../../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: remapPushMock,
     }));
@@ -214,7 +214,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof pushPreviewModule>();
       return { ...actual, previewPushLeaks: previewPushLeaksMock };
     });
-    vi.doMock('../../remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
+    vi.doMock('../../sync/remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
     vi.doMock('../../utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
@@ -267,7 +267,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof pushPreviewModule>();
       return { ...actual, previewPushLeaks: previewPushLeaksMock };
     });
-    vi.doMock('../../remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
+    vi.doMock('../../sync/remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
     vi.doMock('../../utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       // Empty status: the clean-repo headline case. The dry-run preview MUST
@@ -317,7 +317,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof pushPreviewModule>();
       return { ...actual, previewPushLeaks: previewPushLeaksMock };
     });
-    vi.doMock('../../remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
+    vi.doMock('../../sync/remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
     vi.doMock('../../utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };
@@ -365,7 +365,7 @@ describe('cmdPush Phase 3 push-boundary safety', () => {
       const actual = await importOriginal<typeof pushPreviewModule>();
       return { ...actual, previewPushLeaks: previewPushLeaksMock };
     });
-    vi.doMock('../../remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
+    vi.doMock('../../sync/remap.ts', () => ({ remapPull: vi.fn(), remapPush: remapPushMock }));
     vi.doMock('../../utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return { ...actual, gitStatusPorcelainZ: vi.fn(() => '') };

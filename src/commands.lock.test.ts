@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as childProcessModule from 'node:child_process';
-import type * as linksMirrorModule from './links.mirror.ts';
+import type * as linksMirrorModule from './sync/links.mirror.ts';
 import type * as utilsModule from './utils.ts';
 import type * as lockfileModule from './utils.lockfile.ts';
 
@@ -57,12 +57,12 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doUnmock('node:child_process');
     vi.doUnmock('./utils.ts');
     vi.doUnmock('./utils.lockfile.ts');
-    vi.doUnmock('./links.ts');
-    vi.doUnmock('./links.mirror.ts');
+    vi.doUnmock('./sync/links.ts');
+    vi.doUnmock('./sync/links.mirror.ts');
     vi.doUnmock('./commands/push/checks.ts');
     vi.doUnmock('./commands/push/gitleaks.ts');
-    vi.doUnmock('./remap.ts');
-    vi.doUnmock('./extras-sync.ts');
+    vi.doUnmock('./sync/remap.ts');
+    vi.doUnmock('./sync/extras/extras.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -118,7 +118,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    vi.doMock('./links.ts', () => ({
+    vi.doMock('./sync/links.ts', () => ({
       applySharedLinks: vi.fn(() => {
         throw new TypeError('synthetic non-NomadFatal');
       }),
@@ -132,7 +132,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // run dies on the missing export before it ever reaches the synthetic
     // TypeError this test is about. Off win32 the reconcile returns first,
     // which is the only reason the omission was invisible on posix.
-    vi.doMock('./links.mirror.ts', async (importOriginal) => {
+    vi.doMock('./sync/links.mirror.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return { ...actual, stageLocalSharedEdits: vi.fn() };
     });
@@ -173,7 +173,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doMock('./commands/push/gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
-    vi.doMock('./remap.ts', () => ({
+    vi.doMock('./sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(),
     }));
@@ -205,7 +205,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     vi.doMock('./commands/push/gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
-    vi.doMock('./remap.ts', () => ({
+    vi.doMock('./sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
     }));

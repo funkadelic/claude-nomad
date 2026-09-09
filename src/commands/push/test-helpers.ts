@@ -7,8 +7,8 @@ import { vi, type MockInstance } from 'vitest';
 // Shared harness for the cmdPush pipeline suites (boundary gates, summary
 // terminators, lock-contention skip, extras integration). Each test loads
 // cmdPush dynamically AFTER vi.resetModules() + per-test vi.doMock of the
-// pipeline dependencies (commands/push/checks.ts, commands/push/gitleaks.ts, ./remap.ts,
-// ./extras-sync.ts, ./utils.ts, node:child_process) so the NomadFatal class
+// pipeline dependencies (commands/push/checks.ts, commands/push/gitleaks.ts, sync/remap.ts,
+// sync/extras/extras.ts, utils.ts, node:child_process) so the NomadFatal class
 // thrown from a mock factory shares identity with the copy cmdPush catches.
 // The sandbox is a temp HOME with a `claude-nomad/` repo dir, a `shared/`
 // subtree, a `.claude/` host root, and a default `path-map.json`.
@@ -96,11 +96,11 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('./preview.ts');
   vi.doUnmock('./manifest.ts');
   vi.doUnmock('./global-config.ts');
-  vi.doUnmock('../../remap.ts');
-  vi.doUnmock('../../extras-sync.ts');
-  vi.doUnmock('../../skills-sync.ts');
-  vi.doUnmock('../../links.ts');
-  vi.doUnmock('../../links.mirror.ts');
+  vi.doUnmock('../../sync/remap.ts');
+  vi.doUnmock('../../sync/extras/extras.ts');
+  vi.doUnmock('../../sync/skills-sync.ts');
+  vi.doUnmock('../../sync/links.ts');
+  vi.doUnmock('../../sync/links.mirror.ts');
   vi.doUnmock('../../utils.ts');
   vi.doUnmock('../../utils.lockfile.ts');
   vi.doUnmock('./allowlist.ts');
