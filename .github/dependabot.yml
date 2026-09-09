@@ -22,6 +22,14 @@ updates:
       stryker:
         patterns:
           - '@stryker-mutator/*'
+      # @vitest/coverage-v8 pins vitest with an EXACT peer dep
+      # (`peer vitest@"5.0.0"`), so a major split across two PRs leaves BOTH
+      # unable to `npm ci`. Same reason as stryker above, and likewise no
+      # update-types filter so majors group too.
+      vitest:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
@@ -44,9 +52,10 @@ updates:
 
   # npm (docs-site): the Starlight docs site is a standalone package with
   # its own lockfile, not an npm workspace of the root, so the `/` entry
-  # above does not see it. Same grouping and prefixes; prod deps (astro,
-  # @astrojs/starlight) stay patch-only so a 6 -> 7 major migration remains
-  # a deliberate manual PR.
+  # above does not see it. Same grouping and prefixes. Note the group
+  # filters below only decide how updates are BATCHED; they never gate
+  # which updates open a PR, so an update no group matches still arrives,
+  # just on its own.
   - package-ecosystem: npm
     directory: /docs-site
     schedule:
@@ -56,6 +65,18 @@ updates:
       timezone: Etc/UTC
     open-pull-requests-limit: 3
     groups:
+      # This set peer-locks itself across the prod/dev boundary:
+      # starlight-links-validator peers both @astrojs/starlight (">=0.42.0")
+      # and astro (">=7.2.10"), and starlight peers astro. Split into
+      # separate PRs they all fail `npm ci` on ERESOLVE and none can go
+      # green. Listed first so it wins the first-match, and carries no
+      # update-types filter so an astro major migration arrives as one
+      # coherent PR rather than a deadlocked pile.
+      astro:
+        patterns:
+          - 'astro'
+          - '@astrojs/*'
+          - 'starlight-*'
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
