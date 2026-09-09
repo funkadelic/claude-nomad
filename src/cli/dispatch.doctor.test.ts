@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseDoctorArgs } from './nomad.dispatch.doctor.ts';
+import { parseDoctorArgs } from './dispatch.doctor.ts';
 
 // Behavior-focused: assert on the parsed shape for every argv tail the `doctor`
 // dispatcher can receive. parseDoctorArgs is pure, so no mocking is needed.

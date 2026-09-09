@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseCaptureSettingsArgs } from './nomad.dispatch.capture-settings.ts';
+import { parseCaptureSettingsArgs } from './dispatch.capture-settings.ts';
 
 describe('parseCaptureSettingsArgs', () => {
   const base = ['node', 'nomad.ts', 'capture-settings'];

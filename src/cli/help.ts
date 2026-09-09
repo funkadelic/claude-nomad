@@ -6,7 +6,7 @@
  * into the README. Channel is stderr, exit code is 1.
  */
 
-import pkg from '../package.json' with { type: 'json' };
+import pkg from '../../package.json' with { type: 'json' };
 
 /**
  * Column (0-indexed) at which every command and flag description starts. Sized

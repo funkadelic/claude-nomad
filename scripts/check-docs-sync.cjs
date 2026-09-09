@@ -6,7 +6,7 @@
 // Enforces that a change to the authoritative CLI usage surface is accompanied
 // by a documentation update, so new flags/commands cannot ship undocumented.
 //
-// The canary is `src/nomad.help.ts` (the `DEFAULT_HELP` usage block): every new
+// The canary is `src/cli/help.ts` (the `DEFAULT_HELP` usage block): every new
 // flag or command edits it. When the canary changes, at least one documentation
 // surface (`README.md` or the docs-site command reference) must change too.
 //
@@ -25,7 +25,7 @@
 const { execFileSync } = require('node:child_process');
 
 /** The CLI usage surface whose change requires a docs update. */
-const CANARY_FILES = ['src/nomad.help.ts'];
+const CANARY_FILES = ['src/cli/help.ts'];
 
 /** Documentation surfaces that satisfy the gate when the canary changes. */
 const DOC_SURFACES = ['README.md', 'docs-site/src/content/docs/commands.md'];

@@ -1,4 +1,4 @@
-import { extractFlagValue, REJECT, type TokenResult } from './nomad.dispatch.helpers.ts';
+import { extractFlagValue, REJECT, type TokenResult } from './dispatch.helpers.ts';
 
 /** Parsed result from {@link parseInitArgs}. */
 export type InitArgs = {

@@ -40,7 +40,7 @@ npm run lint:md
 
 A separate CI check (`.github/workflows/docs-check.yml`, backed by
 `scripts/check-docs-sync.cjs`) enforces that CLI changes ship with documentation.
-The canary is `src/nomad.help.ts` (the authoritative `DEFAULT_HELP` usage block):
+The canary is `src/cli/help.ts` (the authoritative `DEFAULT_HELP` usage block):
 when a PR changes it, the check fails unless the PR also updates a docs surface
 (`README.md` or `docs-site/src/content/docs/commands.md`). New flags and commands
 edit the help block, so this catches the common case of adding a flag without
