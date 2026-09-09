@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import type * as childProcessModule from 'node:child_process';
-import type * as linksMirrorModule from './sync/links.mirror.ts';
-import type * as utilsModule from './core/utils.ts';
-import type * as lockfileModule from './core/utils.lockfile.ts';
+import type * as linksMirrorModule from '../sync/links.mirror.ts';
+import type * as utilsModule from '../core/utils.ts';
+import type * as lockfileModule from '../core/utils.lockfile.ts';
 
 // Regression: cmdPull and cmdPush must release the lockfile even when a
 // fatal error fires mid-flight. Earlier code path called process.exit()
@@ -55,14 +55,14 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock('node:child_process');
-    vi.doUnmock('./core/utils.ts');
-    vi.doUnmock('./core/utils.lockfile.ts');
-    vi.doUnmock('./sync/links.ts');
-    vi.doUnmock('./sync/links.mirror.ts');
-    vi.doUnmock('./commands/push/checks.ts');
-    vi.doUnmock('./commands/push/gitleaks.ts');
-    vi.doUnmock('./sync/remap.ts');
-    vi.doUnmock('./sync/extras/extras.ts');
+    vi.doUnmock('../core/utils.ts');
+    vi.doUnmock('../core/utils.lockfile.ts');
+    vi.doUnmock('../sync/links.ts');
+    vi.doUnmock('../sync/links.mirror.ts');
+    vi.doUnmock('../commands/push/checks.ts');
+    vi.doUnmock('../commands/push/gitleaks.ts');
+    vi.doUnmock('../sync/remap.ts');
+    vi.doUnmock('../sync/extras/extras.ts');
     process.exitCode = 0;
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
@@ -83,8 +83,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    const { cmdPull } = await import('./commands/pull/pull.ts');
-    const { NomadFatal } = await import('./core/utils.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => cmdPull()).toThrow(NomadFatal);
     // The lock file MUST NOT exist: the check fires before acquireLock.
     expect(existsSync(lockPath)).toBe(false);
@@ -103,7 +103,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     const cacheDir = join(testHome, '.cache', 'claude-nomad');
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(join(cacheDir, 'backup'), '');
-    const { cmdPull } = await import('./commands/pull/pull.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
     expect(() => cmdPull()).not.toThrow();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
@@ -118,7 +118,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    vi.doMock('./sync/links.ts', () => ({
+    vi.doMock('../sync/links.ts', () => ({
       applySharedLinks: vi.fn(() => {
         throw new TypeError('synthetic non-NomadFatal');
       }),
@@ -132,11 +132,11 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // run dies on the missing export before it ever reaches the synthetic
     // TypeError this test is about. Off win32 the reconcile returns first,
     // which is the only reason the omission was invisible on posix.
-    vi.doMock('./sync/links.mirror.ts', async (importOriginal) => {
+    vi.doMock('../sync/links.mirror.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksMirrorModule>();
       return { ...actual, stageLocalSharedEdits: vi.fn() };
     });
-    const { cmdPull } = await import('./commands/pull/pull.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
     expect(() => cmdPull()).toThrow(TypeError);
     expect(existsSync(lockPath)).toBe(false);
   });
@@ -146,14 +146,14 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // NEVER_SYNC path. Stub gitStatusPorcelainZ (the shell-free helper cmdPush
     // routes through) to return the porcelain we want.
     writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
-    vi.doMock('./core/utils.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
         gitStatusPorcelainZ: vi.fn(() => '?? .claude.json\0'),
       };
     });
-    const { cmdPush } = await import('./commands/push/push.ts');
+    const { cmdPush } = await import('../commands/push/push.ts');
     await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
@@ -165,26 +165,26 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // empty-status early return is bypassed; path-map.json absent on disk
     // triggers `die('path-map.json missing...')`. cmdPush's catch sets
     // exitCode and finally releases the lock.
-    vi.doMock('./commands/push/checks.ts', () => ({
+    vi.doMock('../commands/push/checks.ts', () => ({
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
     }));
-    vi.doMock('./commands/push/gitleaks.ts', () => ({
+    vi.doMock('../commands/push/gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
-    vi.doMock('./sync/remap.ts', () => ({
+    vi.doMock('../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(),
     }));
-    vi.doMock('./core/utils.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
         gitStatusPorcelainZ: vi.fn(() => '?? shared/CLAUDE.md\0'),
       };
     });
-    const { cmdPush } = await import('./commands/push/push.ts');
+    const { cmdPush } = await import('../commands/push/push.ts');
     await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
@@ -197,19 +197,19 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     // and finally releases the lock. Mock push-checks/remap so the
     // pre-checks no-op; the malformed file on disk drives the actual parse.
     writeFileSync(join(repoUnderHome, 'path-map.json'), '{');
-    vi.doMock('./commands/push/checks.ts', () => ({
+    vi.doMock('../commands/push/checks.ts', () => ({
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
     }));
-    vi.doMock('./commands/push/gitleaks.ts', () => ({
+    vi.doMock('../commands/push/gitleaks.ts', () => ({
       runGitleaksScan: vi.fn(),
     }));
-    vi.doMock('./sync/remap.ts', () => ({
+    vi.doMock('../sync/remap.ts', () => ({
       remapPull: vi.fn(),
       remapPush: vi.fn(() => ({ unmapped: 0, collisions: 0 })),
     }));
-    const { cmdPush } = await import('./commands/push/push.ts');
+    const { cmdPush } = await import('../commands/push/push.ts');
     await cmdPush();
     expect(process.exitCode).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
@@ -224,27 +224,27 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    vi.doMock('./commands/push/checks.ts', () => ({
+    vi.doMock('../commands/push/checks.ts', () => ({
       findGitlinks: vi.fn(() => []),
       probeGitleaks: vi.fn(() => 'v8.0.0'),
       rebaseBeforePush: vi.fn(),
     }));
-    vi.doMock('./commands/push/leak-verdict.ts', () => ({
+    vi.doMock('../commands/push/leak-verdict.ts', () => ({
       scanPushVerdict: vi.fn(() => {
         throw new TypeError('synthetic non-NomadFatal');
       }),
     }));
-    vi.doMock('./core/utils.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
       return {
         ...actual,
         gitStatusPorcelainZ: vi.fn(() => '?? shared/CLAUDE.md\0'),
       };
     });
-    const { cmdPush } = await import('./commands/push/push.ts');
+    const { cmdPush } = await import('../commands/push/push.ts');
     await expect(cmdPush()).rejects.toThrow(TypeError);
     expect(existsSync(lockPath)).toBe(false);
-    vi.doUnmock('./commands/push/leak-verdict.ts');
+    vi.doUnmock('../commands/push/leak-verdict.ts');
   });
 
   // The cmdPull unscaffolded-repo precondition fires BEFORE acquireLock,
@@ -260,12 +260,12 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
   it('throws init-hint NomadFatal and never invokes acquireLock when cmdPull runs against an unscaffolded repo', async () => {
     expect(existsSync(join(repoUnderHome, 'shared', 'settings.base.json'))).toBe(false);
     const acquireSpy = vi.fn(() => null);
-    vi.doMock('./core/utils.lockfile.ts', async (importOriginal) => {
+    vi.doMock('../core/utils.lockfile.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof lockfileModule>();
       return { ...actual, acquireLock: acquireSpy };
     });
-    const { cmdPull } = await import('./commands/pull/pull.ts');
-    const { NomadFatal } = await import('./core/utils.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
+    const { NomadFatal } = await import('../core/utils.ts');
     expect(() => cmdPull()).toThrow(NomadFatal);
     expect(() => cmdPull()).toThrow("repo not initialized; run 'nomad init'");
     expect(existsSync(lockPath)).toBe(false);
@@ -291,7 +291,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
 
-    const { cmdPull } = await import('./commands/pull/pull.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
     cmdPull({ dryRun: true });
 
     // settings.json is byte-identical to its pre-call state.
@@ -326,7 +326,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    const { cmdPull } = await import('./commands/pull/pull.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
     cmdPull();
     // WET tree output goes through console.log (stdout): the `pull on host=`
     // header, the Settings row, and the warn Summary row (summaryRow is now
@@ -349,7 +349,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    const { cmdPull } = await import('./commands/pull/pull.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
     cmdPull();
     expect(logOutput()).toContain('clean');
   });
@@ -373,7 +373,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       const actual = await importOriginal<typeof childProcessModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
-    const { cmdPull } = await import('./commands/pull/pull.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
     cmdPull({ dryRun: true });
     // computePreview renders the Summary row via renderTree -> console.log
     // (logOutput). The closing dry-run line also goes through log().
@@ -401,7 +401,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
         }),
       };
     });
-    const { cmdPull } = await import('./commands/pull/pull.ts');
+    const { cmdPull } = await import('../commands/pull/pull.ts');
     expect(() => cmdPull()).not.toThrow();
     expect(process.exitCode).toBe(1);
     expect(logOutput()).not.toContain('summary:');

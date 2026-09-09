@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { enforceAllowList } from './commands/push/allowlist.ts';
-import { type PathMap } from './core/config.ts';
-import { NomadFatal } from './core/utils.ts';
+import { enforceAllowList } from '../commands/push/allowlist.ts';
+import { type PathMap } from '../core/config.ts';
+import { NomadFatal } from '../core/utils.ts';
 
 // parsePorcelainZ tests cover the format switch from `--porcelain` (LF,
 // quoted, "old -> new" rename strings) to `--porcelain=v1 -z` (NUL records,

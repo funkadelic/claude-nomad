@@ -13,11 +13,11 @@ import { join, relative, sep } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { failGlyph } from './render/color.ts';
-import { SHARED_LINKS } from './core/config.ts';
-import { section } from './commands/doctor/format.ts';
-import { g } from './test-support/git.ts';
-import { makeWorld, runNomad } from './test-support/world.ts';
+import { failGlyph } from '../render/color.ts';
+import { SHARED_LINKS } from '../core/config.ts';
+import { section } from '../commands/doctor/format.ts';
+import { g } from '../test-support/git.ts';
+import { makeWorld, runNomad } from '../test-support/world.ts';
 
 // ---------------------------------------------------------------------------
 // Cross-platform parity
@@ -360,7 +360,7 @@ describe.skipIf(!hasGit)('parity: shared config materializes and reads back', ()
   it('makes every shared name readable under ~/.claude after applySharedLinks', async () => {
     const seeded = SHARED_LINKS.map((name) => seedShared(sandbox.sharedDir, name));
 
-    const { applySharedLinks } = await import('./sync/links.ts');
+    const { applySharedLinks } = await import('../sync/links.ts');
     applySharedLinks('20260730-000000', { projects: {} });
 
     for (const { probe, content } of seeded) {
@@ -374,14 +374,14 @@ describe.skipIf(!hasGit)('parity: shared config materializes and reads back', ()
   it('reports no FAIL for the shared links a clean apply just materialized', async () => {
     for (const name of SHARED_LINKS) seedShared(sandbox.sharedDir, name);
 
-    const { applySharedLinks } = await import('./sync/links.ts');
+    const { applySharedLinks } = await import('../sync/links.ts');
     applySharedLinks('20260730-000001', { projects: {} });
 
     // "Healthy" is inverted between the modalities: a real non-symlink entry is
     // a FAIL on posix and the correct state on win32. One unstubbed assertion
     // covers both definitions because the doctor check reads the same real
     // process.platform the apply above did.
-    const { reportSharedLinks } = await import('./commands/doctor/checks/repo.ts');
+    const { reportSharedLinks } = await import('../commands/doctor/checks/repo.ts');
     const sec = section('Links');
     reportSharedLinks(sec, { projects: {} });
 
@@ -412,7 +412,7 @@ describe.skipIf(!hasGit)('parity: adopt then eject round-trip', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const { cmdAdopt } = await import('./commands/adopt.ts');
+    const { cmdAdopt } = await import('../commands/adopt.ts');
     cmdAdopt('CLAUDE.md');
     expect(exitSpy, 'adopt bailed out').not.toHaveBeenCalled();
 
@@ -426,7 +426,7 @@ describe.skipIf(!hasGit)('parity: adopt then eject round-trip', () => {
 
     // Eject is the offboarding contract: whatever the modality was, the host
     // ends up owning a real, standalone file that survives deleting the repo.
-    const { cmdEject } = await import('./commands/eject.ts');
+    const { cmdEject } = await import('../commands/eject.ts');
     cmdEject({}, { claudeHome: sandbox.claudeHome, repoHome: sandbox.repoHome });
     expect(exitSpy, 'eject bailed out').not.toHaveBeenCalled();
 
@@ -491,7 +491,7 @@ describe.skipIf(!hasGit)(
       seedShared(sandbox.sharedDir, 'CLAUDE.md');
       writeFileSync(join(sandbox.claudeHome, 'CLAUDE.md'), '# host edit, not yet pushed\n');
 
-      const { stageLocalSharedEdits } = await import('./sync/links.mirror.ts');
+      const { stageLocalSharedEdits } = await import('../sync/links.mirror.ts');
       const before = snapshotFiles(sandbox.sharedDir);
 
       const dryEvents: { name: string }[] = [];
