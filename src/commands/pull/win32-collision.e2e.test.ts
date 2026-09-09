@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { stubPlatform } from '../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../test-support/platform.ts';
 import { buildSyncedSharedWorld, pushUpstreamChange } from '../../test-support/git.ts';
 
 /**

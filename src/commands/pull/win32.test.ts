@@ -13,7 +13,7 @@ import { backupBase, SHARED_LINKS } from '../../core/config.ts';
 import { renderTree } from '../../render/output-tree.ts';
 import { plantSharedBaseline } from '../../test-support/baseline.ts';
 import { g, gitInit, gitOut } from '../../test-support/git.ts';
-import { stubPlatform } from '../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../test-support/platform.ts';
 
 /**
  * Returns `true` when the `git` binary is present on PATH. Gates the backstop

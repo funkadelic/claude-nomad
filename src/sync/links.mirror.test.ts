@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { g, gitInit, gitOut } from '../test-support/git.ts';
-import { stubPlatform } from '../core/test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 
 /**
  * Returns `true` when the `git` binary is present on PATH. Gates the one

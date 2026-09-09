@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type PathMap } from '../core/config.ts';
-import { stubPlatform } from '../core/test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 
 /** Real platform of the machine running the suite, restored in `afterEach`. */
 const realPlatform = process.platform;

@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { failGlyph, infoGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import { type PathMap } from '../../../core/config.ts';
-import { stubPlatform } from '../../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../../test-support/platform.ts';
 import { type Env, joinedLog, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
 
 // Windows chmod only toggles the read-only attribute; a directory chmod'd to

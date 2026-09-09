@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type * as pathModule from 'node:path';
 
 import type { PathMap } from '../../core/config.ts';
-import { stubPlatform } from '../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../test-support/platform.ts';
 
 /** Run a git command in `cwd`, surfacing stderr on failure. Test-only helper
  * for the real-repo regression suites (no production code path uses it). */

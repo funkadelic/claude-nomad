@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { failGlyph, infoGlyph, warnGlyph } from '../../../render/color.ts';
 import { section } from '../format.ts';
 import { type Env, joinedLog, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
-import { stubPlatform } from '../../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../../test-support/platform.ts';
 
 describe('cmdDoctor NOMAD_REPO annotation', () => {
   // The annotation lives in reportRepoState. It must appear on

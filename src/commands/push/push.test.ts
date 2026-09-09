@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { errOutput, makePushEnv, teardownPushEnv, type PushEnv } from './test-helpers.ts';
-import { stubPlatform } from '../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../test-support/platform.ts';
 
 import type * as childProcessModule from 'node:child_process';
 import type * as linksMirrorModule from '../../sync/links.mirror.ts';

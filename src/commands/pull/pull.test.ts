@@ -25,7 +25,7 @@ import type * as lockfileModule from '../../core/utils.lockfile.ts';
 
 import { warnGlyph } from '../../render/color.ts';
 import { plantSharedBaseline } from '../../test-support/baseline.ts';
-import { stubPlatform } from '../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../test-support/platform.ts';
 
 /**
  * Partially mock `links.mirror.ts`, keeping every real export and replacing

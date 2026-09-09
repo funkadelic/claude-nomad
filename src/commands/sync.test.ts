@@ -16,7 +16,7 @@ import type * as lockfileModule from '../core/utils.lockfile.ts';
 import type * as utilsModule from '../core/utils.ts';
 
 import { EXIT } from '../core/exit-codes.ts';
-import { stubPlatform } from '../core/test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 
 type LogSpy = MockInstance<(...args: unknown[]) => void>;
 

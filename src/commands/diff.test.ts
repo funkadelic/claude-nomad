@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import type * as childProcessModule from 'node:child_process';
 
-import { stubPlatform } from '../core/test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 import { encodePath } from '../core/utils.json.ts';
 
 const realPlatform = process.platform;

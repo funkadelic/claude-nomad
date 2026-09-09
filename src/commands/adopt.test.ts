@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import { EXIT } from '../core/exit-codes.ts';
 import type * as linksModule from '../sync/links.ts';
-import { stubPlatform } from '../core/test-helpers.platform.ts';
+import { stubPlatform } from '../test-support/platform.ts';
 import type * as utilsModule from '../core/utils.ts';
 import type * as utilsFsModule from '../core/utils.fs.ts';
 

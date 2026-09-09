@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { failGlyph, infoGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import { type Env, joinedLog, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
-import { stubPlatform } from '../../../core/test-helpers.platform.ts';
+import { stubPlatform } from '../../../test-support/platform.ts';
 
 describe('cmdDoctor repo-state header', () => {
   let originalHome: string | undefined;
