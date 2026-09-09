@@ -63,7 +63,7 @@ $ nomad drop-session <id>
 Single positional id (the session filename minus `.jsonl`). Anything else (missing id, leading
 dash, extra arg) exits 1 with a `usage:` line.
 
-For each match in the staged tree, `cmdDropSession` (in `src/commands.drop-session.ts`) classifies
+For each match in the staged tree, `cmdDropSession` (in `src/commands/drop-session/drop-session.ts`) classifies
 the entry as tracked-in-HEAD vs newly-staged and unstages it via
 `git restore --staged --worktree --` or `git rm --cached -f --` respectively. The `<id>/`
 subagent directory is expanded into its staged entries via `git ls-files -z` so every nested

@@ -153,14 +153,14 @@ Review each candidate against the keep/delete criterion:
   an empty-input contract), guards a branch that Stryker does not mutate, or is the sole
   documentation of a behavioral contract.
 
-Zero-kill results from subprocess-based tests (for example, `commands.adopt`) are expected false
+Zero-kill results from subprocess-based tests (for example, `commands/adopt`) are expected false
 positives: Stryker cannot observe kills that happen inside a spawned child process. Keep those tests
 without further analysis.
 
 **Security modules default to keep.** Tests in
 [`src/commands/push/checks.ts`](src/commands/push/checks.ts),
 [`src/commands/push/gitleaks*.ts`](src/commands/push/gitleaks.ts),
-[`src/commands.redact*.ts`](src/commands.redact.ts),
+[`src/commands/redact/*.ts`](src/commands/redact/redact.ts),
 [`src/commands/push/recovery/*.ts`](src/commands/push/recovery/recovery.ts),
 [`src/core/utils.lockfile*.ts`](src/core/utils.lockfile.ts), and
 [`src/core/config.sharedDirs.guard.ts`](src/core/config.sharedDirs.guard.ts) are never bulk-deleted.
