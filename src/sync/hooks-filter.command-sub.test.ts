@@ -83,6 +83,40 @@ describe('skipSubstitution', () => {
     expect(skipSubstitution(tokens('`command -v node'), 0)).toEqual({ next: 1, rest: '`command' });
   });
 
+  it('does not let a quoted literal paren change the nesting depth', () => {
+    // `(` inside quotes is body text, not syntax, so the `)` that follows is
+    // still the one that closes the substitution.
+    expect(skipSubstitution(tokens('$(printf "(") after'), 0)).toEqual({ next: 2, rest: '' });
+    expect(skipSubstitution(tokens("$(echo '(') after"), 0)).toEqual({ next: 2, rest: '' });
+    // Same body, with a script path trailing the close: the depth accounting and
+    // the leftover-word offset have to agree, which the boolean cannot show.
+    expect(skipSubstitution(tokens('$(printf "(")/gsd-x.js after'), 0)).toEqual({
+      next: 2,
+      rest: '/gsd-x.js',
+    });
+  });
+
+  it('closes a nested $(...) opened inside a double-quoted run', () => {
+    // The shape gsd's node-resolver uses: `"$(command -v node)"` nested inside a
+    // wider substitution. The inner `)` must close only the inner one.
+    expect(skipSubstitution(tokens('"$(a "$(b)" c)" after'), 0)).toEqual({ next: 3, rest: '"' });
+    // The nested `$(` has to re-enter a COMMAND context, not stay inside the
+    // double-quoted run: only then does the `'` open a literal where the `"` is
+    // body text. Treated as still-quoted, that `"` ends the run and the scan
+    // never finds its closing paren.
+    expect(skipSubstitution(tokens('"$(a "$(echo \'"\')" b)" after'), 0)).toEqual({
+      next: 4,
+      rest: '"',
+    });
+  });
+
+  it('honors a backslash-escaped paren inside the body', () => {
+    // An escaped `(` does not open a level.
+    expect(skipSubstitution(tokens('$(echo \\() after'), 0)).toEqual({ next: 2, rest: '' });
+    // An escaped `)` does not close one, so the later bare `)` is the closer.
+    expect(skipSubstitution(tokens('$(echo \\) x) after'), 0)).toEqual({ next: 3, rest: '' });
+  });
+
   it('picks the opener that comes first in the token', () => {
     // `$(` first: scanned as a paren substitution, so a literal backtick in the
     // body closes nothing and the `)` ends it.
