@@ -10,9 +10,12 @@
 
 /**
  * Matches the start of a command-substitution token, `$(` or a backtick, with an
- * optional single leading quote (e.g. `"$(for`, `$(command`, `` `command ``).
+ * optional leading double quote (e.g. `"$(for`, `$(command`, `` `command ``).
+ *
+ * A leading SINGLE quote is deliberately not accepted: single quotes suppress
+ * every expansion, so `'$(x)'` is a literal word and not a substitution at all.
  */
-const SUB_START = /^['"]?(?:\$\(|`)/;
+const SUB_START = /^"?(?:\$\(|`)/;
 
 /**
  * Quoting context inside a `$(...)` substitution. `cmd` is a command context
@@ -20,6 +23,23 @@ const SUB_START = /^['"]?(?:\$\(|`)/;
  * `$(` is, and `sq` a single-quoted run where nothing is.
  */
 type SubContext = 'cmd' | 'dq' | 'sq';
+
+/**
+ * Where a substitution scan ended.
+ *
+ * `rest` is the word the substitution left behind, and an empty string means it
+ * consumed its tokens whole. Three cases produce a non-empty `rest`:
+ * the `$(dirname "$0")/hook.js` idiom, where the script path trails the closing
+ * delimiter inside the same token; a bare closing quote; and a substitution that
+ * never closed, which reports its own opening token so the caller can fall back
+ * to reading that token literally rather than losing the rest of the command.
+ */
+export interface SubEnd {
+  /** Index of the first token after the substitution. */
+  next: number;
+  /** Text left over at the closing delimiter, or `''` when nothing remains. */
+  rest: string;
+}
 
 /** Scanner state, carried across whitespace-split tokens. */
 interface SubScan {
@@ -111,21 +131,23 @@ function stepParen(c: string, scan: SubScan): void {
  * @param tokens - The whitespace-split command tokens.
  * @param start - Index of the token that opens the substitution.
  * @param from - Index of the first body character within `tokens[start]`.
- * @returns Index of the first token after the substitution closes, or `tokens.length` when it never closes.
+ * @returns Where the substitution ended; `rest` carries the opening token when it never closes.
  */
-function skipDollarParen(tokens: string[], start: number, from: number): number {
+function skipDollarParen(tokens: string[], start: number, from: number): SubEnd {
   const scan: SubScan = { stack: ['cmd'], depth: 1, escaped: false };
   let i = from;
   for (let j = start; j < tokens.length; j++) {
     const token = tokens[j];
     while (i < token.length) {
       i = stepChar(token, i, scan);
-      if (scan.depth === 0) return j + 1;
+      if (scan.depth === 0) return { next: j + 1, rest: token.slice(i) };
     }
     i = 0;
+    // The whitespace tokenizer already destroyed whatever a trailing backslash
+    // escaped, so escape state deliberately does not survive a token boundary.
     scan.escaped = false;
   }
-  return tokens.length;
+  return unterminated(tokens, start);
 }
 
 /**
@@ -135,20 +157,36 @@ function skipDollarParen(tokens: string[], start: number, from: number): number 
  * @param tokens - The whitespace-split command tokens.
  * @param start - Index of the token that opens the substitution.
  * @param from - Index of the first body character within `tokens[start]`.
- * @returns Index of the first token after the closing backtick, or `tokens.length` when it never closes.
+ * @returns Where the substitution ended; `rest` carries the opening token when it never closes.
  */
-function skipBacktick(tokens: string[], start: number, from: number): number {
+function skipBacktick(tokens: string[], start: number, from: number): SubEnd {
   let i = from;
   for (let j = start; j < tokens.length; j++) {
     const token = tokens[j];
     while (i < token.length) {
       if (token[i] === '\\') i += 2;
-      else if (token[i] === '`') return j + 1;
+      else if (token[i] === '`') return { next: j + 1, rest: token.slice(i + 1) };
       else i++;
     }
+    // A trailing backslash overshoots past the end here, which drops escape
+    // state at the token boundary the same way `skipDollarParen` does above.
     i = 0;
   }
-  return tokens.length;
+  return unterminated(tokens, start);
+}
+
+/**
+ * Result for a substitution that never closed: report the opening token as the
+ * leftover word. The command is unparseable as shell, so the caller reads that
+ * token literally instead of discarding every token after it (which would drop
+ * the script path and, for a real gsd hook, delete it on the next pull).
+ *
+ * @param tokens - The whitespace-split command tokens.
+ * @param start - Index of the token that opened the substitution.
+ * @returns A `SubEnd` pointing one past `start` with that token as `rest`.
+ */
+function unterminated(tokens: string[], start: number): SubEnd {
+  return { next: start + 1, rest: tokens[start] };
 }
 
 /**
@@ -159,12 +197,15 @@ function skipBacktick(tokens: string[], start: number, from: number): number {
  *
  * @param tokens - The whitespace-split command tokens.
  * @param start - Index of the token that opens the substitution (`opensSubstitution` is `true` for it).
- * @returns Index of the first token after the substitution closes, or `tokens.length` when it never closes.
+ * @returns Where the substitution ended, per `SubEnd`.
  */
-export function skipSubstitution(tokens: string[], start: number): number {
-  const token = tokens[start];
+export function skipSubstitution(tokens: string[], start: number): SubEnd {
+  const token = tokens[start] ?? '';
   const paren = token.indexOf('$(');
   const tick = token.indexOf('`');
+  // Neither opener present: the precondition was not met, so consume nothing
+  // beyond the token itself rather than scanning it as a substitution body.
+  if (paren < 0 && tick < 0) return { next: start + 1, rest: token };
   if (tick >= 0 && (paren < 0 || tick < paren)) return skipBacktick(tokens, start, tick + 1);
   return skipDollarParen(tokens, start, paren + 2);
 }

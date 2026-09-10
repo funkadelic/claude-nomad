@@ -231,8 +231,14 @@ describe('isGsdHookEntry', () => {
     expect(isGsdHookEntry('`command -v node` /a/hooks/my-hook.js')).toBe(false);
   });
 
-  it('unterminated backtick substitution -> false (fail-safe), no hang', () => {
+  it('unterminated backtick falls back to reading the opener literally, no hang', () => {
+    // The scanner gives up, so `` `command `` is read as the launcher word and
+    // `node` as the script. Not gsd-owned, but the command is unparseable shell.
     expect(isGsdHookEntry('`command -v node /a/hooks/gsd-x.js')).toBe(false);
+    // What the fallback protects: the script survives when it follows the
+    // unterminated opener directly, instead of being discarded with it.
+    expect(isGsdHookEntry('`x /a/hooks/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('`x /a/hooks/my-hook.js')).toBe(false);
   });
 
   it('substitution in ARGUMENT position + gsd script -> true', () => {
@@ -249,6 +255,40 @@ describe('isGsdHookEntry', () => {
     // The gsd- path lives inside the substitution; the real script is a user
     // hook, so the entry must stay user-authored.
     expect(isGsdHookEntry('sh -c "$(b /a/hooks/gsd-x.js) && /a/hooks/my-hook.js"')).toBe(false);
+  });
+
+  it('substitution with the script path trailing it -> classifies off that path', () => {
+    // `$(dirname "$0")/hook.js` is the standard "file next to me" idiom, so the
+    // script rides in the same token as the substitution that precedes it.
+    expect(isGsdHookEntry('`pwd`/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('node `pwd`/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('node $(pwd)/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('node "$(npm-root)/gsd-x.js"')).toBe(true);
+    expect(isGsdHookEntry('CLAUDE_PROJECT_DIR=/x node `pwd`/gsd-x.js')).toBe(true);
+  });
+
+  it('substitution with a USER script trailing it -> false', () => {
+    expect(isGsdHookEntry('`pwd`/my-hook.js')).toBe(false);
+    expect(isGsdHookEntry('node $(pwd)/my-hook.js')).toBe(false);
+    expect(isGsdHookEntry('node "$(npm-root)/my-hook.js"')).toBe(false);
+  });
+
+  it('a substitution in the script slot never yields to a trailing gsd- argument', () => {
+    // The substitution IS the script and what it expands to is unknowable, so the
+    // walk must stop rather than read the next argument as the script.
+    expect(isGsdHookEntry('node "$(x)" gsd-thing')).toBe(false);
+    expect(isGsdHookEntry('node "$(dirname /a/b)/my-hook.js" gsd-mode')).toBe(false);
+    expect(isGsdHookEntry('node `pwd`/my-hook.js gsd-arg')).toBe(false);
+    expect(isGsdHookEntry('node --require "$(pwd)/setup.js" gsd-arg')).toBe(false);
+    // Substitution consumes the final token, so there is no following token at all.
+    expect(isGsdHookEntry('node $(x)')).toBe(false);
+  });
+
+  it('single-quoted substitution text is a literal, not a substitution', () => {
+    // Single quotes suppress expansion, so `'$(x)'` is the script word itself.
+    expect(isGsdHookEntry("node '$(x)' gsd-thing")).toBe(false);
+    // And a literal that merely looks unterminated must not swallow the command.
+    expect(isGsdHookEntry("'$(' /a/hooks/gsd-x.js")).toBe(true);
   });
 
   it('shell operator alone is never read as the script', () => {

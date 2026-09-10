@@ -48,25 +48,57 @@ function stripQuotes(token: string): string {
   return token;
 }
 
+/** A word from the command that could be the script path. */
+interface Candidate {
+  /** Index of the token it came from, or `-1` when no candidate remains. */
+  index: number;
+  /** The word itself, which may be a suffix of that token. */
+  word: string;
+}
+
+/** No script word remains in the command. */
+const NO_CANDIDATE: Candidate = { index: -1, word: '' };
+
 /**
- * Advance to the next token that could be a script path, stepping over the three
- * kinds that never are: flag tokens, shell operators, and whole command
- * substitutions (skipped by their own scanner so a `gsd-` path inside a
- * substitution body is never mistaken for the script).
+ * Walk forward to the next word that could be a script path, stepping over the
+ * three kinds that never are: flag tokens, shell operators, and whole command
+ * substitutions. A substitution that closes part-way through its last token
+ * yields the remainder as the candidate, which is the `$(dirname "$0")/hook.js`
+ * idiom for naming a file next to the script.
+ *
+ * `inScriptSlot` separates the two positions the classifier walks from. In
+ * launcher position a substitution that is consumed whole is the LAUNCHER, so
+ * the walk continues to the word after it. In the script slot that same
+ * substitution IS the script, and what it expands to is unknowable, so the walk
+ * gives up rather than reading the following argument as the script. The one
+ * exception is a shell operator immediately after it: that ends the command and
+ * starts a new one, which puts the walk back in launcher position.
  *
  * @param tokens - The whitespace-split command tokens.
  * @param from - Index to start scanning at.
- * @returns Index of the first candidate script token, or `tokens.length` when none remains.
+ * @param inScriptSlot - `true` when the caller is looking for the script rather than the launcher.
+ * @returns The next candidate word, or `NO_CANDIDATE` when none remains.
  */
-function skipNonScriptTokens(tokens: string[], from: number): number {
+function nextScriptWord(tokens: string[], from: number, inScriptSlot: boolean): Candidate {
+  let slot = inScriptSlot;
   let i = from;
   while (i < tokens.length) {
     const token = tokens[i];
-    if (opensSubstitution(token)) i = skipSubstitution(tokens, i);
-    else if (token.startsWith('-') || SHELL_OPERATORS.has(token)) i++;
-    else return i;
+    if (SHELL_OPERATORS.has(token)) {
+      slot = false;
+      i++;
+    } else if (token.startsWith('-')) {
+      i++;
+    } else if (!opensSubstitution(token)) {
+      return { index: i, word: token };
+    } else {
+      const end = skipSubstitution(tokens, i);
+      if (end.rest !== '') return { index: end.next - 1, word: end.rest };
+      if (slot && !SHELL_OPERATORS.has(tokens[end.next] ?? '')) return NO_CANDIDATE;
+      i = end.next;
+    }
   }
-  return tokens.length;
+  return NO_CANDIDATE;
 }
 
 /**
@@ -84,31 +116,42 @@ function skipNonScriptTokens(tokens: string[], from: number): number {
  * - `/a/hooks/gsd-x.js` (launcher-less, shebang executable)
  * - `"/abs/path/node" "/abs/path/gsd-x.js"` (launcher and script both quoted)
  * - `"$(for n in ... done)" "/a/hooks/gsd-x.js"` (gsd's inline node-resolver)
+ *
+ * Handled defensively, NOT observed from gsd (a launcher-template change is what
+ * caused the incident this module exists for, so these fail toward keeping the
+ * entry rather than dropping it):
  * - `` `command -v node` /a/hooks/gsd-x.js `` (backtick resolver)
  * - `sh -c "$(cat /a/x) && /a/hooks/gsd-x.js"` (substitution in argument position)
+ * - `node $(pwd)/gsd-x.js` (substitution with the script path trailing it)
  *
  * Algorithm: split the command on whitespace, strip a balanced pair of
- * surrounding quotes from each candidate token, and skip any leading `KEY=value`
- * environment-assignment tokens. `skipNonScriptTokens` then advances past flags,
- * shell operators, and whole `$(...)`/backtick substitutions, in launcher and in
- * argument position alike. If the first remaining token is itself the script (it
- * carries a path and is not a known launcher binary, or its basename already
- * starts with `gsd-`), classify off that token's basename directly. This covers
- * launcher-less commands with or without trailing args/flags, and keys off the
- * script itself so a trailing `gsd-`-prefixed argument can never mark a user
- * script as gsd-owned. Otherwise that token is the launcher, and the same walk
- * from the next token yields the script path. Return
- * `basename.startsWith(GSD_PREFIX)`.
+ * surrounding quotes from each candidate word, and skip any leading `KEY=value`
+ * environment-assignment tokens. `nextScriptWord` then advances past flags,
+ * shell operators, and whole `$(...)`/backtick substitutions. If the first word
+ * it yields is itself the script (it carries a path and is not a known launcher
+ * binary, or its basename already starts with `gsd-`), classify off that word's
+ * basename directly. This covers launcher-less commands with or without trailing
+ * args/flags. Otherwise that word is the launcher, and a second walk in script
+ * position yields the script path. Return `basename.startsWith(GSD_PREFIX)`.
  *
- * Fail-safe: if no script token is found the command is unparseable; return
- * `false` so a user entry is never silently dropped.
+ * Classification always keys off the script word, never a later one, so a
+ * trailing `gsd-`-prefixed ARGUMENT cannot mark a user script as gsd-owned. That
+ * is what the script-slot rule in `nextScriptWord` protects: when a substitution
+ * occupies the script slot, the result is unknowable and the walk stops there
+ * rather than reading past it to the next argument.
+ *
+ * Fail-safe: if no script word is found the command is unparseable; return
+ * `false` so a user entry is never silently dropped. Note that `false` is only
+ * safe in that direction. For an entry gsd really did install, `false` means the
+ * entry is treated as user state, which is why every unparseable shape above
+ * falls back to reading a literal token rather than giving up outright.
  *
  * @param command - Raw `command` string from a hook entry.
  * @returns `true` if gsd-owned; `false` if user-authored or unparseable.
  */
 export function isGsdHookEntry(command: string): boolean {
   const tokens = command.trim().split(/\s+/);
-  if (tokens.length === 0 || tokens[0] === '') return false;
+  if (tokens[0] === '') return false;
 
   // Skip leading KEY=value env-assignment tokens. A token is an env assignment
   // when its key part (everything before the first '=') matches a shell
@@ -119,25 +162,25 @@ export function isGsdHookEntry(command: string): boolean {
     i++;
   }
 
-  i = skipNonScriptTokens(tokens, i);
-  const first = stripQuotes(tokens[i] ?? '');
+  const launcher = nextScriptWord(tokens, i, false);
+  if (launcher.index < 0) return false;
+  const first = stripQuotes(launcher.word);
   const firstBase = scriptBasename(first);
   const firstHasPath = first.includes('/') || first.includes('\\');
 
-  // Launcher-less form: the first candidate token is itself the script. True when
+  // Launcher-less form: the first candidate word is itself the script. True when
   // it carries a path and is not a known launcher binary, or its basename already
   // starts with GSD_PREFIX. Covers `/a/hooks/gsd-x.js`, the same with trailing
-  // args/flags, and a bare `gsd-x.js`. Classifying off the script token means a
-  // trailing gsd-prefixed ARGUMENT can never mark a user script as gsd-owned.
+  // args/flags, and a bare `gsd-x.js`.
   if ((firstHasPath && !KNOWN_LAUNCHER_BASENAMES.has(firstBase)) || first.startsWith(GSD_PREFIX)) {
     return firstBase.startsWith(GSD_PREFIX);
   }
 
-  // Otherwise tokens[i] is the launcher: the script is the next candidate token.
+  // Otherwise that word is the launcher and the script is the next candidate.
   // A launcher with no script -> false.
-  const script = skipNonScriptTokens(tokens, i + 1);
-  if (script >= tokens.length) return false;
-  return scriptBasename(stripQuotes(tokens[script])).startsWith(GSD_PREFIX);
+  const script = nextScriptWord(tokens, launcher.index + 1, true);
+  if (script.index < 0) return false;
+  return scriptBasename(stripQuotes(script.word)).startsWith(GSD_PREFIX);
 }
 
 // ---------------------------------------------------------------------------
