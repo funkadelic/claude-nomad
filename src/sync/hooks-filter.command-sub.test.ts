@@ -117,6 +117,12 @@ describe('skipSubstitution', () => {
     expect(skipSubstitution(tokens('$(echo \\) x) after'), 0)).toEqual({ next: 3, rest: '' });
   });
 
+  it('treats a nested backtick region as its own command', () => {
+    // A `)` inside backticks belongs to that nested command, so it must not close
+    // the outer `$(`. Closing early would resume the walk inside the body.
+    expect(skipSubstitution(tokens('$(echo `a) b` ) after'), 0)).toEqual({ next: 4, rest: '' });
+  });
+
   it('picks the opener that comes first in the token', () => {
     // `$(` first: scanned as a paren substitution, so a literal backtick in the
     // body closes nothing and the `)` ends it.

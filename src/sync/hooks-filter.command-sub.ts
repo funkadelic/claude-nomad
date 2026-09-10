@@ -20,9 +20,10 @@ const SUB_START = /^"?(?:\$\(|`)/;
 /**
  * Quoting context inside a `$(...)` substitution. `cmd` is a command context
  * where parentheses are syntax, `dq` a double-quoted run where only a nested
- * `$(` is, and `sq` a single-quoted run where nothing is.
+ * `$(` is, `sq` a single-quoted run where nothing is, and `bt` a nested backtick
+ * substitution, which is its own command whose parentheses belong to it.
  */
-type SubContext = 'cmd' | 'dq' | 'sq';
+type SubContext = 'cmd' | 'dq' | 'sq' | 'bt';
 
 /**
  * Where a substitution scan ended.
@@ -90,9 +91,24 @@ function stepChar(token: string, i: number, scan: SubScan): number {
     return i + 2;
   }
   if (c === "'" && top === 'cmd') scan.stack.push('sq');
+  else if (c === '`') toggleBacktick(scan, top);
   else if (c === '"') toggleDoubleQuote(scan, top);
   else if (top === 'cmd') stepParen(c, scan);
   return i + 1;
+}
+
+/**
+ * Open or close a nested backtick substitution. Its body is a command of its
+ * own, so a paren inside it (a `case` arm, say) is not the outer substitution's
+ * closer. Without this the outer `$(` closes early and the walk resumes inside
+ * the body, where a `gsd-` path would be read as the script.
+ *
+ * @param scan - Scanner state, mutated in place.
+ * @param top - Current innermost context.
+ */
+function toggleBacktick(scan: SubScan, top: SubContext | undefined): void {
+  if (top === 'bt') scan.stack.pop();
+  else scan.stack.push('bt');
 }
 
 /**

@@ -291,6 +291,15 @@ describe('isGsdHookEntry', () => {
     expect(isGsdHookEntry("'$(' /a/hooks/gsd-x.js")).toBe(true);
   });
 
+  it('a gsd- path inside a nested backtick region is not the script', () => {
+    // The `)` in the backtick region used to close the outer substitution early,
+    // so the walk resumed inside the body and read its gsd- path as the script,
+    // marking a user hook gsd-owned and dropping it from the committed base.
+    expect(isGsdHookEntry('$(echo `a) /a/hooks/gsd-x.js` ) /a/hooks/my-hook.js')).toBe(false);
+    // Same shape with the real script gsd-owned still classifies correctly.
+    expect(isGsdHookEntry('$(echo `a) /a/hooks/my-hook.js` ) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
   it('shell operator alone is never read as the script', () => {
     expect(isGsdHookEntry('sh -c && /a/hooks/gsd-x.js')).toBe(true);
     expect(isGsdHookEntry('sh -c && /a/hooks/my-hook.js')).toBe(false);
