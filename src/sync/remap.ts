@@ -101,9 +101,8 @@ export function copyFileAtomic(src: string, dst: string): void {
  */
 function hasDeltaForDir(sel: ManifestDiff, localDir: string): boolean {
   const prefix = `${localDir}${sep}`;
-  for (const p of sel.changed) if (p.startsWith(prefix)) return true;
-  for (const p of sel.deleted) if (p.startsWith(prefix)) return true;
-  return false;
+  const underDir = (p: string): boolean => p.startsWith(prefix);
+  return [...sel.changed].some(underDir) || sel.deleted.some(underDir);
 }
 
 /**

@@ -76,7 +76,7 @@
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^4.1.6",
+    "@vitest/coverage-v8": "^5.0.0",
     "conventional-changelog-conventionalcommits": "^10.2.1",
     "diff": "^9.0.0",
     "esbuild": "^0.28.0",
@@ -92,6 +92,6 @@
     "prettier": "^3.8.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4",
-    "vitest": "^4.1.6"
+    "vitest": "^5.0.0"
   }
 }
