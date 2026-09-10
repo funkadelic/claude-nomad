@@ -11,12 +11,12 @@
     "dev": "astro dev"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.41.9",
+    "@astrojs/starlight": "^0.42.0",
     "astro": "^7.3.1",
     "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "starlight-links-validator": "^0.25.3",
+    "starlight-links-validator": "^0.26.0",
     "starlight-llms-txt": "^0.11.0"
   }
 }
