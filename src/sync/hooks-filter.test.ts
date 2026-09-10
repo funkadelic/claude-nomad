@@ -220,6 +220,41 @@ describe('isGsdHookEntry', () => {
   it('quoted body with a non-gsd script stays user-authored', () => {
     expect(isGsdHookEntry('$(printf "(") /a/hooks/my-hook.js')).toBe(false);
   });
+
+  it('backtick resolver launcher + gsd script -> true', () => {
+    // The backtick spelling of the same node-resolver idiom. Without skipping it
+    // whole, `-v` reads as a flag and the token `` node` `` reads as the script.
+    expect(isGsdHookEntry('`command -v node` /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('backtick resolver launcher + user script -> false', () => {
+    expect(isGsdHookEntry('`command -v node` /a/hooks/my-hook.js')).toBe(false);
+  });
+
+  it('unterminated backtick substitution -> false (fail-safe), no hang', () => {
+    expect(isGsdHookEntry('`command -v node /a/hooks/gsd-x.js')).toBe(false);
+  });
+
+  it('substitution in ARGUMENT position + gsd script -> true', () => {
+    // The substitution sits after `sh -c`, not in launcher position, so the
+    // launcher-position guard alone never fires on it.
+    expect(isGsdHookEntry('sh -c "$(cat /a/x) && /a/hooks/gsd-x.js"')).toBe(true);
+  });
+
+  it('substitution in ARGUMENT position + user script -> false', () => {
+    expect(isGsdHookEntry('sh -c "$(cat /a/x) && /a/hooks/my-hook.js"')).toBe(false);
+  });
+
+  it('argument-position substitution body is not mined for a script token', () => {
+    // The gsd- path lives inside the substitution; the real script is a user
+    // hook, so the entry must stay user-authored.
+    expect(isGsdHookEntry('sh -c "$(b /a/hooks/gsd-x.js) && /a/hooks/my-hook.js"')).toBe(false);
+  });
+
+  it('shell operator alone is never read as the script', () => {
+    expect(isGsdHookEntry('sh -c && /a/hooks/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('sh -c && /a/hooks/my-hook.js')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
