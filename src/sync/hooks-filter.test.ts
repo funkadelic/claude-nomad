@@ -220,6 +220,90 @@ describe('isGsdHookEntry', () => {
   it('quoted body with a non-gsd script stays user-authored', () => {
     expect(isGsdHookEntry('$(printf "(") /a/hooks/my-hook.js')).toBe(false);
   });
+
+  it('backtick resolver launcher + gsd script -> true', () => {
+    // The backtick spelling of the same node-resolver idiom. Without skipping it
+    // whole, `-v` reads as a flag and the token `` node` `` reads as the script.
+    expect(isGsdHookEntry('`command -v node` /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('backtick resolver launcher + user script -> false', () => {
+    expect(isGsdHookEntry('`command -v node` /a/hooks/my-hook.js')).toBe(false);
+  });
+
+  it('unterminated backtick falls back to reading the opener literally, no hang', () => {
+    // The scanner gives up, so `` `command `` is read as the launcher word and
+    // `node` as the script. Not gsd-owned, but the command is unparseable shell.
+    expect(isGsdHookEntry('`command -v node /a/hooks/gsd-x.js')).toBe(false);
+    // What the fallback protects: the script survives when it follows the
+    // unterminated opener directly, instead of being discarded with it.
+    expect(isGsdHookEntry('`x /a/hooks/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('`x /a/hooks/my-hook.js')).toBe(false);
+  });
+
+  it('substitution in ARGUMENT position + gsd script -> true', () => {
+    // The substitution sits after `sh -c`, not in launcher position, so the
+    // launcher-position guard alone never fires on it.
+    expect(isGsdHookEntry('sh -c "$(cat /a/x) && /a/hooks/gsd-x.js"')).toBe(true);
+  });
+
+  it('substitution in ARGUMENT position + user script -> false', () => {
+    expect(isGsdHookEntry('sh -c "$(cat /a/x) && /a/hooks/my-hook.js"')).toBe(false);
+  });
+
+  it('argument-position substitution body is not mined for a script token', () => {
+    // The gsd- path lives inside the substitution; the real script is a user
+    // hook, so the entry must stay user-authored.
+    expect(isGsdHookEntry('sh -c "$(b /a/hooks/gsd-x.js) && /a/hooks/my-hook.js"')).toBe(false);
+  });
+
+  it('substitution with the script path trailing it -> classifies off that path', () => {
+    // `$(dirname "$0")/hook.js` is the standard "file next to me" idiom, so the
+    // script rides in the same token as the substitution that precedes it.
+    expect(isGsdHookEntry('`pwd`/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('node `pwd`/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('node $(pwd)/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('node "$(npm-root)/gsd-x.js"')).toBe(true);
+    expect(isGsdHookEntry('CLAUDE_PROJECT_DIR=/x node `pwd`/gsd-x.js')).toBe(true);
+  });
+
+  it('substitution with a USER script trailing it -> false', () => {
+    expect(isGsdHookEntry('`pwd`/my-hook.js')).toBe(false);
+    expect(isGsdHookEntry('node $(pwd)/my-hook.js')).toBe(false);
+    expect(isGsdHookEntry('node "$(npm-root)/my-hook.js"')).toBe(false);
+  });
+
+  it('a substitution in the script slot never yields to a trailing gsd- argument', () => {
+    // The substitution IS the script and what it expands to is unknowable, so the
+    // walk must stop rather than read the next argument as the script.
+    expect(isGsdHookEntry('node "$(x)" gsd-thing')).toBe(false);
+    expect(isGsdHookEntry('node "$(dirname /a/b)/my-hook.js" gsd-mode')).toBe(false);
+    expect(isGsdHookEntry('node `pwd`/my-hook.js gsd-arg')).toBe(false);
+    expect(isGsdHookEntry('node --require "$(pwd)/setup.js" gsd-arg')).toBe(false);
+    // Substitution consumes the final token, so there is no following token at all.
+    expect(isGsdHookEntry('node $(x)')).toBe(false);
+  });
+
+  it('single-quoted substitution text is a literal, not a substitution', () => {
+    // Single quotes suppress expansion, so `'$(x)'` is the script word itself.
+    expect(isGsdHookEntry("node '$(x)' gsd-thing")).toBe(false);
+    // And a literal that merely looks unterminated must not swallow the command.
+    expect(isGsdHookEntry("'$(' /a/hooks/gsd-x.js")).toBe(true);
+  });
+
+  it('a gsd- path inside a nested backtick region is not the script', () => {
+    // The `)` in the backtick region used to close the outer substitution early,
+    // so the walk resumed inside the body and read its gsd- path as the script,
+    // marking a user hook gsd-owned and dropping it from the committed base.
+    expect(isGsdHookEntry('$(echo `a) /a/hooks/gsd-x.js` ) /a/hooks/my-hook.js')).toBe(false);
+    // Same shape with the real script gsd-owned still classifies correctly.
+    expect(isGsdHookEntry('$(echo `a) /a/hooks/my-hook.js` ) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('shell operator alone is never read as the script', () => {
+    expect(isGsdHookEntry('sh -c && /a/hooks/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('sh -c && /a/hooks/my-hook.js')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import { GSD_PREFIX } from '../core/config.ts';
+import { opensSubstitution, skipSubstitution } from './hooks-filter.command-sub.ts';
 
 /**
  * Launcher binaries that may precede a script token. Used to tell a launcher
@@ -8,14 +9,11 @@ import { GSD_PREFIX } from '../core/config.ts';
 const KNOWN_LAUNCHER_BASENAMES = new Set(['node', 'bash', 'sh']);
 
 /**
- * Matches the start of a `$(...)` command substitution token, with an
- * optional single leading quote (e.g. `"$(for` or `$(command`).
- *
- * Not handled: backtick substitution, and a `$(...)` outside launcher position.
- * Both classify as user-authored, which for a real gsd entry means pull does not
- * preserve it.
+ * Shell control operators that separate commands. They are never a script path,
+ * so the token walk steps over them rather than reading one as the script (which
+ * would classify the entry as user-authored and lose a real gsd hook on pull).
  */
-const COMMAND_SUB_START = /^['"]?\$\(/;
+const SHELL_OPERATORS = new Set(['&&', '||', ';', '|', '&']);
 
 /**
  * Basename of a path token (handles both `/` and `\` separators).
@@ -50,108 +48,57 @@ function stripQuotes(token: string): string {
   return token;
 }
 
-/**
- * Quoting context inside a `$(...)` substitution. `cmd` is a command context
- * where parentheses are syntax, `dq` a double-quoted run where only a nested
- * `$(` is, and `sq` a single-quoted run where nothing is.
- */
-type SubContext = 'cmd' | 'dq' | 'sq';
-
-/** Scanner state, carried across whitespace-split tokens. */
-interface SubScan {
-  stack: SubContext[];
-  depth: number;
-  escaped: boolean;
+/** A word from the command that could be the script path. */
+interface Candidate {
+  /** Index of the token it came from, or `-1` when no candidate remains. */
+  index: number;
+  /** The word itself, which may be a suffix of that token. */
+  word: string;
 }
 
+/** No script word remains in the command. */
+const NO_CANDIDATE: Candidate = { index: -1, word: '' };
+
 /**
- * Consume one character of a substitution body and return the next index.
- * Parentheses change depth only in a command context, so a literal paren inside
- * quotes (`$(printf "(")`) or after a backslash does not.
+ * Walk forward to the next word that could be a script path, stepping over the
+ * three kinds that never are: flag tokens, shell operators, and whole command
+ * substitutions. A substitution that closes part-way through its last token
+ * yields the remainder as the candidate, which is the `$(dirname "$0")/hook.js`
+ * idiom for naming a file next to the script.
  *
- * @param token - The token being scanned.
- * @param i - Index of the character to consume.
- * @param scan - Scanner state, mutated in place.
- * @returns Index of the next character to consume.
- */
-function stepChar(token: string, i: number, scan: SubScan): number {
-  const c = token[i];
-  const top = scan.stack.at(-1);
-  if (top === 'sq') {
-    if (c === "'") scan.stack.pop();
-    return i + 1;
-  }
-  if (scan.escaped) {
-    scan.escaped = false;
-    return i + 1;
-  }
-  if (c === '\\') {
-    scan.escaped = true;
-    return i + 1;
-  }
-  // A nested `$(` opens a command context even inside double quotes.
-  if (c === '$' && token[i + 1] === '(') {
-    scan.stack.push('cmd');
-    scan.depth++;
-    return i + 2;
-  }
-  if (c === "'" && top === 'cmd') scan.stack.push('sq');
-  else if (c === '"') toggleDoubleQuote(scan, top);
-  else if (top === 'cmd') stepParen(c, scan);
-  return i + 1;
-}
-
-/**
- * Open or close a double-quoted run.
- *
- * @param scan - Scanner state, mutated in place.
- * @param top - Current innermost context.
- */
-function toggleDoubleQuote(scan: SubScan, top: SubContext | undefined): void {
-  if (top === 'dq') scan.stack.pop();
-  else scan.stack.push('dq');
-}
-
-/**
- * Apply a parenthesis seen in a command context to the nesting depth.
- *
- * @param c - The character.
- * @param scan - Scanner state, mutated in place.
- */
-function stepParen(c: string, scan: SubScan): void {
-  if (c === '(') {
-    scan.stack.push('cmd');
-    scan.depth++;
-  } else if (c === ')') {
-    scan.stack.pop();
-    scan.depth--;
-  }
-}
-
-/**
- * Skip a `$(...)` command substitution starting at `tokens[start]` and return
- * the index of the first token after it closes. Scans character by character
- * tracking quote and escape state, because the body can both nest a second
- * substitution (`"$(command -v node)"` inside `"$(for ... done)"`) and contain
- * a quoted literal paren that is not syntax at all.
+ * `inScriptSlot` separates the two positions the classifier walks from. In
+ * launcher position a substitution that is consumed whole is the LAUNCHER, so
+ * the walk continues to the word after it. In the script slot that same
+ * substitution IS the script, and what it expands to is unknowable, so the walk
+ * gives up rather than reading the following argument as the script. The one
+ * exception is a shell operator immediately after it: that ends the command and
+ * starts a new one, which puts the walk back in launcher position.
  *
  * @param tokens - The whitespace-split command tokens.
- * @param start - Index of the token that opens the substitution.
- * @returns Index of the first token after the substitution closes, or `tokens.length` when it never closes.
+ * @param from - Index to start scanning at.
+ * @param inScriptSlot - `true` when the caller is looking for the script rather than the launcher.
+ * @returns The next candidate word, or `NO_CANDIDATE` when none remains.
  */
-function skipCommandSubstitution(tokens: string[], start: number): number {
-  const scan: SubScan = { stack: ['cmd'], depth: 1, escaped: false };
-  let i = tokens[start].indexOf('$(') + 2;
-  for (let j = start; j < tokens.length; j++) {
-    const token = tokens[j];
-    while (i < token.length) {
-      i = stepChar(token, i, scan);
-      if (scan.depth === 0) return j + 1;
+function nextScriptWord(tokens: string[], from: number, inScriptSlot: boolean): Candidate {
+  let slot = inScriptSlot;
+  let i = from;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (SHELL_OPERATORS.has(token)) {
+      slot = false;
+      i++;
+    } else if (token.startsWith('-')) {
+      i++;
+    } else if (!opensSubstitution(token)) {
+      return { index: i, word: token };
+    } else {
+      const end = skipSubstitution(tokens, i);
+      if (end.rest !== '') return { index: end.next - 1, word: end.rest };
+      if (slot && !SHELL_OPERATORS.has(tokens[end.next] ?? '')) return NO_CANDIDATE;
+      i = end.next;
     }
-    i = 0;
-    scan.escaped = false;
   }
-  return tokens.length;
+  return NO_CANDIDATE;
 }
 
 /**
@@ -170,27 +117,41 @@ function skipCommandSubstitution(tokens: string[], start: number): number {
  * - `"/abs/path/node" "/abs/path/gsd-x.js"` (launcher and script both quoted)
  * - `"$(for n in ... done)" "/a/hooks/gsd-x.js"` (gsd's inline node-resolver)
  *
- * Algorithm: split the command on whitespace, strip a balanced pair of
- * surrounding quotes from each candidate token, and skip any leading `KEY=value`
- * environment-assignment tokens. A first token that opens a `$(` substitution is
- * skipped whole by paren depth before script detection resumes. If the first
- * remaining token is itself the script (it carries a path and is not a known
- * launcher binary, or its basename already starts with `gsd-`), classify off
- * that token's basename directly. This covers launcher-less commands with or
- * without trailing args/flags, and keys off the script itself so a trailing
- * `gsd-`-prefixed argument can never mark a user script as gsd-owned. Otherwise
- * the first token is the launcher: skip flag tokens and take the first
- * non-flag token as the script path. Return `basename.startsWith(GSD_PREFIX)`.
+ * Handled defensively, NOT observed from gsd (a launcher-template change is what
+ * caused the incident this module exists for, so these fail toward keeping the
+ * entry rather than dropping it):
+ * - `` `command -v node` /a/hooks/gsd-x.js `` (backtick resolver)
+ * - `sh -c "$(cat /a/x) && /a/hooks/gsd-x.js"` (substitution in argument position)
+ * - `node $(pwd)/gsd-x.js` (substitution with the script path trailing it)
  *
- * Fail-safe: if no script token is found the command is unparseable; return
- * `false` so a user entry is never silently dropped.
+ * Algorithm: split the command on whitespace, strip a balanced pair of
+ * surrounding quotes from each candidate word, and skip any leading `KEY=value`
+ * environment-assignment tokens. `nextScriptWord` then advances past flags,
+ * shell operators, and whole `$(...)`/backtick substitutions. If the first word
+ * it yields is itself the script (it carries a path and is not a known launcher
+ * binary, or its basename already starts with `gsd-`), classify off that word's
+ * basename directly. This covers launcher-less commands with or without trailing
+ * args/flags. Otherwise that word is the launcher, and a second walk in script
+ * position yields the script path. Return `basename.startsWith(GSD_PREFIX)`.
+ *
+ * Classification always keys off the script word, never a later one, so a
+ * trailing `gsd-`-prefixed ARGUMENT cannot mark a user script as gsd-owned. That
+ * is what the script-slot rule in `nextScriptWord` protects: when a substitution
+ * occupies the script slot, the result is unknowable and the walk stops there
+ * rather than reading past it to the next argument.
+ *
+ * Fail-safe: if no script word is found the command is unparseable; return
+ * `false` so a user entry is never silently dropped. Note that `false` is only
+ * safe in that direction. For an entry gsd really did install, `false` means the
+ * entry is treated as user state, which is why every unparseable shape above
+ * falls back to reading a literal token rather than giving up outright.
  *
  * @param command - Raw `command` string from a hook entry.
  * @returns `true` if gsd-owned; `false` if user-authored or unparseable.
  */
 export function isGsdHookEntry(command: string): boolean {
   const tokens = command.trim().split(/\s+/);
-  if (tokens.length === 0 || tokens[0] === '') return false;
+  if (tokens[0] === '') return false;
 
   // Skip leading KEY=value env-assignment tokens. A token is an env assignment
   // when its key part (everything before the first '=') matches a shell
@@ -201,34 +162,25 @@ export function isGsdHookEntry(command: string): boolean {
     i++;
   }
 
-  // A `$(...)` substitution occupies the launcher position; skip each one whole
-  // so script detection resumes at the token that follows. Loops because a
-  // second substitution can follow the first, and its body must not be mined
-  // for a script token.
-  while (COMMAND_SUB_START.test(tokens[i] ?? '')) {
-    i = skipCommandSubstitution(tokens, i);
-  }
-
-  const first = stripQuotes(tokens[i] ?? '');
+  const launcher = nextScriptWord(tokens, i, false);
+  if (launcher.index < 0) return false;
+  const first = stripQuotes(launcher.word);
   const firstBase = scriptBasename(first);
   const firstHasPath = first.includes('/') || first.includes('\\');
 
-  // Launcher-less form: the first non-env token is itself the script. True when it
-  // carries a path and is not a known launcher binary, or its basename already
+  // Launcher-less form: the first candidate word is itself the script. True when
+  // it carries a path and is not a known launcher binary, or its basename already
   // starts with GSD_PREFIX. Covers `/a/hooks/gsd-x.js`, the same with trailing
-  // args/flags, and a bare `gsd-x.js`. Classifying off the script token means a
-  // trailing gsd-prefixed ARGUMENT can never mark a user script as gsd-owned.
+  // args/flags, and a bare `gsd-x.js`.
   if ((firstHasPath && !KNOWN_LAUNCHER_BASENAMES.has(firstBase)) || first.startsWith(GSD_PREFIX)) {
     return firstBase.startsWith(GSD_PREFIX);
   }
 
-  // Otherwise tokens[i] is the launcher: skip flag tokens, take the first
-  // non-flag token as the script path. A launcher with no script -> false.
-  for (let j = i + 1; j < tokens.length; j++) {
-    if (tokens[j].startsWith('-')) continue;
-    return scriptBasename(stripQuotes(tokens[j])).startsWith(GSD_PREFIX);
-  }
-  return false;
+  // Otherwise that word is the launcher and the script is the next candidate.
+  // A launcher with no script -> false.
+  const script = nextScriptWord(tokens, launcher.index + 1, true);
+  if (script.index < 0) return false;
+  return scriptBasename(stripQuotes(script.word)).startsWith(GSD_PREFIX);
 }
 
 // ---------------------------------------------------------------------------
