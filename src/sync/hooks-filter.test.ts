@@ -150,6 +150,76 @@ describe('isGsdHookEntry', () => {
   it('launcher-less quoted gsd script -> true', () => {
     expect(isGsdHookEntry('"/a/hooks/gsd-x.js"')).toBe(true);
   });
+
+  it('command-substitution node-resolver launcher (real post-install command) + gsd script -> true', () => {
+    // The exact launcher form gsd 1.12.0 / 1.13.0 writes: an inline node
+    // resolver built as a `$(for ... done)` command substitution.
+    expect(
+      isGsdHookEntry(
+        '"$(for n in "/home/norm/.nvm/versions/node/v24.20.0/bin/node" "$(command -v node)" /usr/local/bin/node /usr/bin/node; do [ -x "$n" ] && { [ "${n#/}" != "$n" ] || [ "${n#?:}" != "$n" ]; } && printf \'%s\' "$n" && break; done)" "/home/norm/.claude/hooks/gsd-check-update.js"',
+      ),
+    ).toBe(true);
+  });
+
+  it('same command-substitution launcher + user script -> false (no false positive)', () => {
+    expect(
+      isGsdHookEntry(
+        '"$(for n in "/home/norm/.nvm/versions/node/v24.20.0/bin/node" "$(command -v node)" /usr/local/bin/node /usr/bin/node; do [ -x "$n" ] && { [ "${n#/}" != "$n" ] || [ "${n#?:}" != "$n" ]; } && printf \'%s\' "$n" && break; done)" "/home/norm/.claude/hooks/my-personal-hook.js"',
+      ),
+    ).toBe(false);
+  });
+
+  it('unquoted command-substitution launcher + gsd script -> true', () => {
+    expect(isGsdHookEntry('$(command -v node) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('unterminated command substitution -> false (fail-safe), no hang', () => {
+    expect(isGsdHookEntry('"$(for n in /usr/bin/node')).toBe(false);
+  });
+
+  it('back-to-back substitutions -> classifies off the real script, not a substitution body', () => {
+    // The second substitution's body carries a gsd- path; the actual script is a
+    // user hook, so the entry must stay user-authored.
+    expect(isGsdHookEntry('$(a) $(b /a/hooks/gsd-x.js) /a/hooks/my-hook.js')).toBe(false);
+  });
+
+  it('back-to-back substitutions + gsd script -> true', () => {
+    expect(isGsdHookEntry('$(a) $(command -v node) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('double-quoted literal paren in the body does not extend the substitution', () => {
+    expect(isGsdHookEntry('$(printf "(") /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('single-quoted literal paren in the body does not extend the substitution', () => {
+    expect(isGsdHookEntry("$(echo '(') /a/hooks/gsd-x.js")).toBe(true);
+  });
+
+  it('single-quoted run spanning tokens stays literal', () => {
+    expect(isGsdHookEntry("$(echo 'a ) b') /a/hooks/gsd-x.js")).toBe(true);
+  });
+
+  it('escaped paren in the body does not extend the substitution', () => {
+    expect(isGsdHookEntry('$(echo \\() /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('escape state does not leak across a token boundary', () => {
+    expect(isGsdHookEntry('$(echo x\\ y) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('bare subshell parens in the body nest correctly', () => {
+    expect(isGsdHookEntry('$( (true) ) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('a literal paren after the substitution closes is part of the launcher word', () => {
+    // bash expands `"$(f ))"` to one word: the substitution closes at the first
+    // `)`, the second is literal. So the next token really is the script.
+    expect(isGsdHookEntry('"$(f ))" gsd-x.js /a/hooks/my-hook.js')).toBe(true);
+  });
+
+  it('quoted body with a non-gsd script stays user-authored', () => {
+    expect(isGsdHookEntry('$(printf "(") /a/hooks/my-hook.js')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -549,6 +619,22 @@ describe('keepGsdHookEntries', () => {
     // Union of keep and strip commands equals every command, with no overlap.
     expect([...kept, ...stripped].sort((a, b) => a.localeCompare(b, 'en'))).toEqual(all);
     expect(kept.some((c) => stripped.includes(c))).toBe(false);
+  });
+
+  it('preserves a gsd entry launched via command substitution (regression: graft-back input)', () => {
+    const command =
+      '"$(for n in "/home/norm/.nvm/versions/node/v24.20.0/bin/node" "$(command -v node)" /usr/local/bin/node /usr/bin/node; do [ -x "$n" ] && { [ "${n#/}" != "$n" ] || [ "${n#?:}" != "$n" ]; } && printf \'%s\' "$n" && break; done)" "/home/norm/.claude/hooks/gsd-check-update.js"';
+    const input = {
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [{ type: 'command', command }] }],
+      },
+    };
+    const result = keepGsdHookEntries(input);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+    const inner = (event[0] as Record<string, unknown>).hooks as unknown[];
+    expect(inner).toHaveLength(1);
+    expect((inner[0] as Record<string, unknown>).command).toBe(command);
   });
 });
 

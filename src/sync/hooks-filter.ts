@@ -8,6 +8,16 @@ import { GSD_PREFIX } from '../core/config.ts';
 const KNOWN_LAUNCHER_BASENAMES = new Set(['node', 'bash', 'sh']);
 
 /**
+ * Matches the start of a `$(...)` command substitution token, with an
+ * optional single leading quote (e.g. `"$(for` or `$(command`).
+ *
+ * Not handled: backtick substitution, and a `$(...)` outside launcher position.
+ * Both classify as user-authored, which for a real gsd entry means pull does not
+ * preserve it.
+ */
+const COMMAND_SUB_START = /^['"]?\$\(/;
+
+/**
  * Basename of a path token (handles both `/` and `\` separators).
  *
  * @param token - A command token that may be a path.
@@ -41,6 +51,110 @@ function stripQuotes(token: string): string {
 }
 
 /**
+ * Quoting context inside a `$(...)` substitution. `cmd` is a command context
+ * where parentheses are syntax, `dq` a double-quoted run where only a nested
+ * `$(` is, and `sq` a single-quoted run where nothing is.
+ */
+type SubContext = 'cmd' | 'dq' | 'sq';
+
+/** Scanner state, carried across whitespace-split tokens. */
+interface SubScan {
+  stack: SubContext[];
+  depth: number;
+  escaped: boolean;
+}
+
+/**
+ * Consume one character of a substitution body and return the next index.
+ * Parentheses change depth only in a command context, so a literal paren inside
+ * quotes (`$(printf "(")`) or after a backslash does not.
+ *
+ * @param token - The token being scanned.
+ * @param i - Index of the character to consume.
+ * @param scan - Scanner state, mutated in place.
+ * @returns Index of the next character to consume.
+ */
+function stepChar(token: string, i: number, scan: SubScan): number {
+  const c = token[i];
+  const top = scan.stack.at(-1);
+  if (top === 'sq') {
+    if (c === "'") scan.stack.pop();
+    return i + 1;
+  }
+  if (scan.escaped) {
+    scan.escaped = false;
+    return i + 1;
+  }
+  if (c === '\\') {
+    scan.escaped = true;
+    return i + 1;
+  }
+  // A nested `$(` opens a command context even inside double quotes.
+  if (c === '$' && token[i + 1] === '(') {
+    scan.stack.push('cmd');
+    scan.depth++;
+    return i + 2;
+  }
+  if (c === "'" && top === 'cmd') scan.stack.push('sq');
+  else if (c === '"') toggleDoubleQuote(scan, top);
+  else if (top === 'cmd') stepParen(c, scan);
+  return i + 1;
+}
+
+/**
+ * Open or close a double-quoted run.
+ *
+ * @param scan - Scanner state, mutated in place.
+ * @param top - Current innermost context.
+ */
+function toggleDoubleQuote(scan: SubScan, top: SubContext | undefined): void {
+  if (top === 'dq') scan.stack.pop();
+  else scan.stack.push('dq');
+}
+
+/**
+ * Apply a parenthesis seen in a command context to the nesting depth.
+ *
+ * @param c - The character.
+ * @param scan - Scanner state, mutated in place.
+ */
+function stepParen(c: string, scan: SubScan): void {
+  if (c === '(') {
+    scan.stack.push('cmd');
+    scan.depth++;
+  } else if (c === ')') {
+    scan.stack.pop();
+    scan.depth--;
+  }
+}
+
+/**
+ * Skip a `$(...)` command substitution starting at `tokens[start]` and return
+ * the index of the first token after it closes. Scans character by character
+ * tracking quote and escape state, because the body can both nest a second
+ * substitution (`"$(command -v node)"` inside `"$(for ... done)"`) and contain
+ * a quoted literal paren that is not syntax at all.
+ *
+ * @param tokens - The whitespace-split command tokens.
+ * @param start - Index of the token that opens the substitution.
+ * @returns Index of the first token after the substitution closes, or `tokens.length` when it never closes.
+ */
+function skipCommandSubstitution(tokens: string[], start: number): number {
+  const scan: SubScan = { stack: ['cmd'], depth: 1, escaped: false };
+  let i = tokens[start].indexOf('$(') + 2;
+  for (let j = start; j < tokens.length; j++) {
+    const token = tokens[j];
+    while (i < token.length) {
+      i = stepChar(token, i, scan);
+      if (scan.depth === 0) return j + 1;
+    }
+    i = 0;
+    scan.escaped = false;
+  }
+  return tokens.length;
+}
+
+/**
  * Returns `true` when a hook entry's `command` string references a script
  * whose basename starts with `gsd-`, indicating the entry was installed by
  * gsd (`@opengsd/gsd-core`) rather than authored by the user.
@@ -54,17 +168,19 @@ function stripQuotes(token: string): string {
  * - `CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js` (env-prefixed)
  * - `/a/hooks/gsd-x.js` (launcher-less, shebang executable)
  * - `"/abs/path/node" "/abs/path/gsd-x.js"` (launcher and script both quoted)
+ * - `"$(for n in ... done)" "/a/hooks/gsd-x.js"` (gsd's inline node-resolver)
  *
  * Algorithm: split the command on whitespace, strip a balanced pair of
  * surrounding quotes from each candidate token, and skip any leading `KEY=value`
- * environment-assignment tokens. If the first remaining token is itself the
- * script (it carries a path and is not a known launcher binary, or its basename
- * already starts with `gsd-`), classify off that token's basename directly. This
- * covers launcher-less commands with or without trailing args/flags, and keys
- * off the script itself so a trailing `gsd-`-prefixed argument can never mark a
- * user script as gsd-owned. Otherwise the first token is the launcher: skip flag
- * tokens and take the first non-flag token as the script path. Return
- * `basename.startsWith(GSD_PREFIX)`.
+ * environment-assignment tokens. A first token that opens a `$(` substitution is
+ * skipped whole by paren depth before script detection resumes. If the first
+ * remaining token is itself the script (it carries a path and is not a known
+ * launcher binary, or its basename already starts with `gsd-`), classify off
+ * that token's basename directly. This covers launcher-less commands with or
+ * without trailing args/flags, and keys off the script itself so a trailing
+ * `gsd-`-prefixed argument can never mark a user script as gsd-owned. Otherwise
+ * the first token is the launcher: skip flag tokens and take the first
+ * non-flag token as the script path. Return `basename.startsWith(GSD_PREFIX)`.
  *
  * Fail-safe: if no script token is found the command is unparseable; return
  * `false` so a user entry is never silently dropped.
@@ -83,6 +199,14 @@ export function isGsdHookEntry(command: string): boolean {
   let i = 0;
   while (i < tokens.length && envAssign.test(tokens[i])) {
     i++;
+  }
+
+  // A `$(...)` substitution occupies the launcher position; skip each one whole
+  // so script detection resumes at the token that follows. Loops because a
+  // second substitution can follow the first, and its body must not be mined
+  // for a script token.
+  while (COMMAND_SUB_START.test(tokens[i] ?? '')) {
+    i = skipCommandSubstitution(tokens, i);
   }
 
   const first = stripQuotes(tokens[i] ?? '');
