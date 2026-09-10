@@ -8,6 +8,12 @@ import { GSD_PREFIX } from '../core/config.ts';
 const KNOWN_LAUNCHER_BASENAMES = new Set(['node', 'bash', 'sh']);
 
 /**
+ * Matches the start of a `$(...)` command substitution token, with an
+ * optional single leading quote (e.g. `"$(for` or `$(command`).
+ */
+const COMMAND_SUB_START = /^['"]?\$\(/;
+
+/**
  * Basename of a path token (handles both `/` and `\` separators).
  *
  * @param token - A command token that may be a path.
@@ -41,6 +47,26 @@ function stripQuotes(token: string): string {
 }
 
 /**
+ * Skip a `$(...)` command substitution token starting at `tokens[start]` and
+ * return the index of the first token after it closes. Depth is counted per
+ * token via paren-count difference (not a first-close-paren scan) because the
+ * substitution body can nest a second substitution, e.g. `"$(command -v node)"`
+ * inside the outer `"$(for ... done)"`.
+ *
+ * @param tokens - The whitespace-split command tokens.
+ * @param start - Index of the token that opens the substitution.
+ * @returns Index of the first token after the substitution closes, or `tokens.length` when it never closes.
+ */
+function skipCommandSubstitution(tokens: string[], start: number): number {
+  let depth = 0;
+  for (let j = start; j < tokens.length; j++) {
+    depth += tokens[j].split('(').length - tokens[j].split(')').length;
+    if (depth <= 0) return j + 1;
+  }
+  return tokens.length;
+}
+
+/**
  * Returns `true` when a hook entry's `command` string references a script
  * whose basename starts with `gsd-`, indicating the entry was installed by
  * gsd (`@opengsd/gsd-core`) rather than authored by the user.
@@ -54,17 +80,19 @@ function stripQuotes(token: string): string {
  * - `CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js` (env-prefixed)
  * - `/a/hooks/gsd-x.js` (launcher-less, shebang executable)
  * - `"/abs/path/node" "/abs/path/gsd-x.js"` (launcher and script both quoted)
+ * - `"$(for n in ... done)" "/a/hooks/gsd-x.js"` (gsd's inline node-resolver)
  *
  * Algorithm: split the command on whitespace, strip a balanced pair of
  * surrounding quotes from each candidate token, and skip any leading `KEY=value`
- * environment-assignment tokens. If the first remaining token is itself the
- * script (it carries a path and is not a known launcher binary, or its basename
- * already starts with `gsd-`), classify off that token's basename directly. This
- * covers launcher-less commands with or without trailing args/flags, and keys
- * off the script itself so a trailing `gsd-`-prefixed argument can never mark a
- * user script as gsd-owned. Otherwise the first token is the launcher: skip flag
- * tokens and take the first non-flag token as the script path. Return
- * `basename.startsWith(GSD_PREFIX)`.
+ * environment-assignment tokens. A first token that opens a `$(` substitution is
+ * skipped whole by paren depth before script detection resumes. If the first
+ * remaining token is itself the script (it carries a path and is not a known
+ * launcher binary, or its basename already starts with `gsd-`), classify off
+ * that token's basename directly. This covers launcher-less commands with or
+ * without trailing args/flags, and keys off the script itself so a trailing
+ * `gsd-`-prefixed argument can never mark a user script as gsd-owned. Otherwise
+ * the first token is the launcher: skip flag tokens and take the first
+ * non-flag token as the script path. Return `basename.startsWith(GSD_PREFIX)`.
  *
  * Fail-safe: if no script token is found the command is unparseable; return
  * `false` so a user entry is never silently dropped.
@@ -83,6 +111,12 @@ export function isGsdHookEntry(command: string): boolean {
   let i = 0;
   while (i < tokens.length && envAssign.test(tokens[i])) {
     i++;
+  }
+
+  // A `$(...)` launcher substitution occupies the launcher position; skip it
+  // whole so script detection resumes at the token that follows it.
+  if (COMMAND_SUB_START.test(tokens[i] ?? '')) {
+    i = skipCommandSubstitution(tokens, i);
   }
 
   const first = stripQuotes(tokens[i] ?? '');

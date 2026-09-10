@@ -150,6 +150,32 @@ describe('isGsdHookEntry', () => {
   it('launcher-less quoted gsd script -> true', () => {
     expect(isGsdHookEntry('"/a/hooks/gsd-x.js"')).toBe(true);
   });
+
+  it('command-substitution node-resolver launcher (real post-install command) + gsd script -> true', () => {
+    // The exact launcher form gsd 1.12.0 / 1.13.0 writes: an inline node
+    // resolver built as a `$(for ... done)` command substitution.
+    expect(
+      isGsdHookEntry(
+        '"$(for n in "/home/norm/.nvm/versions/node/v24.20.0/bin/node" "$(command -v node)" /usr/local/bin/node /usr/bin/node; do [ -x "$n" ] && { [ "${n#/}" != "$n" ] || [ "${n#?:}" != "$n" ]; } && printf \'%s\' "$n" && break; done)" "/home/norm/.claude/hooks/gsd-check-update.js"',
+      ),
+    ).toBe(true);
+  });
+
+  it('same command-substitution launcher + user script -> false (no false positive)', () => {
+    expect(
+      isGsdHookEntry(
+        '"$(for n in "/home/norm/.nvm/versions/node/v24.20.0/bin/node" "$(command -v node)" /usr/local/bin/node /usr/bin/node; do [ -x "$n" ] && { [ "${n#/}" != "$n" ] || [ "${n#?:}" != "$n" ]; } && printf \'%s\' "$n" && break; done)" "/home/norm/.claude/hooks/my-personal-hook.js"',
+      ),
+    ).toBe(false);
+  });
+
+  it('unquoted command-substitution launcher + gsd script -> true', () => {
+    expect(isGsdHookEntry('$(command -v node) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('unterminated command substitution -> false (fail-safe), no hang', () => {
+    expect(isGsdHookEntry('"$(for n in /usr/bin/node')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -549,6 +575,22 @@ describe('keepGsdHookEntries', () => {
     // Union of keep and strip commands equals every command, with no overlap.
     expect([...kept, ...stripped].sort((a, b) => a.localeCompare(b, 'en'))).toEqual(all);
     expect(kept.some((c) => stripped.includes(c))).toBe(false);
+  });
+
+  it('preserves a gsd entry launched via command substitution (regression: graft-back input)', () => {
+    const command =
+      '"$(for n in "/home/norm/.nvm/versions/node/v24.20.0/bin/node" "$(command -v node)" /usr/local/bin/node /usr/bin/node; do [ -x "$n" ] && { [ "${n#/}" != "$n" ] || [ "${n#?:}" != "$n" ]; } && printf \'%s\' "$n" && break; done)" "/home/norm/.claude/hooks/gsd-check-update.js"';
+    const input = {
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [{ type: 'command', command }] }],
+      },
+    };
+    const result = keepGsdHookEntries(input);
+    const event = (result.hooks as Record<string, unknown>).SessionStart as unknown[];
+    expect(event).toHaveLength(1);
+    const inner = (event[0] as Record<string, unknown>).hooks as unknown[];
+    expect(inner).toHaveLength(1);
+    expect((inner[0] as Record<string, unknown>).command).toBe(command);
   });
 });
 
