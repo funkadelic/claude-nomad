@@ -51,21 +51,105 @@ function stripQuotes(token: string): string {
 }
 
 /**
- * Skip a `$(...)` command substitution token starting at `tokens[start]` and
- * return the index of the first token after it closes. Depth is counted per
- * token via paren-count difference (not a first-close-paren scan) because the
- * substitution body can nest a second substitution, e.g. `"$(command -v node)"`
- * inside the outer `"$(for ... done)"`.
+ * Quoting context inside a `$(...)` substitution. `cmd` is a command context
+ * where parentheses are syntax, `dq` a double-quoted run where only a nested
+ * `$(` is, and `sq` a single-quoted run where nothing is.
+ */
+type SubContext = 'cmd' | 'dq' | 'sq';
+
+/** Scanner state, carried across whitespace-split tokens. */
+interface SubScan {
+  stack: SubContext[];
+  depth: number;
+  escaped: boolean;
+}
+
+/**
+ * Consume one character of a substitution body and return the next index.
+ * Parentheses change depth only in a command context, so a literal paren inside
+ * quotes (`$(printf "(")`) or after a backslash does not.
+ *
+ * @param token - The token being scanned.
+ * @param i - Index of the character to consume.
+ * @param scan - Scanner state, mutated in place.
+ * @returns Index of the next character to consume.
+ */
+function stepChar(token: string, i: number, scan: SubScan): number {
+  const c = token[i];
+  const top = scan.stack.at(-1);
+  if (top === 'sq') {
+    if (c === "'") scan.stack.pop();
+    return i + 1;
+  }
+  if (scan.escaped) {
+    scan.escaped = false;
+    return i + 1;
+  }
+  if (c === '\\') {
+    scan.escaped = true;
+    return i + 1;
+  }
+  // A nested `$(` opens a command context even inside double quotes.
+  if (c === '$' && token[i + 1] === '(') {
+    scan.stack.push('cmd');
+    scan.depth++;
+    return i + 2;
+  }
+  if (c === "'" && top === 'cmd') scan.stack.push('sq');
+  else if (c === '"') toggleDoubleQuote(scan, top);
+  else if (top === 'cmd') stepParen(c, scan);
+  return i + 1;
+}
+
+/**
+ * Open or close a double-quoted run.
+ *
+ * @param scan - Scanner state, mutated in place.
+ * @param top - Current innermost context.
+ */
+function toggleDoubleQuote(scan: SubScan, top: SubContext | undefined): void {
+  if (top === 'dq') scan.stack.pop();
+  else scan.stack.push('dq');
+}
+
+/**
+ * Apply a parenthesis seen in a command context to the nesting depth.
+ *
+ * @param c - The character.
+ * @param scan - Scanner state, mutated in place.
+ */
+function stepParen(c: string, scan: SubScan): void {
+  if (c === '(') {
+    scan.stack.push('cmd');
+    scan.depth++;
+  } else if (c === ')') {
+    scan.stack.pop();
+    scan.depth--;
+  }
+}
+
+/**
+ * Skip a `$(...)` command substitution starting at `tokens[start]` and return
+ * the index of the first token after it closes. Scans character by character
+ * tracking quote and escape state, because the body can both nest a second
+ * substitution (`"$(command -v node)"` inside `"$(for ... done)"`) and contain
+ * a quoted literal paren that is not syntax at all.
  *
  * @param tokens - The whitespace-split command tokens.
  * @param start - Index of the token that opens the substitution.
  * @returns Index of the first token after the substitution closes, or `tokens.length` when it never closes.
  */
 function skipCommandSubstitution(tokens: string[], start: number): number {
-  let depth = 0;
+  const scan: SubScan = { stack: ['cmd'], depth: 1, escaped: false };
+  let i = tokens[start].indexOf('$(') + 2;
   for (let j = start; j < tokens.length; j++) {
-    depth += tokens[j].split('(').length - tokens[j].split(')').length;
-    if (depth <= 0) return j + 1;
+    const token = tokens[j];
+    while (i < token.length) {
+      i = stepChar(token, i, scan);
+      if (scan.depth === 0) return j + 1;
+    }
+    i = 0;
+    scan.escaped = false;
   }
   return tokens.length;
 }

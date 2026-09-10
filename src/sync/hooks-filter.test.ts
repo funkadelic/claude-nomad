@@ -186,6 +186,40 @@ describe('isGsdHookEntry', () => {
   it('back-to-back substitutions + gsd script -> true', () => {
     expect(isGsdHookEntry('$(a) $(command -v node) /a/hooks/gsd-x.js')).toBe(true);
   });
+
+  it('double-quoted literal paren in the body does not extend the substitution', () => {
+    expect(isGsdHookEntry('$(printf "(") /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('single-quoted literal paren in the body does not extend the substitution', () => {
+    expect(isGsdHookEntry("$(echo '(') /a/hooks/gsd-x.js")).toBe(true);
+  });
+
+  it('single-quoted run spanning tokens stays literal', () => {
+    expect(isGsdHookEntry("$(echo 'a ) b') /a/hooks/gsd-x.js")).toBe(true);
+  });
+
+  it('escaped paren in the body does not extend the substitution', () => {
+    expect(isGsdHookEntry('$(echo \\() /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('escape state does not leak across a token boundary', () => {
+    expect(isGsdHookEntry('$(echo x\\ y) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('bare subshell parens in the body nest correctly', () => {
+    expect(isGsdHookEntry('$( (true) ) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('a literal paren after the substitution closes is part of the launcher word', () => {
+    // bash expands `"$(f ))"` to one word: the substitution closes at the first
+    // `)`, the second is literal. So the next token really is the script.
+    expect(isGsdHookEntry('"$(f ))" gsd-x.js /a/hooks/my-hook.js')).toBe(true);
+  });
+
+  it('quoted body with a non-gsd script stays user-authored', () => {
+    expect(isGsdHookEntry('$(printf "(") /a/hooks/my-hook.js')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
