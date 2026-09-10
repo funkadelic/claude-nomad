@@ -10,6 +10,10 @@ const KNOWN_LAUNCHER_BASENAMES = new Set(['node', 'bash', 'sh']);
 /**
  * Matches the start of a `$(...)` command substitution token, with an
  * optional single leading quote (e.g. `"$(for` or `$(command`).
+ *
+ * Not handled: backtick substitution, and a `$(...)` outside launcher position.
+ * Both classify as user-authored, which for a real gsd entry means pull does not
+ * preserve it.
  */
 const COMMAND_SUB_START = /^['"]?\$\(/;
 
@@ -113,9 +117,11 @@ export function isGsdHookEntry(command: string): boolean {
     i++;
   }
 
-  // A `$(...)` launcher substitution occupies the launcher position; skip it
-  // whole so script detection resumes at the token that follows it.
-  if (COMMAND_SUB_START.test(tokens[i] ?? '')) {
+  // A `$(...)` substitution occupies the launcher position; skip each one whole
+  // so script detection resumes at the token that follows. Loops because a
+  // second substitution can follow the first, and its body must not be mined
+  // for a script token.
+  while (COMMAND_SUB_START.test(tokens[i] ?? '')) {
     i = skipCommandSubstitution(tokens, i);
   }
 

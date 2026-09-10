@@ -176,6 +176,16 @@ describe('isGsdHookEntry', () => {
   it('unterminated command substitution -> false (fail-safe), no hang', () => {
     expect(isGsdHookEntry('"$(for n in /usr/bin/node')).toBe(false);
   });
+
+  it('back-to-back substitutions -> classifies off the real script, not a substitution body', () => {
+    // The second substitution's body carries a gsd- path; the actual script is a
+    // user hook, so the entry must stay user-authored.
+    expect(isGsdHookEntry('$(a) $(b /a/hooks/gsd-x.js) /a/hooks/my-hook.js')).toBe(false);
+  });
+
+  it('back-to-back substitutions + gsd script -> true', () => {
+    expect(isGsdHookEntry('$(a) $(command -v node) /a/hooks/gsd-x.js')).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
