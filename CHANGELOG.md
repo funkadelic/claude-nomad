@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.69.0](https://github.com/funkadelic/claude-nomad/compare/v0.68.0...v0.69.0) (2026-09-11)
+
+
+### What's new
+
+* `nomad pull` was deleting hooks it should have left alone. It reads each hook command to work
+  out whether GSD installed it or you wrote it, and several ways of writing that command led it
+  to the wrong answer, so hooks from either side could vanish with nothing printed to say so.
+  Reinstall a hook you lost this way and it stays put now.
+* `nomad doctor` had two problems of its own. It warned that a script pointed at a missing file
+  when the only mention of that file sat inside quotes, and on a script containing an unmatched
+  quote it stopped partway through the check.
+* `nomad update` now ends with a link to the release notes for the version you ended up on,
+  whether the update moved you forward or you were already current.
+
+
+### Added
+
+* **update:** link to the release notes for the version you land on ([#598](https://github.com/funkadelic/claude-nomad/issues/598)) ([798aa5f](https://github.com/funkadelic/claude-nomad/commit/798aa5f55e7181161b827ec4c788f7a21fdea04b))
+
+
+### Fixed
+
+* **deps:** force smol-toml to a patched version via an npm override ([#593](https://github.com/funkadelic/claude-nomad/issues/593)) ([40c3382](https://github.com/funkadelic/claude-nomad/commit/40c3382a28d446045677f251bc2d5d318c0eb40b))
+* keep hooks you wrote and stop doctor from hanging ([#597](https://github.com/funkadelic/claude-nomad/issues/597)) ([284d6c6](https://github.com/funkadelic/claude-nomad/commit/284d6c6ffe909aed15fbca803183b6aae12843af))
+* **sync:** recognize more ways a gsd hook command can be written ([#595](https://github.com/funkadelic/claude-nomad/issues/595)) ([41e283b](https://github.com/funkadelic/claude-nomad/commit/41e283b216dc378347e09530597e4b5eb2143fe4))
+* **sync:** stop pull from deleting gsd hooks ([#594](https://github.com/funkadelic/claude-nomad/issues/594)) ([36b3b6b](https://github.com/funkadelic/claude-nomad/commit/36b3b6b66d5999888748a5934c5563cb4172fb31))
+* **sync:** stop pull from deleting hooks that run through env ([#596](https://github.com/funkadelic/claude-nomad/issues/596)) ([eee6161](https://github.com/funkadelic/claude-nomad/commit/eee61615712c3a52c39ed86963e8997436ca57f9))
+
+
+### Changed
+
+* **cli:** move the argv dispatch layer into src/cli/ ([#586](https://github.com/funkadelic/claude-nomad/issues/586)) ([bf3c219](https://github.com/funkadelic/claude-nomad/commit/bf3c219a8196c16314861ef6f02a292d4451e044))
+* **commands:** move the remaining commands into src/commands/ ([#569](https://github.com/funkadelic/claude-nomad/issues/569)) ([724c17b](https://github.com/funkadelic/claude-nomad/commit/724c17b363d01241d5914fbfa90e614b8e8cb06f))
+* **core:** move the core domain into src/core/ ([#582](https://github.com/funkadelic/claude-nomad/issues/582)) ([7c4fcd2](https://github.com/funkadelic/claude-nomad/commit/7c4fcd2491b2ba767f01685cf57e320fb9782179))
+* **dependabot:** group peer-locked dependency updates into single PRs ([#589](https://github.com/funkadelic/claude-nomad/issues/589)) ([abe7693](https://github.com/funkadelic/claude-nomad/commit/abe7693a6c5bea217cded519de75a8249fef2f22))
+* **dependabot:** group peer-locked vitest and astro updates into single PRs ([abe7693](https://github.com/funkadelic/claude-nomad/commit/abe7693a6c5bea217cded519de75a8249fef2f22))
+* **doctor:** move the doctor domain into src/commands/doctor/ ([#564](https://github.com/funkadelic/claude-nomad/issues/564)) ([9da4f6c](https://github.com/funkadelic/claude-nomad/commit/9da4f6c9a28527b3bc91ba815bae412baf122f8a))
+* keep the core modules from importing the command layer ([#584](https://github.com/funkadelic/claude-nomad/issues/584)) ([fa9e53e](https://github.com/funkadelic/claude-nomad/commit/fa9e53e77e10f60b7b0c98026c3f32a2e253eddc))
+* **pull:** move the pull domain into src/commands/pull/ ([#568](https://github.com/funkadelic/claude-nomad/issues/568)) ([f7872c5](https://github.com/funkadelic/claude-nomad/commit/f7872c5c6389a24716b93f1bb30f1ef79e8dbd8d))
+* **push:** move the push domain into src/commands/push/ ([#566](https://github.com/funkadelic/claude-nomad/issues/566)) ([04233f5](https://github.com/funkadelic/claude-nomad/commit/04233f5c40282fcacc091cc56212b5eb023d0c99))
+* **render:** move the render domain into src/render/ ([#577](https://github.com/funkadelic/claude-nomad/issues/577)) ([d1615ad](https://github.com/funkadelic/claude-nomad/commit/d1615adc3ccb1e05bd046cdcb5b7a5f46f535d26))
+* **sync:** move the sync domain into src/sync/ ([#578](https://github.com/funkadelic/claude-nomad/issues/578)) ([9d23ce5](https://github.com/funkadelic/claude-nomad/commit/9d23ce5c9574e679dfb0788c953ad3dcaa282f67))
+* **test:** move the cross-domain tests into src/integration/ ([#587](https://github.com/funkadelic/claude-nomad/issues/587)) ([77ceb89](https://github.com/funkadelic/claude-nomad/commit/77ceb89ad081c8579fca6d1edf8f86a8f64489b3))
+
+
+### Documentation
+
+* point module cross-references at their relocated paths ([#567](https://github.com/funkadelic/claude-nomad/issues/567)) ([2b63d08](https://github.com/funkadelic/claude-nomad/commit/2b63d085b72677f67c2d306c8897d8c8262eae43))
+* point the contributing guide and docs site at the real module paths ([0bcfe09](https://github.com/funkadelic/claude-nomad/commit/0bcfe09cea123f6509f92ba0ede1f01ae9d12d89))
+* **stryker:** note that mutation testing is broken under vitest 5 ([#592](https://github.com/funkadelic/claude-nomad/issues/592)) ([30ea308](https://github.com/funkadelic/claude-nomad/commit/30ea30833811496bd5c0f21757c3a924af12d272))
+
+
+### Dependencies
+
+* bump @astrojs/starlight and starlight-links-validator in /docs-site ([#591](https://github.com/funkadelic/claude-nomad/issues/591)) ([49579a2](https://github.com/funkadelic/claude-nomad/commit/49579a242445d53010a297737f8a53c60c648849))
+* bump actions/deploy-pages from 5.0.0 to 5.0.1 ([#573](https://github.com/funkadelic/claude-nomad/issues/573)) ([6882748](https://github.com/funkadelic/claude-nomad/commit/6882748c8fceb563cb7c7f449863421999e99bb3))
+* bump astro from 7.2.9 to 7.3.1 in /docs-site ([#576](https://github.com/funkadelic/claude-nomad/issues/576)) ([6e9de39](https://github.com/funkadelic/claude-nomad/commit/6e9de39b49aed8b6d5b9c003d3fe82fffa989e6c))
+* bump js-yaml from 4.3.1 to 4.3.2 ([#581](https://github.com/funkadelic/claude-nomad/issues/581)) ([c8ab3b7](https://github.com/funkadelic/claude-nomad/commit/c8ab3b7b401b54471eb19564ab1c841dd9e744f7))
+* bump js-yaml from 4.3.1 to 4.3.2 in /docs-site ([#580](https://github.com/funkadelic/claude-nomad/issues/580)) ([6eaaa7c](https://github.com/funkadelic/claude-nomad/commit/6eaaa7c111a44d99dafa8a1a9d817f43a491e654))
+* bump smol-toml from 1.7.0 to 1.8.0 in /docs-site ([#585](https://github.com/funkadelic/claude-nomad/issues/585)) ([30a4414](https://github.com/funkadelic/claude-nomad/commit/30a44143291e3bd0e30a7a5c0770bff189bc4dda))
+* bump svgo from 4.0.2 to 4.1.0 in /docs-site ([#579](https://github.com/funkadelic/claude-nomad/issues/579)) ([2d6b60a](https://github.com/funkadelic/claude-nomad/commit/2d6b60a3486079d0ca6fdbbff9a5f45100602a0d))
+* bump the dev-dependencies group across 1 directory with 4 updates ([#583](https://github.com/funkadelic/claude-nomad/issues/583)) ([823a1eb](https://github.com/funkadelic/claude-nomad/commit/823a1eb0747982f63d446247bac56f4e1bb8f098))
+* bump vitest and @vitest/coverage-v8 from 4.1.11 to 5.0.0 in the vitest group ([#590](https://github.com/funkadelic/claude-nomad/issues/590)) ([8c24023](https://github.com/funkadelic/claude-nomad/commit/8c24023ef599ba8fe34a097e7d283620d1a558f4))
+
 ## [0.68.0](https://github.com/funkadelic/claude-nomad/compare/v0.67.3...v0.68.0) (2026-09-03)
 
 
