@@ -3,6 +3,19 @@
 ## [0.69.0](https://github.com/funkadelic/claude-nomad/compare/v0.68.0...v0.69.0) (2026-09-11)
 
 
+### What's new
+
+* `nomad pull` was deleting hooks it should have left alone. It reads each hook command to work
+  out whether GSD installed it or you wrote it, and several ways of writing that command led it
+  to the wrong answer, so hooks from either side could vanish with nothing printed to say so.
+  Reinstall a hook you lost this way and it stays put now.
+* `nomad doctor` had two problems of its own. It warned that a script pointed at a missing file
+  when the only mention of that file sat inside quotes, and on a script containing an unmatched
+  quote it stopped partway through the check.
+* `nomad update` now ends with a link to the release notes for the version you ended up on,
+  whether the update moved you forward or you were already current.
+
+
 ### Added
 
 * **update:** link to the release notes for the version you land on ([#598](https://github.com/funkadelic/claude-nomad/issues/598)) ([798aa5f](https://github.com/funkadelic/claude-nomad/commit/798aa5f55e7181161b827ec4c788f7a21fdea04b))
