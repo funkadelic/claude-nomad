@@ -115,13 +115,22 @@ function nextScriptWord(tokens: string[], from: number, inScriptSlot: boolean): 
 }
 
 /**
- * Walk from the script slot to the real script, stepping over any candidate
- * that is itself another launcher or an env assignment. `/usr/bin/env node
- * /a/hooks/gsd-x.js` puts `node` in the script slot, and `env FOO=bar node x.js`
- * puts an assignment there; both chain on to the token that follows.
+ * Walk from the script slot to the real script, stepping over a chained
+ * launcher. `/usr/bin/env node /a/hooks/gsd-x.js` puts `node` in the script
+ * slot, and `env FOO=bar node x.js` puts an assignment there; both chain on to
+ * the token that follows.
  *
- * A user script literally named `node` does not regress: the walk steps over it,
- * finds nothing after it, and the caller's fail-safe keeps the entry.
+ * A chained launcher must be a BARE word carrying no path separator, which is
+ * the shape `env` resolves an interpreter to. That restriction is what keeps
+ * the walk from reading past a user's own script: in
+ * `bash /home/u/bin/node /a/hooks/gsd-notes.md` the second token IS the script
+ * and the third is its argument, so stepping over anything whose basename
+ * merely reads as a launcher would classify that user hook as gsd-owned and
+ * delete it on pull. A bare `node` is never a script path.
+ *
+ * The cost is a launcher chain written with an absolute interpreter path
+ * (`env /usr/bin/node gsd-x.js`) staying unresolved, which returns `false` and
+ * KEEPS the entry. That is the safe direction for this module.
  *
  * @param tokens - The whitespace-split command tokens.
  * @param from - Index to start scanning at (the token after the launcher).
@@ -131,9 +140,9 @@ function resolveScriptWord(tokens: string[], from: number): Candidate {
   let candidate = nextScriptWord(tokens, from, true);
   while (candidate.index >= 0) {
     const word = stripQuotes(candidate.word);
-    if (!KNOWN_LAUNCHER_BASENAMES.has(scriptBasename(word)) && !ENV_ASSIGNMENT.test(word)) {
-      return candidate;
-    }
+    const isBareLauncher =
+      !word.includes('/') && !word.includes('\\') && KNOWN_LAUNCHER_BASENAMES.has(word);
+    if (!isBareLauncher && !ENV_ASSIGNMENT.test(word)) return candidate;
     candidate = nextScriptWord(tokens, candidate.index + 1, true);
   }
   return NO_CANDIDATE;

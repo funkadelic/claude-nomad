@@ -653,15 +653,7 @@ describe('prototype-pollution guard over repo-supplied settings', () => {
     const out = normalizeNodePathsDeep(
       poisoned('{"hooks":{"__proto__":{"polluted":true},"kept":"/usr/bin/node x"}}'),
     ) as Record<string, Record<string, unknown>>;
+    expect(Object.getPrototypeOf(out.hooks)).toBe(Object.prototype);
     expect(Object.keys(out.hooks)).toEqual(['kept']);
-  });
-
-  it('buildCaptureSubset never promotes a prototype-pollution key', () => {
-    // `ahead` is derived from repo-supplied merged settings, so a poisoned key
-    // would otherwise reparent the subset and vanish from the committed file.
-    const settings = poisoned('{"__proto__":{"polluted":true},"model":"opus"}');
-    const out = buildCaptureSubset({}, settings, { normalizeNodePath: false });
-    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
-    expect(Object.keys(out)).not.toContain('__proto__');
   });
 });

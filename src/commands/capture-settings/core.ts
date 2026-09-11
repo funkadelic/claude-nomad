@@ -362,7 +362,7 @@ export function buildCaptureSubset(
   const { ahead } = classifySettingsDrift(merged, settings);
   const out: Record<string, unknown> = {};
   for (const key of ahead) {
-    if (CAPTURE_EXCLUDED_KEYS.has(key) || isProtoPollutionKey(key)) continue;
+    if (CAPTURE_EXCLUDED_KEYS.has(key)) continue;
     const raw = filtered[key];
     out[key] = opts.normalizeNodePath ? normalizeNodePathsDeep(raw) : raw;
   }

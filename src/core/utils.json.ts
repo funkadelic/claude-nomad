@@ -122,6 +122,7 @@ export function sortKeysDeep(value: unknown): unknown {
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const key of Object.keys(value).sort((a, b) => a.localeCompare(b, 'en'))) {
+      if (isProtoPollutionKey(key)) continue;
       out[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
     }
     return out;

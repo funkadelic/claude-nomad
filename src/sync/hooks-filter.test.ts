@@ -1013,6 +1013,30 @@ describe('isGsdHookEntry launcher chains', () => {
     expect(isGsdHookEntry('/home/u/bin/node')).toBe(false);
   });
 
+  it('user script at a launcher-named PATH with a gsd- argument -> false', () => {
+    // The chain step only applies to a BARE launcher word. These are user
+    // scripts whose own path ends in a launcher name, so the token after them is
+    // an ARGUMENT, not the script. Reading past them would classify a user hook
+    // as gsd-owned and delete it on the next pull.
+    expect(isGsdHookEntry('bash /home/u/bin/node /a/hooks/gsd-notes.md')).toBe(false);
+    expect(isGsdHookEntry('node /home/u/bin/sh --config gsd-x.json')).toBe(false);
+    expect(isGsdHookEntry('bash /home/u/bin/sh /a/gsd-y.js')).toBe(false);
+    expect(isGsdHookEntry('node /opt/tools/bash gsd-report.txt')).toBe(false);
+  });
+
+  it('substitution resolving to a launcher-named path is not chained past', () => {
+    // `$(dirname "$0")/node` leaves the word `/node`, which carries a separator
+    // and so is the script, not a chained launcher.
+    expect(isGsdHookEntry('env $(dirname "$0")/node /a/hooks/gsd-y.js')).toBe(false);
+    expect(isGsdHookEntry('bash $(dirname "$0")/sh /a/gsd-y.js')).toBe(false);
+  });
+
+  it('env with an ABSOLUTE interpreter path -> false (fails toward keeping)', () => {
+    // The chain cannot tell this from a user script at that path, so it stops
+    // and the entry is kept. Keeping a gsd hook is the safe direction.
+    expect(isGsdHookEntry('/usr/bin/env /home/u/bin/node /a/hooks/gsd-x.js')).toBe(false);
+  });
+
   it('env launcher with nothing after it -> false (fail-safe)', () => {
     expect(isGsdHookEntry('/usr/bin/env')).toBe(false);
     expect(isGsdHookEntry('/usr/bin/env node')).toBe(false);
@@ -1067,9 +1091,11 @@ describe('prototype-pollution guard over repo-supplied settings', () => {
   });
 
   it('keepGsdHookEntries does not reparent its hooks block via a __proto__ event key', () => {
+    // The event value must be an ARRAY to reach the assignment: a non-array is
+    // rejected by the matcher walk first, which would leave the guard untested.
     const out = keepGsdHookEntries(
       poisoned(
-        '{"hooks":{"__proto__":{"polluted":true},"SessionStart":[{"hooks":[{"command":"node /a/gsd-a.js"}]}]}}',
+        '{"hooks":{"__proto__":[{"hooks":[{"command":"node /a/gsd-bad.js"}]}],"SessionStart":[{"hooks":[{"command":"node /a/gsd-a.js"}]}]}}',
       ),
     );
     const hooks = out.hooks as Record<string, unknown>;
@@ -1094,7 +1120,8 @@ describe('prototype-pollution guard over repo-supplied settings', () => {
         '{"hooks":{"__proto__":[{"hooks":[{"command":"node /a/gsd-bad.js"}]}],"SessionStart":[{"hooks":[{"command":"node /a/gsd-ok.js"}]}]}}',
       ),
     );
-    expect(Object.keys(out.hooks as Record<string, unknown>)).toEqual(['SessionStart']);
-    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    const hooks = out.hooks as Record<string, unknown>;
+    expect(Object.keys(hooks)).toEqual(['SessionStart']);
+    expect(Object.getPrototypeOf(hooks)).toBe(Object.prototype);
   });
 });
