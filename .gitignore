@@ -21,6 +21,9 @@ docs-site/.astro/
 .stryker-tmp/
 reports/
 .test-bundle/
+# Vitest reporter output (the json reporter writes .vitest/json/output.json).
+# Untracked but unignored, it fails the format gate on the next `npm run check`.
+.vitest/
 # JUnit XML for Codecov Test Analytics; written by the CI test steps only.
 /test-report.junit.xml
 
