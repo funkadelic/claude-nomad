@@ -42,10 +42,12 @@ npm run test
 npm run lint:md
 ```
 
-Optionally, `npm run lint:prose` runs [Vale](https://vale.sh/) over the top-level docs to flag
-common LLM writing tics. It is not part of CI or `npm run check`, so you do not need Vale installed
-to contribute. Most of its rules only report, but `Slop.EmDash` exits 1, because em-dashes are
-banned in committed files. Rules live in `.vale/`.
+Optionally, `npm run lint:prose` runs [Vale](https://vale.sh/) over the top-level docs and the docs
+site to flag common LLM writing tics. It is not part of CI or `npm run check`, so you do not need
+Vale installed to contribute. Most of its rules only report, but `Repo.EmDash` and `Vale.Repetition`
+exit 1, for banned em-dashes and doubled words. Rules live in `.vale/`: `.vale/Slop/` is vendored
+unmodified from [vale-llm-slop](https://github.com/Syntaf/vale-llm-slop), and repo-specific
+overrides go in `.vale/Repo/` so the vendored copy stays re-syncable.
 
 ## Docs-sync gate
 

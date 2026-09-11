@@ -1,0 +1,14 @@
+# This repo bans em-dashes in committed files, which is stricter than the
+# upstream Slop.EmDash rule (it allows two per paragraph). That rule is turned
+# off in .vale.ini and replaced by this one, so .vale/Slop/ stays byte-identical
+# to the published package and `vale sync` would never clobber a local edit.
+#
+# Note `occurrence` with `max: 0` does NOT express a ban: Vale reads zero as
+# unset and the rule silently stops firing. `existence` is the primitive.
+extends: existence
+message: 'Em-dash. Use a comma, a colon, parentheses, or a period.'
+link: https://github.com/Syntaf/vale-llm-slop#slopemdash
+level: error
+nonword: true
+tokens:
+  - '[—–]'
