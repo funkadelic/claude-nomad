@@ -103,6 +103,17 @@ describe('sortKeysDeep', () => {
     expect(sortKeysDeep([3, 1, 2])).toEqual([3, 1, 2]);
   });
 
+  it('does not reparent its output via a nested __proto__ key', () => {
+    // This walks the same untrusted settings JSON as deepMerge, one level down,
+    // so it needs the same skip. JSON.parse surfaces __proto__ as an own
+    // enumerable property, which an object literal cannot reproduce.
+    const input = JSON.parse('{"hooks":{"__proto__":{"polluted":true},"b":1,"a":2}}') as object;
+    const sorted = sortKeysDeep(input) as { hooks: Record<string, unknown> };
+    expect(Object.getPrototypeOf(sorted.hooks)).toBe(Object.prototype);
+    expect(Object.keys(sorted.hooks)).toEqual(['a', 'b']);
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+  });
+
   it('passes scalars and null through as-is', () => {
     expect(sortKeysDeep('s')).toBe('s');
     expect(sortKeysDeep(7)).toBe(7);

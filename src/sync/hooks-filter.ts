@@ -1,12 +1,25 @@
 import { GSD_PREFIX } from '../core/config.ts';
+import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { opensSubstitution, skipSubstitution } from './hooks-filter.command-sub.ts';
 
 /**
  * Launcher binaries that may precede a script token. Used to tell a launcher
  * that carries a path (e.g. `/usr/bin/node script.js`) apart from a
  * launcher-less script that carries a path (e.g. `/a/hooks/gsd-x.js --flag`).
+ *
+ * `env` is here so `/usr/bin/env node script.js`, the standard portable way to
+ * invoke an interpreter, is not read as a script named `env`. It only works
+ * alongside the chain walk in `resolveScriptWord`, since `env` is always
+ * followed by another launcher.
  */
-const KNOWN_LAUNCHER_BASENAMES = new Set(['node', 'bash', 'sh']);
+const KNOWN_LAUNCHER_BASENAMES = new Set(['env', 'node', 'bash', 'sh']);
+
+/**
+ * Matches a leading `KEY=value` environment-assignment token: a shell
+ * identifier (letter or underscore, then word characters) followed by `=`.
+ * Such a token is never a script path, in launcher position or after an `env`.
+ */
+const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 
 /**
  * Shell control operators that separate commands. They are never a script path,
@@ -102,6 +115,41 @@ function nextScriptWord(tokens: string[], from: number, inScriptSlot: boolean): 
 }
 
 /**
+ * Walk from the script slot to the real script. Under `env`, and ONLY under
+ * `env`, step over a chained interpreter or a `KEY=value` assignment:
+ * `/usr/bin/env node /a/hooks/gsd-x.js` puts `node` in the script slot, and
+ * `env FOO=bar node x.js` puts an assignment there.
+ *
+ * Chaining is gated on the launcher being `env` because a bare launcher word is
+ * ambiguous anywhere else. In `bash node /a/hooks/gsd-notes.md` the word `node`
+ * is a relative-path script in the working directory and the token after it is
+ * that script's ARGUMENT, so chaining past it would classify a user hook as
+ * gsd-owned and delete it on pull. Only `env` guarantees the word after it is
+ * an interpreter rather than a script.
+ *
+ * A chained interpreter must also be a BARE word carrying no path separator,
+ * which is what `env` resolves through `PATH`. The cost is that
+ * `env /usr/bin/node gsd-x.js` stays unresolved and returns `false`, which KEEPS
+ * the entry, the safe direction for this module.
+ *
+ * @param tokens - The whitespace-split command tokens.
+ * @param from - Index to start scanning at (the token after the launcher).
+ * @param underEnv - `true` when the launcher was `env`, which is what allows chaining.
+ * @returns The script candidate, or `NO_CANDIDATE` when the chain runs out.
+ */
+function resolveScriptWord(tokens: string[], from: number, underEnv: boolean): Candidate {
+  let candidate = nextScriptWord(tokens, from, true);
+  while (underEnv && candidate.index >= 0) {
+    const word = stripQuotes(candidate.word);
+    const isBareInterpreter =
+      !word.includes('/') && !word.includes('\\') && KNOWN_LAUNCHER_BASENAMES.has(word);
+    if (!isBareInterpreter && !ENV_ASSIGNMENT.test(word)) return candidate;
+    candidate = nextScriptWord(tokens, candidate.index + 1, true);
+  }
+  return candidate;
+}
+
+/**
  * Returns `true` when a hook entry's `command` string references a script
  * whose basename starts with `gsd-`, indicating the entry was installed by
  * gsd (`@opengsd/gsd-core`) rather than authored by the user.
@@ -113,6 +161,7 @@ function nextScriptWord(tokens: string[], from: number, inScriptSlot: boolean): 
  * - `/home/u/.nvm/versions/node/v24/bin/node /a/hooks/gsd-config-reload.js` (absolute nvm path)
  * - `bash /a/hooks/gsd-graphify-update.sh` (bash launcher)
  * - `CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js` (env-prefixed)
+ * - `/usr/bin/env node /a/hooks/gsd-x.js` (env launcher chain)
  * - `/a/hooks/gsd-x.js` (launcher-less, shebang executable)
  * - `"/abs/path/node" "/abs/path/gsd-x.js"` (launcher and script both quoted)
  * - `"$(for n in ... done)" "/a/hooks/gsd-x.js"` (gsd's inline node-resolver)
@@ -132,7 +181,9 @@ function nextScriptWord(tokens: string[], from: number, inScriptSlot: boolean): 
  * binary, or its basename already starts with `gsd-`), classify off that word's
  * basename directly. This covers launcher-less commands with or without trailing
  * args/flags. Otherwise that word is the launcher, and a second walk in script
- * position yields the script path. Return `basename.startsWith(GSD_PREFIX)`.
+ * position yields the script path, stepping over a chained interpreter when
+ * (and only when) that launcher was `env`, so `/usr/bin/env node x.js` resolves
+ * past `node`. Return `basename.startsWith(GSD_PREFIX)`.
  *
  * Classification always keys off the script word, never a later one, so a
  * trailing `gsd-`-prefixed ARGUMENT cannot mark a user script as gsd-owned. That
@@ -153,12 +204,9 @@ export function isGsdHookEntry(command: string): boolean {
   const tokens = command.trim().split(/\s+/);
   if (tokens[0] === '') return false;
 
-  // Skip leading KEY=value env-assignment tokens. A token is an env assignment
-  // when its key part (everything before the first '=') matches a shell
-  // identifier: starts with a letter or underscore, then word characters.
-  const envAssign = /^[A-Za-z_]\w*=/;
+  // Skip leading KEY=value env-assignment tokens.
   let i = 0;
-  while (i < tokens.length && envAssign.test(tokens[i])) {
+  while (i < tokens.length && ENV_ASSIGNMENT.test(tokens[i])) {
     i++;
   }
 
@@ -177,8 +225,9 @@ export function isGsdHookEntry(command: string): boolean {
   }
 
   // Otherwise that word is the launcher and the script is the next candidate.
-  // A launcher with no script -> false.
-  const script = nextScriptWord(tokens, launcher.index + 1, true);
+  // Only under `env` does the walk step over a chained interpreter
+  // (`env node x.js`). A launcher with no script -> false.
+  const script = resolveScriptWord(tokens, launcher.index + 1, firstBase === 'env');
   if (script.index < 0) return false;
   return scriptBasename(stripQuotes(script.word)).startsWith(GSD_PREFIX);
 }
@@ -256,24 +305,36 @@ function filterEventMatchers(matchers: unknown): unknown[] | null {
 export function stripGsdHookEntries(settings: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(settings)) {
-    if (key !== 'hooks') {
+    if (isProtoPollutionKey(key)) continue;
+    // Only a `hooks` key holding a plain non-null object is walked; every other
+    // key (and an unrecognized `hooks` shape) passes through by reference.
+    const hooksObj = key === 'hooks' ? asPlainObject(value) : null;
+    if (hooksObj === null) {
       out[key] = value;
       continue;
     }
-    // hooks must be a plain non-null object (not an array) to walk.
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-      out[key] = value;
-      continue;
-    }
-    const hooksObj = value as Record<string, unknown>;
-    const filteredHooks: Record<string, unknown> = {};
-    for (const [event, matchers] of Object.entries(hooksObj)) {
-      const filtered = filterEventMatchers(matchers);
-      if (filtered !== null) filteredHooks[event] = filtered;
-    }
-    if (Object.keys(filteredHooks).length > 0) out[key] = filteredHooks;
+    const filteredHooks = filterHooksBlock(hooksObj);
+    if (filteredHooks !== null) out[key] = filteredHooks;
   }
   return out;
+}
+
+/**
+ * Filter every event key of one `hooks` block, dropping an event whose matcher
+ * array empties out. Returns `null` when no event key survives (signal to the
+ * caller to omit the `hooks` key entirely).
+ *
+ * @param hooksObj - The plain-object value of the `hooks` key.
+ * @returns The filtered block, or `null` when it would be empty.
+ */
+function filterHooksBlock(hooksObj: Record<string, unknown>): Record<string, unknown> | null {
+  const filteredHooks: Record<string, unknown> = {};
+  for (const [event, matchers] of Object.entries(hooksObj)) {
+    if (isProtoPollutionKey(event)) continue;
+    const filtered = filterEventMatchers(matchers);
+    if (filtered !== null) filteredHooks[event] = filtered;
+  }
+  return Object.keys(filteredHooks).length > 0 ? filteredHooks : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +420,7 @@ export function keepGsdHookEntries(settings: Record<string, unknown>): Record<st
   const hooksObj = hooksVal as Record<string, unknown>;
   const keptHooks: Record<string, unknown> = {};
   for (const [event, matchers] of Object.entries(hooksObj)) {
+    if (isProtoPollutionKey(event)) continue;
     const kept = keepEventMatchers(matchers);
     if (kept !== null) keptHooks[event] = kept;
   }
@@ -458,7 +520,7 @@ export function graftGsdHookEntries(
   const baseHooks = asPlainObject(base.hooks);
   const mergedHooks: Record<string, unknown> = baseHooks ? { ...baseHooks } : {};
   for (const [event, gsdMatchers] of Object.entries(gsdHooks)) {
-    if (!Array.isArray(gsdMatchers)) continue;
+    if (isProtoPollutionKey(event) || !Array.isArray(gsdMatchers)) continue;
     const baseMatchers = mergedHooks[event];
     mergedHooks[event] = Array.isArray(baseMatchers)
       ? unionMatcherArrays(baseMatchers, gsdMatchers)
