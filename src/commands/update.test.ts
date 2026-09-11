@@ -55,6 +55,11 @@ describe('cmdUpdate', () => {
     expect(logSpy.mock.calls[0][0]).toContain('Updating claude-nomad v0.46.0');
     // Success line with trimmed semver prefixed with v
     expect(logSpy.mock.calls[1][0]).toContain('now at v0.47.1');
+    // Release notes point at the version the host ended up on, not the old one.
+    expect(logSpy.mock.calls[2][0]).toBe(
+      'Release notes: https://github.com/funkadelic/claude-nomad/releases/tag/v0.47.1',
+    );
+    expect(logSpy).toHaveBeenCalledTimes(3);
   });
 
   it('reports no-op when the installed version already matches the running one', () => {
@@ -66,6 +71,11 @@ describe('cmdUpdate', () => {
     const lines = logSpy.mock.calls.map((c) => c[0] as string);
     expect(lines.some((l) => l.includes('already at the latest version (v0.46.0)'))).toBe(true);
     expect(lines.some((l) => l.includes('now at'))).toBe(false);
+    // Already-current still links, pointing at the version in hand.
+    expect(lines).toContain(
+      'Release notes: https://github.com/funkadelic/claude-nomad/releases/tag/v0.46.0',
+    );
+    expect(lines.filter((l) => l.startsWith('Release notes:'))).toHaveLength(1);
   });
 
   it('prints fallback line when version query fails, does not throw', () => {
@@ -77,6 +87,22 @@ describe('cmdUpdate', () => {
     const lines = logSpy.mock.calls.map((c) => c[0] as string);
     expect(lines.some((l) => l.includes('Updating claude-nomad'))).toBe(true);
     expect(lines.some((l) => l.includes('nomad --version'))).toBe(true);
+    // No version means no tag to link, so no release-notes line.
+    expect(lines.some((l) => l.includes('Release notes:'))).toBe(false);
+  });
+
+  it('ignores a version line that is not a bare semver', () => {
+    const logSpy = vi.spyOn(console, 'log');
+    // HashiCorp ships a binary called `nomad` too; if one shadows us on PATH,
+    // its banner must not be read as our version or pasted into a URL.
+    const { run } = makeFakeRun('Nomad v1.7.2\nBuildDate 2024-01-15T16:06:38Z\n');
+
+    cmdUpdate('0.46.0', run);
+
+    const lines = logSpy.mock.calls.map((c) => c[0] as string);
+    expect(lines.some((l) => l.includes('nomad --version'))).toBe(true);
+    expect(lines.some((l) => l.includes('Release notes:'))).toBe(false);
+    expect(lines.some((l) => l.includes('Nomad v1.7.2'))).toBe(false);
   });
 
   it('throws NomadFatal when npm is not on PATH (ENOENT)', () => {

@@ -4,6 +4,20 @@ import type { SpawnSyncFn } from '../core/spawn-sync.ts';
 import { NomadFatal } from '../core/utils.ts';
 
 /**
+ * Base URL for a published release's notes. The tag is the version with a `v`
+ * prefix, matching what release-please publishes.
+ */
+const RELEASE_NOTES_TAG_URL = 'https://github.com/funkadelic/claude-nomad/releases/tag';
+
+/**
+ * Shape a `--version` line must have to be trusted as our own version. The
+ * binary name `nomad` is not ours alone (HashiCorp ships one too), so a foreign
+ * binary shadowing us on PATH would otherwise have its banner printed as a
+ * version and pasted into a release-notes URL.
+ */
+const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/;
+
+/**
  * Read the version string reported by the freshly-installed `nomad` binary.
  *
  * Spawns `nomad --version` via the injectable `run` and returns the trimmed
@@ -41,6 +55,18 @@ export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | 
 }
 
 /**
+ * Read the installed version, discarding anything that is not a bare semver so
+ * a foreign `nomad` on PATH cannot have its output treated as our version.
+ *
+ * @param run - Subprocess runner, forwarded to `readInstalledVersion`.
+ * @returns The version string, or `null` when absent or not semver-shaped.
+ */
+function readOwnVersion(run: SpawnSyncFn): string | null {
+  const version = readInstalledVersion(run);
+  return version !== null && SEMVER.test(version) ? version : null;
+}
+
+/**
  * Update the claude-nomad CLI to the latest published npm release by running
  * `npm update -g claude-nomad`.
  *
@@ -51,7 +77,12 @@ export function readInstalledVersion(run: SpawnSyncFn = execFileSync): string | 
  * --version` binary (not the stale in-process `currentVersion`, which reflects
  * the OLD dist). Prints the version on success, a no-op line when npm left the
  * host on the version it already had (nothing to update to), or a graceful
- * fallback line if the version query fails. On npm failure the captured stderr
+ * fallback line if the version query fails or reports something that is not a
+ * bare semver.
+ *
+ * Whenever the version is known, a link to that version's release notes follows
+ * it. The fallback line carries no link, because the tag to point at is exactly
+ * what could not be determined. On npm failure the captured stderr
  * is folded into the error so the cause stays diagnosable despite the silenced
  * output.
  *
@@ -97,12 +128,15 @@ export function cmdUpdate(currentVersion: string, run: SpawnSyncFn = execFileSyn
     const suffix = detail ? `\n${detail}` : '';
     throw new NomadFatal(`npm update -g claude-nomad failed: ${e.message}${suffix}`);
   }
-  const version = readInstalledVersion(run);
+  const version = readOwnVersion(run);
   if (!version) {
     console.log('Update complete. Run "nomad --version" to confirm the new version.');
-  } else if (version === currentVersion) {
-    console.log(`claude-nomad is already at the latest version (v${version}).`);
-  } else {
-    console.log(`claude-nomad is now at v${version}`);
+    return;
   }
+  console.log(
+    version === currentVersion
+      ? `claude-nomad is already at the latest version (v${version}).`
+      : `claude-nomad is now at v${version}`,
+  );
+  console.log(`Release notes: ${RELEASE_NOTES_TAG_URL}/v${version}`);
 }

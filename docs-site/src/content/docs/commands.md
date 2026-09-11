@@ -414,7 +414,8 @@ it to protect. Always preview with `--dry-run` first. See
 `nomad update`
 
 Update the `nomad` CLI binary from npm (`npm update -g claude-nomad`). Does NOT pull your sync data;
-run `nomad pull` separately for that. See [Usage](/claude-nomad/usage/).
+run `nomad pull` separately for that. Finishes with a link to the release notes for the version you
+ended up on. See [Usage](/claude-nomad/usage/).
 
 ## `doctor`
 
