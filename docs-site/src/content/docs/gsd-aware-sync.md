@@ -8,7 +8,7 @@ claude-nomad, several sync behaviors are wired specifically for you, and they ar
 any extra configuration.
 
 This page collects those behaviors in one place so you know exactly what nomad does for a GSD
-machine out of the box and what you still need to handle yourself. For the underlying sync
+machine out of the box and what you still need to handle yourself. For the sync
 mechanics (path remapping, the settings deep-merge, and the full synced-vs-not-synced breakdown),
 see [How it works](/claude-nomad/how-it-works/).
 
@@ -47,8 +47,8 @@ This behavior is implemented in `src/sync/extras/extras.ts`. It applies to any p
 
 ## gsd-owned hooks and agents are not synced
 
-`hooks/` and `agents/` are not part of `SHARED_LINKS`. They are installed per-host by
-`@opengsd/gsd-core` via its own npm install, which means:
+`hooks/` and `agents/` are installed per-host by `@opengsd/gsd-core` via its own npm install,
+not through `SHARED_LINKS`, which means:
 
 - Nomad no longer copies hooks or agents between machines.
 - You get no cross-host version skew: each host runs the hooks and agents from its own

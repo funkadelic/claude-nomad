@@ -12,3 +12,5 @@ CHANGELOG.md
 docs-site/
 reports/
 .test-bundle
+# Vendored third-party Vale rules; never reformat.
+.vale/

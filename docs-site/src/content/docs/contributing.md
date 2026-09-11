@@ -36,6 +36,14 @@ npm run test
 npm run lint:md
 ```
 
+Optionally, `npm run lint:prose` runs [Vale](https://vale.sh/) over the top-level docs and the docs
+site to flag common LLM writing tics. It is not part of CI or `npm run check`, so you do not need
+Vale installed to contribute. The `Slop.*` rules only report. The rules in `.vale/Repo/` exit 1,
+because those are mechanical: no em-dashes, no doubled words, and no hyphen after an adverb ending
+in `-ly`. `.vale/Slop/` is vendored unmodified from
+[vale-llm-slop](https://github.com/Syntaf/vale-llm-slop) so it stays re-syncable, and every
+repo-specific rule goes in `.vale/Repo/` instead.
+
 ## Docs-sync gate
 
 A separate CI check (`.github/workflows/docs-check.yml`, backed by
@@ -168,7 +176,7 @@ npm run coverage
 ```
 
 If the deletion uncovers lines in the touched source file, revert it. The test was load-bearing for
-coverage, not dead weight. The project coverage gate must not regress: a fully-covered file is
+coverage, not dead weight. The project coverage gate must not regress: a fully covered file is
 absent from the coverage text table (`skipFull`), so absence is the pass signal.
 
 ## Branch naming

@@ -138,13 +138,13 @@ still available as lower-level commands for cases `sync` does not cover: recover
 with `nomad pull --force-remote`, or resolving a detected secret without the interactive menu via
 `nomad push --redact-all` / `--allow` / `--allow-all` (see [Changing settings](#changing-settings)
 and [Recovery flows](https://funkadelic.github.io/claude-nomad/recovery/)). The
-[FAQ](https://funkadelic.github.io/claude-nomad/faq/) covers what `sync` does under the hood and the
-push/pull order it enforces.
+[FAQ](https://funkadelic.github.io/claude-nomad/faq/) covers what `sync` does and the push/pull
+order it enforces.
 
 ### Windows
 
 claude-nomad runs natively on Windows (PowerShell or cmd), and WSL2 works too. The everyday loop is
-the same either way; the difference is under the hood.
+the same either way.
 
 Native Windows cannot use symlinks, so claude-nomad keeps a real copy of your shared config in
 `~/.claude/` instead of a symlink. `nomad pull` and `nomad sync` both mirror your local copies into
@@ -292,7 +292,7 @@ the copy-sync trade-off.
 
 **Optional:** [curl](https://curl.se/) or [wget](https://www.gnu.org/software/wget/) for the
 version-staleness check and `nomad doctor --check-schema`. The CLI works without them. The opt-in
-`nomad doctor --check-remote` flag reads the locally-cached `origin/main` remote-tracking ref (no
+`nomad doctor --check-remote` flag reads the locally cached `origin/main` remote-tracking ref (no
 curl or wget needed) and verifies that `shared/` and a valid `path-map.json` are present there; it
 skips with a `⚠︎` when the ref is unavailable, and is non-fatal in all cases.
 
@@ -333,7 +333,7 @@ What this means for you:
   best-effort secret scan runs the same gitleaks-based redaction nomad already uses for session
   transcripts. The secret scan works on a temporary, owner-only (`0o600`) copy that already has the
   structural scrub applied; that scratch file is deleted immediately after the scan, and only the
-  fully-redacted report is kept.
+  fully redacted report is kept.
 - **It degrades safely without gitleaks.** If gitleaks is not installed, the structural scrub and
   the credential-shape backstop still run and the report is still written, with a one-line note that
   the deeper secret scan did not run. The backstop catches common token shapes but not everything,

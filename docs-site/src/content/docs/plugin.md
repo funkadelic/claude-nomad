@@ -14,7 +14,7 @@ its own.
 
 ## What you need first
 
-The plugin runs the `nomad` CLI under the hood, so install the CLI before using the plugin:
+The plugin wraps the `nomad` CLI, so install the CLI before using the plugin:
 
 ```sh
 npm i -g claude-nomad
