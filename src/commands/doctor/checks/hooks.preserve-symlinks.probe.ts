@@ -8,18 +8,25 @@ import { dirname, join, resolve } from 'node:path';
  * `//` inside a string literal (e.g. a URL) is consumed by the string branch
  * rather than mistaken for a line comment.
  *
- * NOTE: Backslash-escaped quotes within string literals (e.g. `'it\'s ok'`) are
- * not handled; the range may be truncated at the escaped quote. The effect is a
- * false negative (a broken require after the malformed range is missed), never
- * a false positive. This is intentional: the check is conservative and
- * under-warns rather than noise-warns.
+ * NOTE: A backslash-escaped delimiter within a string literal (e.g. `'it\'s
+ * ok'`) is consumed as part of the literal rather than closing it early. The
+ * remaining gap is a stray quote inside a regex literal (e.g. `/'/`), which is
+ * read as an opening delimiter and shifts every following range. That can warn
+ * on a require inside a literal as well as miss one outside, so the scan is no
+ * longer conservative in a single direction.
  *
  * @param src - Raw source text.
  * @returns Array of [start, end) character index pairs inside comments or literals.
  */
 function suppressedRanges(src: string): [number, number][] {
   const ranges: [number, number][] = [];
-  const re = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|'[^']*'|"[^"]*"|`[^`]*`/g;
+  // One capturing group for the opening delimiter (', ", or `), matched back via \1
+  // for the closing one; keeps the alternation's regex-complexity within the lint
+  // budget instead of repeating an escape-aware branch per delimiter. The second
+  // alternative excludes a backslash so the two never match the same character:
+  // an ambiguous alternation backtracks exponentially on an unpaired delimiter,
+  // which the fixed-size read above can manufacture by truncating mid-literal.
+  const re = /\/\*[^]*?\*\/|\/\/[^\n]*|(['"`])(?:\\[^]|[^\\])*?\1/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
     ranges.push([m.index, m.index + m[0].length]);
@@ -36,7 +43,8 @@ function inSuppressedRange(pos: number, ranges: [number, number][]): boolean {
 }
 
 /**
- * Extract top-of-file relative specifiers from source. Only
+ * Extract relative specifiers from source, anywhere in the text handed in
+ * (a lazy `require` inside a function counts, not just the top of the file). Only
  * `require('../...')` / `require('./...')` and static `import ... from '../...'`
  * / `'./...'` are captured. Specifiers inside comments or string literals are
  * filtered out via the suppressedRanges check.
@@ -44,7 +52,7 @@ function inSuppressedRange(pos: number, ranges: [number, number][]): boolean {
  * @param src - Raw source text (not pre-stripped).
  * @returns Array of relative specifier strings.
  */
-function topRelativeSpecifiers(src: string): string[] {
+function relativeSpecifiers(src: string): string[] {
   const ranges = suppressedRanges(src);
   const specifiers: string[] = [];
   const reqRe = /\brequire\s*\(\s*(['"])(\.\.?\/[^'"]*)\1\s*\)/g;
@@ -88,7 +96,7 @@ function specifierIsMissing(specifier: string, baseDir: string): boolean {
 }
 
 /**
- * Return true when at least one top-of-file relative specifier in `scriptPath`
+ * Return true when at least one relative specifier in `scriptPath`
  * is provably missing from the realpath'd location. Reads a bounded 64 KB
  * prefix (never unbounded), strips comments/strings, and resolves each relative
  * specifier against the realpath dir. Returns false on any fs/read error (skip).
@@ -121,7 +129,7 @@ export function relativeRequireTargetsBroken(scriptPath: string): boolean {
     return false;
   }
   /* c8 ignore stop */
-  const specifiers = topRelativeSpecifiers(raw);
+  const specifiers = relativeSpecifiers(raw);
   if (specifiers.length === 0) return false;
   const baseDir = dirname(realPath);
   for (const spec of specifiers) {

@@ -15,6 +15,18 @@ import { opensSubstitution, skipSubstitution } from './hooks-filter.command-sub.
 const KNOWN_LAUNCHER_BASENAMES = new Set(['env', 'node', 'bash', 'sh']);
 
 /**
+ * A BARE candidate word carrying a backtick, paren, or quote is a leftover
+ * fragment from an unresolved or partially-parsed command substitution (e.g.
+ * a stray `)"` or `` `x ``), not a real script name. Only consulted for a word
+ * with no path separator: a word like `$CLAUDE_PROJECT_DIR/hooks/x.sh` is an
+ * ordinary expansion and names a real script. A lone `$` is deliberately absent
+ * from the class for the same reason `opensSubstitution` requires `$(`: `$HOOK`
+ * is an expansion, and treating it as an artifact would read the NEXT token as
+ * the script and delete a user hook whose argument happens to start with `gsd-`.
+ */
+const SUBSTITUTION_ARTIFACT = /[`()'"]/;
+
+/**
  * Matches a leading `KEY=value` environment-assignment token: a shell
  * identifier (letter or underscore, then word characters) followed by `=`.
  * Such a token is never a script path, in launcher position or after an `env`.
@@ -177,19 +189,27 @@ function resolveScriptWord(tokens: string[], from: number, underEnv: boolean): C
  * surrounding quotes from each candidate word, and skip any leading `KEY=value`
  * environment-assignment tokens. `nextScriptWord` then advances past flags,
  * shell operators, and whole `$(...)`/backtick substitutions. If the first word
- * it yields is itself the script (it carries a path and is not a known launcher
- * binary, or its basename already starts with `gsd-`), classify off that word's
- * basename directly. This covers launcher-less commands with or without trailing
- * args/flags. Otherwise that word is the launcher, and a second walk in script
- * position yields the script path, stepping over a chained interpreter when
- * (and only when) that launcher was `env`, so `/usr/bin/env node x.js` resolves
- * past `node`. Return `basename.startsWith(GSD_PREFIX)`.
+ * it yields is itself the script (its basename is not a known launcher binary,
+ * and it either carries a path or is a bare name with no leftover shell
+ * metacharacter from an unresolved substitution), classify off that word's
+ * basename directly. This covers
+ * launcher-less commands with or without trailing args/flags, whether the word
+ * carries a path or is a bare relative name. Otherwise that word is the
+ * launcher, and a second walk in script position yields the script path,
+ * stepping over a chained interpreter when (and only when) that launcher was
+ * `env`, so `/usr/bin/env node x.js` resolves past `node`. Return
+ * `basename.startsWith(GSD_PREFIX)`.
  *
  * Classification always keys off the script word, never a later one, so a
  * trailing `gsd-`-prefixed ARGUMENT cannot mark a user script as gsd-owned. That
  * is what the script-slot rule in `nextScriptWord` protects: when a substitution
  * occupies the script slot, the result is unknowable and the walk stops there
  * rather than reading past it to the next argument.
+ *
+ * Cost of treating any non-launcher, non-artifact basename as the script: a
+ * bare unrecognized interpreter such as `python3 /a/hooks/gsd-x.py` now reads
+ * `python3` itself as the script and returns false, keeping a hook gsd owns;
+ * that is the safe direction for this module.
  *
  * Fail-safe: if no script word is found the command is unparseable; return
  * `false` so a user entry is never silently dropped. Note that `false` is only
@@ -216,11 +236,15 @@ export function isGsdHookEntry(command: string): boolean {
   const firstBase = scriptBasename(first);
   const firstHasPath = first.includes('/') || first.includes('\\');
 
-  // Launcher-less form: the first candidate word is itself the script. True when
-  // it carries a path and is not a known launcher binary, or its basename already
-  // starts with GSD_PREFIX. Covers `/a/hooks/gsd-x.js`, the same with trailing
-  // args/flags, and a bare `gsd-x.js`.
-  if ((firstHasPath && !KNOWN_LAUNCHER_BASENAMES.has(firstBase)) || first.startsWith(GSD_PREFIX)) {
+  // Launcher-less form: the first candidate word is itself the script, true
+  // whenever its basename is not a known launcher binary and the word either
+  // carries a path or is a bare name that is not a substitution-parsing
+  // artifact. Covers `/a/hooks/gsd-x.js`, the same with trailing args/flags,
+  // and a bare `my-hook.sh` or `gsd-x.js` with no path separator at all.
+  if (
+    !KNOWN_LAUNCHER_BASENAMES.has(firstBase) &&
+    (firstHasPath || !SUBSTITUTION_ARTIFACT.test(first))
+  ) {
     return firstBase.startsWith(GSD_PREFIX);
   }
 
