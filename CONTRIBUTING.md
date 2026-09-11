@@ -43,8 +43,9 @@ npm run lint:md
 ```
 
 Optionally, `npm run lint:prose` runs [Vale](https://vale.sh/) over the top-level docs to flag
-common LLM writing tics. It is advisory, never a gate: it reports and exits 0, and it is not part of
-CI or `npm run check`, so you do not need Vale installed to contribute. Rules live in `.vale/`.
+common LLM writing tics. It is not part of CI or `npm run check`, so you do not need Vale installed
+to contribute. Most of its rules only report, but `Slop.EmDash` exits 1, because em-dashes are
+banned in committed files. Rules live in `.vale/`.
 
 ## Docs-sync gate
 

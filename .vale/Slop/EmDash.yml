@@ -1,8 +1,12 @@
-# Em-dashes are good punctuation. Three in one paragraph is a fingerprint.
-extends: occurrence
-message: '%d em-dashes in one paragraph — vary the punctuation.'
+# Local rewrite of the upstream rule, which allowed two per paragraph. This repo
+# bans em-dashes outright in committed files, so the rule extends `existence`
+# and fires on every one. Note `occurrence` with `max: 0` does NOT work: Vale
+# reads zero as unset and the rule silently never fires. Re-apply after any
+# package re-sync.
+extends: existence
+message: 'Em-dash. Use a comma, a colon, parentheses, or a period.'
 link: https://github.com/Syntaf/vale-llm-slop#slopemdash
-level: suggestion
-scope: paragraph
-max: 2
-token: '[—–]'
+level: error
+nonword: true
+tokens:
+  - '[—–]'
