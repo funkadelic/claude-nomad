@@ -319,8 +319,8 @@ directories are real copies there (no symlinks), so Node never resolves a hook s
 sync repo.
 
 :::note
-`hooks/` and `agents/` are **not** synced by nomad. They are installed per-host by
-`@opengsd/gsd-core` via npm and are marked reserved so they cannot be re-added through `sharedDirs`.
+`hooks/` and `agents/` are installed per-host by `@opengsd/gsd-core` via npm, **not** synced by
+nomad, and are marked reserved so they cannot be re-added through `sharedDirs`.
 See [gsd-owned directories: hooks/agents not synced](#gsd-owned-directories-hooksagents-not-synced).
 :::
 
@@ -350,7 +350,7 @@ sequence.
 $ nomad sync   # pull first (keeps your local work), then push everything back up
 ```
 
-Under the hood, `sync` runs the pull half first and the push half second, under one lock. Pulling
+`sync` runs the pull half first and the push half second, under one lock. Pulling
 first is safe because a pull keeps rather than deletes your work: unpushed session transcripts are
 retained, and a project file synced as an extra (like `.planning/`) that changed on both sides is
 kept local with a warning (anything else a pull overwrites is backed up first). The push half then

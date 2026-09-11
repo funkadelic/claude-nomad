@@ -32,7 +32,7 @@ $ nomad clean --backups             # delete snapshots older than 14 days (the d
 
 You choose what counts as "old" in one of two ways (you cannot use both at once):
 
-- `--older-than <duration>` deletes snapshots older than the given age. The duration is a number
+- `--older-than <duration>` deletes snapshots older than that duration. A duration is a number
   plus a unit: `d` for days, `h` for hours, `m` for minutes (for example `7d`, `24h`, `30m`).
   With no retention flag at all, the default is `--older-than 14d`.
 - `--keep <N>` keeps the `N` most recent snapshots and deletes the rest, regardless of age.
@@ -435,7 +435,7 @@ appends your overlay body, scans with that combined config, then deletes the thr
 merge is gitleaks' own `[extend]` append, so your allowlist entries add to the shipped and default
 ones rather than replacing them.
 
-Two rules to keep in mind:
+Two rules:
 
 - Your overlay must NOT contain its own `[extend]` block. nomad writes the `[extend]` line for
   you; if the overlay includes one, the push aborts with a clear error rather than scanning with a
