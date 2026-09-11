@@ -4,6 +4,7 @@
 [![codeql](https://img.shields.io/github/actions/workflow/status/funkadelic/claude-nomad/codeql.yml?branch=main&label=codeql)](https://github.com/funkadelic/claude-nomad/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/gh/funkadelic/claude-nomad/graph/badge.svg?token=5NML626POS)](https://codecov.io/gh/funkadelic/claude-nomad)
 [![NPM Version](https://img.shields.io/npm/v/claude-nomad?logo=npm)](https://www.npmjs.com/package/claude-nomad)
+[![npm downloads](https://img.shields.io/npm/dm/claude-nomad?logo=npm)](https://www.npmjs.com/package/claude-nomad)
 [![node](https://img.shields.io/node/v/claude-nomad?logo=nodedotjs)](https://www.npmjs.com/package/claude-nomad)
 [![license](https://img.shields.io/npm/l/claude-nomad)](LICENSE)
 
