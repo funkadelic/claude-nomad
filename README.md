@@ -292,7 +292,7 @@ the copy-sync trade-off.
 
 **Optional:** [curl](https://curl.se/) or [wget](https://www.gnu.org/software/wget/) for the
 version-staleness check and `nomad doctor --check-schema`. The CLI works without them. The opt-in
-`nomad doctor --check-remote` flag reads the locally-cached `origin/main` remote-tracking ref (no
+`nomad doctor --check-remote` flag reads the locally cached `origin/main` remote-tracking ref (no
 curl or wget needed) and verifies that `shared/` and a valid `path-map.json` are present there; it
 skips with a `⚠︎` when the ref is unavailable, and is non-fatal in all cases.
 
@@ -333,7 +333,7 @@ What this means for you:
   best-effort secret scan runs the same gitleaks-based redaction nomad already uses for session
   transcripts. The secret scan works on a temporary, owner-only (`0o600`) copy that already has the
   structural scrub applied; that scratch file is deleted immediately after the scan, and only the
-  fully-redacted report is kept.
+  fully redacted report is kept.
 - **It degrades safely without gitleaks.** If gitleaks is not installed, the structural scrub and
   the credential-shape backstop still run and the report is still written, with a one-line note that
   the deeper secret scan did not run. The backstop catches common token shapes but not everything,

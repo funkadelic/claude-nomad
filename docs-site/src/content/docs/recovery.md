@@ -64,7 +64,7 @@ Single positional id (the session filename minus `.jsonl`). Anything else (missi
 dash, extra arg) exits 1 with a `usage:` line.
 
 For each match in the staged tree, `cmdDropSession` (in `src/commands/drop-session/drop-session.ts`) classifies
-the entry as tracked-in-HEAD vs newly-staged and unstages it via
+the entry as tracked-in-HEAD vs newly staged and unstages it via
 `git restore --staged --worktree --` or `git rm --cached -f --` respectively. The `<id>/`
 subagent directory is expanded into its staged entries via `git ls-files -z` so every nested
 transcript flows through the same per-entry classification; a session that has only a subagent
@@ -344,7 +344,7 @@ points you back at this Redact step; it warns only (`⚠︎`) and never fails th
 ## .gitleaks.toml allowlist policy
 
 `gitleaks protect` runs against the staged tree on every `nomad push` and can flag
-structurally-distinguishable tool-output noise as `generic-api-key`. The repo-root
+structurally distinguishable tool-output noise as `generic-api-key`. The repo-root
 `.gitleaks.toml` pre-allows several such patterns so routine pushes are not blocked. Every
 allowlist block uses `condition = "AND"` and is path-scoped, so a pattern can only suppress a
 finding inside an allowed path, never a bare token in a source file or anywhere else in the repo.
@@ -359,7 +359,7 @@ Transcript-only suppressions, scoped to synced session transcripts
 - The documented test-fixture GitHub PAT literal and its scrub placeholders, which accumulate in
   transcripts whenever a conversation touches the docs that quote them.
 
-Structurally-anchored suppressions, scoped to both synced transcripts and committed skill content
+Structurally anchored suppressions, scoped to both synced transcripts and committed skill content
 (`shared/skills/<name>/...`, any nesting depth). Each carries surrounding structure a bare
 credential does not, so widening it to skills cannot mask a context-free secret token:
 

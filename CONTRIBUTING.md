@@ -185,7 +185,7 @@ npm run coverage
 ```
 
 If the deletion uncovers lines in the touched source file, revert it. The test was load-bearing for
-coverage, not dead weight. The project coverage gate must not regress: a fully-covered file is
+coverage, not dead weight. The project coverage gate must not regress: a fully covered file is
 absent from the coverage text table (`skipFull`), so absence is the pass signal.
 
 ## Branch naming

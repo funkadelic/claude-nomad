@@ -26,7 +26,7 @@ local machine only. The saved report is owner-readable-only (`0o600`) and redact
 pass replaces your home directory and hostname, and a best-effort gitleaks scan then strips
 detectable secrets. That secret scan runs against a temporary, owner-only (`0o600`) copy that
 already has the structural pass applied; the scratch file is deleted right after the scan, so only
-the fully-redacted report remains. Nothing is ever transmitted or auto-uploaded; the report exists
+the fully redacted report remains. Nothing is ever transmitted or auto-uploaded; the report exists
 solely for you to optionally attach to a bug report.
 
 ## Outbound network requests
