@@ -10,6 +10,7 @@
  * - `CAPTURE_EXCLUDED_KEYS`: sensitive keys never eligible for capture.
  */
 
+import { isProtoPollutionKey } from '../../core/utils.json.ts';
 import { stripGsdHookEntries } from '../../sync/hooks-filter.ts';
 
 // ---------------------------------------------------------------------------
@@ -306,6 +307,7 @@ export function normalizeNodePathsDeep(value: unknown): unknown {
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (isProtoPollutionKey(k)) continue;
       out[k] = normalizeNodePathsDeep(v);
     }
     return out;
@@ -360,7 +362,7 @@ export function buildCaptureSubset(
   const { ahead } = classifySettingsDrift(merged, settings);
   const out: Record<string, unknown> = {};
   for (const key of ahead) {
-    if (CAPTURE_EXCLUDED_KEYS.has(key)) continue;
+    if (CAPTURE_EXCLUDED_KEYS.has(key) || isProtoPollutionKey(key)) continue;
     const raw = filtered[key];
     out[key] = opts.normalizeNodePath ? normalizeNodePathsDeep(raw) : raw;
   }

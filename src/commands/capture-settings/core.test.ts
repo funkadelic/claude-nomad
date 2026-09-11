@@ -627,3 +627,41 @@ describe('describeSettings', () => {
     });
   });
 });
+
+describe('prototype-pollution guard over repo-supplied settings', () => {
+  /**
+   * Parse a poisoned settings literal. `JSON.parse` surfaces `__proto__` as an
+   * own enumerable property, which is the vector an object literal cannot
+   * reproduce.
+   *
+   * @param text - A JSON object literal.
+   * @returns The parsed object.
+   */
+  const poisoned = (text: string): Record<string, unknown> =>
+    JSON.parse(text) as Record<string, unknown>;
+
+  it('normalizeNodePathsDeep does not reparent its output via __proto__', () => {
+    const out = normalizeNodePathsDeep(
+      poisoned('{"__proto__":{"polluted":true},"command":"/usr/bin/node /a/x.js"}'),
+    ) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+    expect(out).toEqual({ command: 'node /a/x.js' });
+  });
+
+  it('normalizeNodePathsDeep skips a nested __proto__ key', () => {
+    const out = normalizeNodePathsDeep(
+      poisoned('{"hooks":{"__proto__":{"polluted":true},"kept":"/usr/bin/node x"}}'),
+    ) as Record<string, Record<string, unknown>>;
+    expect(Object.keys(out.hooks)).toEqual(['kept']);
+  });
+
+  it('buildCaptureSubset never promotes a prototype-pollution key', () => {
+    // `ahead` is derived from repo-supplied merged settings, so a poisoned key
+    // would otherwise reparent the subset and vanish from the committed file.
+    const settings = poisoned('{"__proto__":{"polluted":true},"model":"opus"}');
+    const out = buildCaptureSubset({}, settings, { normalizeNodePath: false });
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(Object.keys(out)).not.toContain('__proto__');
+  });
+});

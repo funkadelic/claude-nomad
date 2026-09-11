@@ -232,9 +232,11 @@ describe('isGsdHookEntry', () => {
   });
 
   it('unterminated backtick falls back to reading the opener literally, no hang', () => {
-    // The scanner gives up, so `` `command `` is read as the launcher word and
-    // `node` as the script. Not gsd-owned, but the command is unparseable shell.
-    expect(isGsdHookEntry('`command -v node /a/hooks/gsd-x.js')).toBe(false);
+    // The scanner gives up, so `` `command `` is read as the launcher word. The
+    // chain walk then steps over `node` to the real script, which agrees with
+    // the terminated spelling of the same command above.
+    expect(isGsdHookEntry('`command -v node /a/hooks/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('`command -v node /a/hooks/my-hook.js')).toBe(false);
     // What the fallback protects: the script survives when it follows the
     // unterminated opener directly, instead of being discarded with it.
     expect(isGsdHookEntry('`x /a/hooks/gsd-x.js')).toBe(true);
@@ -965,5 +967,134 @@ describe('baseHasGsdHookEntries', () => {
     };
     // null is skipped; gsdHook() is detected -> true.
     expect(baseHasGsdHookEntries(base)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Launcher chains: `/usr/bin/env node script.js` and friends
+// ---------------------------------------------------------------------------
+
+describe('isGsdHookEntry launcher chains', () => {
+  it('env launcher with an absolute path + node + gsd script -> true', () => {
+    // The standard portable interpreter invocation. Before the chain walk this
+    // read as a launcher-less script named `env` and returned false, so pull
+    // deleted the hook.
+    expect(isGsdHookEntry('/usr/bin/env node /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('bare env launcher + node + gsd script -> true', () => {
+    expect(isGsdHookEntry('env node /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('env launcher + assignment + node + gsd script -> true', () => {
+    // `env` may carry its own KEY=value assignments before the interpreter; the
+    // leading-assignment skip only covers assignments before the launcher.
+    expect(isGsdHookEntry('/usr/bin/env CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('env launcher + node + flag + gsd script -> true', () => {
+    expect(isGsdHookEntry('/usr/bin/env node --preserve-symlinks-main /a/hooks/gsd-x.js')).toBe(
+      true,
+    );
+  });
+
+  it('quoted env launcher chain + quoted gsd script -> true', () => {
+    expect(isGsdHookEntry('"/usr/bin/env" "node" "/a/hooks/gsd-x.js"')).toBe(true);
+  });
+
+  it('env launcher chain running a USER script -> false', () => {
+    expect(isGsdHookEntry('/usr/bin/env node /a/hooks/my-hook.js')).toBe(false);
+  });
+
+  it('user script literally named node -> false (no regression)', () => {
+    // The chain walk steps over the `node` basename and finds nothing after it,
+    // so the fail-safe keeps the entry rather than claiming it for gsd.
+    expect(isGsdHookEntry('bash /home/u/bin/node')).toBe(false);
+    expect(isGsdHookEntry('/home/u/bin/node')).toBe(false);
+  });
+
+  it('env launcher with nothing after it -> false (fail-safe)', () => {
+    expect(isGsdHookEntry('/usr/bin/env')).toBe(false);
+    expect(isGsdHookEntry('/usr/bin/env node')).toBe(false);
+    expect(isGsdHookEntry('/usr/bin/env FOO=bar')).toBe(false);
+  });
+
+  it('env launcher chain across a shell operator + gsd script -> true', () => {
+    expect(isGsdHookEntry('/usr/bin/env node && /a/hooks/gsd-x.js')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Prototype-pollution guard: repo-supplied settings JSON reaches these walkers
+// ---------------------------------------------------------------------------
+
+describe('prototype-pollution guard over repo-supplied settings', () => {
+  /**
+   * Parse a poisoned settings literal. `JSON.parse` surfaces `__proto__` as an
+   * own enumerable property, which is the vector an object literal cannot
+   * reproduce.
+   *
+   * @param text - A JSON object literal.
+   * @returns The parsed object.
+   */
+  const poisoned = (text: string): Record<string, unknown> =>
+    JSON.parse(text) as Record<string, unknown>;
+
+  it('stripGsdHookEntries does not reparent its output via a top-level __proto__', () => {
+    const out = stripGsdHookEntries(poisoned('{"__proto__":{"polluted":true},"model":"opus"}'));
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect((out as { polluted?: unknown }).polluted).toBeUndefined();
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+    expect(out).toEqual({ model: 'opus' });
+  });
+
+  it('stripGsdHookEntries skips constructor and prototype keys', () => {
+    const out = stripGsdHookEntries(
+      poisoned('{"constructor":{"x":1},"prototype":{"y":2},"model":"opus"}'),
+    );
+    expect(Object.keys(out)).toEqual(['model']);
+  });
+
+  it('stripGsdHookEntries does not reparent the hooks block via a __proto__ event key', () => {
+    const out = stripGsdHookEntries(
+      poisoned(
+        '{"hooks":{"__proto__":{"polluted":true},"PreToolUse":[{"hooks":[{"command":"/a/user.js"}]}]}}',
+      ),
+    );
+    const hooks = out.hooks as Record<string, unknown>;
+    expect(Object.getPrototypeOf(hooks)).toBe(Object.prototype);
+    expect(Object.keys(hooks)).toEqual(['PreToolUse']);
+  });
+
+  it('keepGsdHookEntries does not reparent its hooks block via a __proto__ event key', () => {
+    const out = keepGsdHookEntries(
+      poisoned(
+        '{"hooks":{"__proto__":{"polluted":true},"SessionStart":[{"hooks":[{"command":"node /a/gsd-a.js"}]}]}}',
+      ),
+    );
+    const hooks = out.hooks as Record<string, unknown>;
+    expect(Object.getPrototypeOf(hooks)).toBe(Object.prototype);
+    expect(Object.keys(hooks)).toEqual(['SessionStart']);
+  });
+
+  it('graftGsdHookEntries skips a __proto__ event key from the gsd side', () => {
+    const out = graftGsdHookEntries(
+      { model: 'opus' },
+      poisoned('{"hooks":{"__proto__":[{"hooks":[{"command":"node /a/gsd-a.js"}]}]}}'),
+    );
+    const hooks = out.hooks as Record<string, unknown>;
+    expect(Object.getPrototypeOf(hooks)).toBe(Object.prototype);
+    expect(Object.keys(hooks)).toEqual([]);
+  });
+
+  it('a poisoned base cannot reparent a real gsd graft', () => {
+    const out = graftGsdHookEntries(
+      { model: 'opus' },
+      poisoned(
+        '{"hooks":{"__proto__":[{"hooks":[{"command":"node /a/gsd-bad.js"}]}],"SessionStart":[{"hooks":[{"command":"node /a/gsd-ok.js"}]}]}}',
+      ),
+    );
+    expect(Object.keys(out.hooks as Record<string, unknown>)).toEqual(['SessionStart']);
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
   });
 });

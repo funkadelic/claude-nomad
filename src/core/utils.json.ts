@@ -71,15 +71,25 @@ export function validatePathMapShape(raw: unknown): string | null {
   return null;
 }
 
+/**
+ * Prototype-pollution vectors that must never be copied out of parsed JSON into
+ * a fresh object by key. Settings and path-map JSON are parsed from the
+ * untrusted synced repo, so assigning one of these reparents (or shadows) the
+ * output object with repo-controlled data, and the key then vanishes from what
+ * gets written back.
+ *
+ * @param key - An own key read off a parsed JSON object.
+ * @returns `true` when the key must be skipped rather than assigned.
+ */
+export function isProtoPollutionKey(key: string): boolean {
+  return key === '__proto__' || key === 'constructor' || key === 'prototype';
+}
+
 /** Deep merge: source overrides target. Arrays replace, objects merge recursively. */
 export function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
   const out: Record<string, unknown> = { ...target };
   for (const [key, value] of Object.entries(source)) {
-    // Skip prototype-pollution vectors. Settings JSON is parsed from the
-    // untrusted synced repo, and assigning these keys would mutate (or shadow)
-    // Object.prototype for the running process and persist into
-    // ~/.claude/settings.json on the next pull.
-    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    if (isProtoPollutionKey(key)) continue;
     const existing = out[key];
     const bothObjects =
       value !== null &&
