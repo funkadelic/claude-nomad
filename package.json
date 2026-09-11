@@ -45,6 +45,7 @@
     "lint": "eslint . --cache --cache-location .eslintcache",
     "lint:fix": "eslint . --cache --cache-location .eslintcache --fix",
     "lint:md": "markdownlint-cli2",
+    "lint:prose": "vale README.md CONTRIBUTING.md SECURITY.md .github/PULL_REQUEST_TEMPLATE.md .claude-plugin/nomad-plugin/README.md",
     "format": "prettier --cache --write .",
     "format:check": "prettier --cache --check .",
     "prepack": "npm run build",

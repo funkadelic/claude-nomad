@@ -42,6 +42,10 @@ npm run test
 npm run lint:md
 ```
 
+Optionally, `npm run lint:prose` runs [Vale](https://vale.sh/) over the top-level docs to flag
+common LLM writing tics. It is advisory, never a gate: it reports and exits 0, and it is not part of
+CI or `npm run check`, so you do not need Vale installed to contribute. Rules live in `.vale/`.
+
 ## Docs-sync gate
 
 A separate CI check ([`.github/workflows/docs-check.yml`](.github/workflows/docs-check.yml), backed
