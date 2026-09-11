@@ -65,6 +65,10 @@ What this means for you: it runs `npm update -g claude-nomad` and refreshes the 
 PATH. It does NOT pull your sync data; run `nomad pull` separately when you want to apply remote
 changes to this host.
 
+The last line is a link to the release notes for the version you ended up on, so you can see what
+changed. You get it whether the update moved you forward or you were already current. If nomad
+cannot read the version back afterwards, it says so and prints no link.
+
 `nomad doctor` reports when your local install is behind the latest npm release:
 `warning claude-nomad: <local> -> <latest> (run nomad update)`. When the latest version cannot
 be determined (offline, or an unexpected registry response), the line says
