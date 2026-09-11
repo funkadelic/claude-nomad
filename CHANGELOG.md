@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.1](https://github.com/funkadelic/claude-nomad/compare/v0.69.0...v0.69.1) (2026-09-11)
+
+
+### Changed
+
+* add a prose check and tighten the docs ([#599](https://github.com/funkadelic/claude-nomad/issues/599)) ([2753d11](https://github.com/funkadelic/claude-nomad/commit/2753d1156a9a7a8a59235bfcab7e623489185258))
+
 ## [0.69.0](https://github.com/funkadelic/claude-nomad/compare/v0.68.0...v0.69.0) (2026-09-11)
 
 
