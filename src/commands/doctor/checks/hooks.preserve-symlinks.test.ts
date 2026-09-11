@@ -311,6 +311,52 @@ describe('reportPreserveSymlinksCheck', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it.each([
+    {
+      style: 'single-quoted string',
+      filename: 'escaped-single.js',
+      content: `const s = 'a\\'b require("../gsd-core/bin/lib/package-identity.cjs") c';\n`,
+    },
+    {
+      style: 'double-quoted string',
+      filename: 'escaped-double.js',
+      content: `const s = "a\\"b require('../gsd-core/bin/lib/package-identity.cjs') c";\n`,
+    },
+    {
+      style: 'template literal',
+      filename: 'escaped-backtick.js',
+      content: `const s = \`a\\\`b require("../gsd-core/bin/lib/package-identity.cjs") c\`;\n`,
+    },
+  ])(
+    'does not warn when an escaped quote appears inside the literal holding a require ($style)',
+    async ({ filename, content }) => {
+      buildSkillsTree(env.testHome, { [filename]: content });
+      writeHooksSettings(env.testHome, {
+        PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/${filename}` }],
+      });
+      const { out } = await runCheck();
+      expect(out).not.toContain(`${warnGlyph}`);
+      expect(out).toContain(`${okGlyph} hooks: preserve-symlinks-main not needed`);
+      expect(process.exitCode).toBeUndefined();
+    },
+  );
+
+  it('returns promptly on an unpaired quote followed by many escapes', async () => {
+    // An ambiguous alternation in the literal scanner backtracks exponentially
+    // here, so the pre-fix regex takes hours on this input while the reporter has
+    // no timeout to interrupt it. The default test timeout is the assertion.
+    const filename = 'unpaired.js';
+    buildSkillsTree(env.testHome, {
+      [filename]: `const s = "${'\\n'.repeat(40)}\n`,
+    });
+    writeHooksSettings(env.testHome, {
+      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/${filename}` }],
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(`${okGlyph} hooks: preserve-symlinks-main not needed`);
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it('silently skips and leaves exitCode undefined when the script is unreadable', async () => {
     // Write a settings.json pointing at a non-existent script under ~/.claude/commands/.
     // hooks and skills are no longer in SHARED_LINKS; use commands (still SHARED_LINKS) for the topology.
