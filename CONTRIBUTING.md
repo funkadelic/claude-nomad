@@ -45,10 +45,10 @@ npm run lint:md
 Optionally, `npm run lint:prose` runs [Vale](https://vale.sh/) over the top-level docs and the docs
 site to flag common LLM writing tics. It is not part of CI or `npm run check`, so you do not need
 Vale installed to contribute. The `Slop.*` rules only report. The rules in `.vale/Repo/` exit 1,
-because those are mechanical: no em-dashes, no doubled words, no hyphen after an adverb ending in
-`-ly`, no sentence opening with `There is`, and `for example` rather than `e.g.`. `.vale/Slop/` is
-vendored unmodified from [vale-llm-slop](https://github.com/Syntaf/vale-llm-slop) so it stays
-re-syncable, and every repo-specific rule goes in `.vale/Repo/` instead.
+because those are mechanical: no em-dashes, no doubled words, and no hyphen after an adverb ending
+in `-ly`. `.vale/Slop/` is vendored unmodified from
+[vale-llm-slop](https://github.com/Syntaf/vale-llm-slop) so it stays re-syncable, and every
+repo-specific rule goes in `.vale/Repo/` instead.
 
 ## Docs-sync gate
 
