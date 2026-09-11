@@ -1,0 +1,24 @@
+# Adapted from Google.LyHyphens. An adverb ending in -ly never takes a hyphen:
+# "locally cached", not "locally-cached". The upstream token matches any word
+# ending in "ly", which catches nouns and verbs that are not adverbs at all
+# ("supply-chain" is the one that bites here), so those are listed as
+# exceptions. Go's regexp has no lookaround, so an exception list is the only
+# way to carve them out.
+extends: existence
+message: "'%s' does not need a hyphen."
+link: 'https://developers.google.com/style/hyphens'
+level: error
+ignorecase: false
+nonword: true
+exceptions:
+  - supply
+  - apply
+  - reply
+  - imply
+  - comply
+  - multiply
+  - family
+  - assembly
+  - anomaly
+tokens:
+  - '\b[^\s-]+ly-\w+\b'

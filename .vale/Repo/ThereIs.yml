@@ -1,0 +1,9 @@
+# From write-good.ThereIs. "There is a flag that does X" buries the subject;
+# name the thing instead.
+extends: existence
+message: "Do not start a sentence with '%s'."
+link: 'https://github.com/btford/write-good#there-is--there-are'
+level: error
+ignorecase: false
+raw:
+  - '(?:[;-]\s)There\s(is|are)|\bThere\s(is|are)\b'
