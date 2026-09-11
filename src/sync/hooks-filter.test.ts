@@ -98,6 +98,43 @@ describe('isGsdHookEntry', () => {
     expect(isGsdHookEntry('/a/hooks/my-hook.sh gsd-arg')).toBe(false);
   });
 
+  it('bare relative script name with a gsd-prefixed argument -> false', () => {
+    // The bare-name sibling of the case above: the script token carries no path
+    // separator at all, so it used to fall through to launcher position and its
+    // gsd-prefixed argument was read as the script.
+    expect(isGsdHookEntry('my-hook.sh gsd-x.js')).toBe(false);
+    expect(isGsdHookEntry('my-hook.sh /a/hooks/gsd-notes.md')).toBe(false);
+    expect(isGsdHookEntry('run.py gsd-config.json')).toBe(false);
+    expect(isGsdHookEntry('notify gsd-x')).toBe(false);
+  });
+
+  it('env-var path script with a gsd-prefixed argument -> false', () => {
+    // `$CLAUDE_PROJECT_DIR/...` is an ordinary expansion, not a command
+    // substitution, so the word names a real script and must be classified off
+    // its own basename rather than read as a launcher.
+    expect(isGsdHookEntry('$CLAUDE_PROJECT_DIR/.claude/hooks/my-hook.sh gsd-x.js')).toBe(false);
+    expect(isGsdHookEntry('"$CLAUDE_PROJECT_DIR/.claude/hooks/my-hook.sh" gsd-x.js')).toBe(false);
+  });
+
+  it('launcher whose own relative path starts with gsd- classifies off the script', () => {
+    // The first path component starting with gsd- says nothing about ownership:
+    // the launcher basename is `node`, so the script token decides.
+    expect(isGsdHookEntry('gsd-dir/node /a/hooks/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry('gsd-dir/node /a/hooks/my-hook.js')).toBe(false);
+  });
+
+  it('bare env-var launcher word with a gsd-prefixed argument -> false', () => {
+    // `$HOOK` is an expansion, not a command substitution, so it names the script.
+    // Reading it as a launcher would make the argument decide ownership.
+    expect(isGsdHookEntry('$HOOK gsd-x.js')).toBe(false);
+    expect(isGsdHookEntry('${HOOK} gsd-x.js')).toBe(false);
+    expect(isGsdHookEntry('"$HOOK" gsd-x.js')).toBe(false);
+  });
+
+  it('env-var path gsd script -> true', () => {
+    expect(isGsdHookEntry('$CLAUDE_PROJECT_DIR/.claude/hooks/gsd-x.js')).toBe(true);
+  });
+
   it('absolute launcher binary running a gsd script -> true', () => {
     // First token has a path but its basename is a known launcher (node), so the
     // script token after it is what gates ownership.
