@@ -232,10 +232,11 @@ describe('isGsdHookEntry', () => {
   });
 
   it('unterminated backtick falls back to reading the opener literally, no hang', () => {
-    // The scanner gives up, so `` `command `` is read as the launcher word. The
-    // chain walk then steps over `node` to the real script, which agrees with
-    // the terminated spelling of the same command above.
-    expect(isGsdHookEntry('`command -v node /a/hooks/gsd-x.js')).toBe(true);
+    // The scanner gives up, so `` `command `` is read as the launcher word and
+    // `node` as the script. Not gsd-owned, but the command is unparseable shell.
+    // The chain walk does not reach past `node` here: chaining is gated on an
+    // `env` launcher, and this launcher is not one.
+    expect(isGsdHookEntry('`command -v node /a/hooks/gsd-x.js')).toBe(false);
     expect(isGsdHookEntry('`command -v node /a/hooks/my-hook.js')).toBe(false);
     // What the fallback protects: the script survives when it follows the
     // unterminated opener directly, instead of being discarded with it.
@@ -1029,6 +1030,17 @@ describe('isGsdHookEntry launcher chains', () => {
     // and so is the script, not a chained launcher.
     expect(isGsdHookEntry('env $(dirname "$0")/node /a/hooks/gsd-y.js')).toBe(false);
     expect(isGsdHookEntry('bash $(dirname "$0")/sh /a/gsd-y.js')).toBe(false);
+  });
+
+  it('bare launcher word under a NON-env launcher is the script, not a chain', () => {
+    // `bash node x` runs a relative-path script named `node` from the working
+    // directory, with `x` as its argument. Chaining past it would read the
+    // argument as the script and delete a user hook on pull, so chaining is
+    // gated on the launcher being `env`.
+    expect(isGsdHookEntry('bash node /a/hooks/gsd-notes.md')).toBe(false);
+    expect(isGsdHookEntry('bash sh /a/gsd-y.js')).toBe(false);
+    expect(isGsdHookEntry('node node gsd-x.js')).toBe(false);
+    expect(isGsdHookEntry('sh node gsd-report.txt')).toBe(false);
   });
 
   it('env with an ABSOLUTE interpreter path -> false (fails toward keeping)', () => {

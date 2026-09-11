@@ -115,37 +115,38 @@ function nextScriptWord(tokens: string[], from: number, inScriptSlot: boolean): 
 }
 
 /**
- * Walk from the script slot to the real script, stepping over a chained
- * launcher. `/usr/bin/env node /a/hooks/gsd-x.js` puts `node` in the script
- * slot, and `env FOO=bar node x.js` puts an assignment there; both chain on to
- * the token that follows.
+ * Walk from the script slot to the real script. Under `env`, and ONLY under
+ * `env`, step over a chained interpreter or a `KEY=value` assignment:
+ * `/usr/bin/env node /a/hooks/gsd-x.js` puts `node` in the script slot, and
+ * `env FOO=bar node x.js` puts an assignment there.
  *
- * A chained launcher must be a BARE word carrying no path separator, which is
- * the shape `env` resolves an interpreter to. That restriction is what keeps
- * the walk from reading past a user's own script: in
- * `bash /home/u/bin/node /a/hooks/gsd-notes.md` the second token IS the script
- * and the third is its argument, so stepping over anything whose basename
- * merely reads as a launcher would classify that user hook as gsd-owned and
- * delete it on pull. A bare `node` is never a script path.
+ * Chaining is gated on the launcher being `env` because a bare launcher word is
+ * ambiguous anywhere else. In `bash node /a/hooks/gsd-notes.md` the word `node`
+ * is a relative-path script in the working directory and the token after it is
+ * that script's ARGUMENT, so chaining past it would classify a user hook as
+ * gsd-owned and delete it on pull. Only `env` guarantees the word after it is
+ * an interpreter rather than a script.
  *
- * The cost is a launcher chain written with an absolute interpreter path
- * (`env /usr/bin/node gsd-x.js`) staying unresolved, which returns `false` and
- * KEEPS the entry. That is the safe direction for this module.
+ * A chained interpreter must also be a BARE word carrying no path separator,
+ * which is what `env` resolves through `PATH`. The cost is that
+ * `env /usr/bin/node gsd-x.js` stays unresolved and returns `false`, which KEEPS
+ * the entry, the safe direction for this module.
  *
  * @param tokens - The whitespace-split command tokens.
  * @param from - Index to start scanning at (the token after the launcher).
+ * @param underEnv - `true` when the launcher was `env`, which is what allows chaining.
  * @returns The script candidate, or `NO_CANDIDATE` when the chain runs out.
  */
-function resolveScriptWord(tokens: string[], from: number): Candidate {
+function resolveScriptWord(tokens: string[], from: number, underEnv: boolean): Candidate {
   let candidate = nextScriptWord(tokens, from, true);
-  while (candidate.index >= 0) {
+  while (underEnv && candidate.index >= 0) {
     const word = stripQuotes(candidate.word);
-    const isBareLauncher =
+    const isBareInterpreter =
       !word.includes('/') && !word.includes('\\') && KNOWN_LAUNCHER_BASENAMES.has(word);
-    if (!isBareLauncher && !ENV_ASSIGNMENT.test(word)) return candidate;
+    if (!isBareInterpreter && !ENV_ASSIGNMENT.test(word)) return candidate;
     candidate = nextScriptWord(tokens, candidate.index + 1, true);
   }
-  return NO_CANDIDATE;
+  return candidate;
 }
 
 /**
@@ -180,9 +181,9 @@ function resolveScriptWord(tokens: string[], from: number): Candidate {
  * binary, or its basename already starts with `gsd-`), classify off that word's
  * basename directly. This covers launcher-less commands with or without trailing
  * args/flags. Otherwise that word is the launcher, and a second walk in script
- * position yields the script path, stepping over a chained launcher so
- * `/usr/bin/env node x.js` resolves past `node`. Return
- * `basename.startsWith(GSD_PREFIX)`.
+ * position yields the script path, stepping over a chained interpreter when
+ * (and only when) that launcher was `env`, so `/usr/bin/env node x.js` resolves
+ * past `node`. Return `basename.startsWith(GSD_PREFIX)`.
  *
  * Classification always keys off the script word, never a later one, so a
  * trailing `gsd-`-prefixed ARGUMENT cannot mark a user script as gsd-owned. That
@@ -223,10 +224,10 @@ export function isGsdHookEntry(command: string): boolean {
     return firstBase.startsWith(GSD_PREFIX);
   }
 
-  // Otherwise that word is the launcher and the script is the next candidate,
-  // stepping over a chained launcher (`env node x.js`). A launcher with no
-  // script -> false.
-  const script = resolveScriptWord(tokens, launcher.index + 1);
+  // Otherwise that word is the launcher and the script is the next candidate.
+  // Only under `env` does the walk step over a chained interpreter
+  // (`env node x.js`). A launcher with no script -> false.
+  const script = resolveScriptWord(tokens, launcher.index + 1, firstBase === 'env');
   if (script.index < 0) return false;
   return scriptBasename(stripQuotes(script.word)).startsWith(GSD_PREFIX);
 }
