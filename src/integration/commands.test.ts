@@ -51,7 +51,7 @@ describe('enforceAllowList', () => {
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'to sync random/unknown.dat, add to PUSH_ALLOWED in src/core/config.ts',
+        'to sync random/unknown.dat, move it into a shared/ folder listed in sharedDirs in path-map.json',
       ),
     );
   });
@@ -81,7 +81,7 @@ describe('enforceAllowList', () => {
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'to sync shared/agents-x/leaked.token, add to PUSH_ALLOWED in src/core/config.ts',
+        'to sync shared/agents-x/leaked.token, move it into a shared/ folder listed in sharedDirs in path-map.json',
       ),
     );
   });
@@ -95,7 +95,9 @@ describe('enforceAllowList', () => {
       expect.stringContaining('.claude.json is in NEVER_SYNC and must never be pushed'),
     );
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('to sync random/foo.bar, add to PUSH_ALLOWED in src/core/config.ts'),
+      expect.stringContaining(
+        'to sync random/foo.bar, move it into a shared/ folder listed in sharedDirs in path-map.json',
+      ),
     );
   });
 

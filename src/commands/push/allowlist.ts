@@ -162,7 +162,7 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
     fail(`${p} is in NEVER_SYNC and must never be pushed`);
   }
   for (const p of violations) {
-    fail(`to sync ${p}, add to PUSH_ALLOWED in src/core/config.ts`);
+    fail(`to sync ${p}, move it into a shared/ folder listed in sharedDirs in path-map.json`);
   }
   throw new NomadFatal('push allow-list violations');
 }
