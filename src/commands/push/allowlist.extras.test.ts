@@ -7,7 +7,7 @@ import type { PathMap } from '../../core/config.ts';
 // declared logical, mirroring the existing `shared/projects/<logical>/`
 // pattern. A staged path under a declared logical passes; one under an
 // unmapped logical (no `extras` entry for that name) fails with the existing
-// `to sync ... add to PUSH_ALLOWED` FATAL. Data-driven by construction, so an
+// `to sync ...` FATAL. Data-driven by construction, so an
 // allow-list bypass via a crafted `shared/extras/` path is closed.
 describe('enforceAllowList: extras prefix', () => {
   let errorSpy: MockInstance<(...args: unknown[]) => void>;

@@ -237,7 +237,7 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     // reaches the allow-list built from map.sharedDirs, so `toThrow(NomadFatal)`
     // alone would also pass if the allow-list wrongly admitted `.env`. Assert
     // the NEVER_SYNC-specific message, not just the violations-path text
-    // (`add to PUSH_ALLOWED`), which both branches' messages would otherwise share.
+    // (`to sync ...`), which both branches' messages would otherwise share.
     const { enforceAllowList } = await import('./allowlist.ts');
     const { NomadFatal } = await import('../../core/utils.ts');
     const map: PathMap = { projects: {}, sharedDirs: ['.env'] };
@@ -278,7 +278,7 @@ describe('enforceAllowList sharedDirs dynamic entries', () => {
     expect(() => enforceAllowList('M  shared/todos/a.md\0', map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'to sync shared/todos/a.md, add to PUSH_ALLOWED in src/core/config.ts',
+        'to sync shared/todos/a.md, move it into a shared/ folder listed in sharedDirs in path-map.json',
       ),
     );
     expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
