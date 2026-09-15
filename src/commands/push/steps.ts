@@ -84,7 +84,7 @@ export async function commitAndPush(
   }
   // Collect staged shared-config changes AFTER git add -A so the index reflects
   // the full staged tree. Assigned onto st so renderPushTree sees the section.
-  st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: true });
+  st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: true, map });
   let verdict = withSpinner('Scanning for secrets', () => scanPushVerdict(repo));
   const hadLeak = verdict.leak;
   if (verdict.leak) {
@@ -157,7 +157,7 @@ export function runDryRunPreview(
   selection: ManifestDiff | undefined,
 ): void {
   // Dry-run stages nothing, so diff against HEAD to capture working-tree changes.
-  st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: false });
+  st.globalConfig = collectGlobalConfigChanges(repo, HOST, { staged: false, map });
   if (map === null) {
     renderNoScanTree(st, { noMapHint: true });
     return;

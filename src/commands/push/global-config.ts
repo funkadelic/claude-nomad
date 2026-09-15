@@ -2,14 +2,15 @@
  * Pure helper for collecting shared-config file changes to surface in
  * the `nomad push` "Global config" output section. Parses `git diff
  * --name-status -z` output and filters to the shared-config paths that
- * nominad manages (SHARED_LINKS, settings.base.json, and the current
- * host's JSON override file). Session and extras paths are explicitly
+ * the push allow-list admits (`buildAllowList`), limited under `hosts/` to the
+ * current host's override file. Session and extras paths are explicitly
  * excluded so they never appear under "Global config".
  */
 
 import { execFileSync } from 'node:child_process';
 
-import { SHARED_LINKS } from '../../core/config.ts';
+import type { PathMap } from '../../core/config.ts';
+import { buildAllowList, isAllowed } from './allowlist.ts';
 
 /**
  * One tracked shared-config file change surfaced in the "Global config"
@@ -52,65 +53,21 @@ function labelForStatus(statusToken: string): string {
 }
 
 /**
- * Build the set of in-scope path prefixes for the current host. A path is
- * in scope when it is an exact match for a file-level prefix OR when it
- * starts with a directory-level prefix followed by `/`. Paths under
- * `shared/projects/` and `shared/extras/` are always excluded even though
- * SHARED_LINKS does not contain those names (defense-in-depth).
- *
- * @param hostname - Resolved host identifier (lowercased).
- * @returns Two sorted arrays: exact file prefixes and directory prefixes.
- */
-function buildPrefixSets(hostname: string): {
-  exactPrefixes: Set<string>;
-  dirPrefixes: string[];
-} {
-  const exactPrefixes = new Set<string>();
-  const dirPrefixes: string[] = [];
-
-  for (const name of SHARED_LINKS) {
-    const p = `shared/${name}`;
-    // Heuristic: names without a dot are treated as directories. File names
-    // in SHARED_LINKS are CLAUDE.md and my-statusline.cjs; everything else
-    // (commands, rules) is a directory.
-    if (name.includes('.')) {
-      exactPrefixes.add(p);
-    } else {
-      dirPrefixes.push(p);
-    }
-  }
-
-  // settings.base.json is a file, not a directory.
-  exactPrefixes.add('shared/settings.base.json');
-
-  // shared/skills/ is copy-synced (syncSkillsPush) rather than symlinked, so it
-  // is not in SHARED_LINKS, but skills changes are still global-config changes
-  // and must appear in the push output section.
-  dirPrefixes.push('shared/skills');
-
-  // The current host's override file.
-  exactPrefixes.add(`hosts/${hostname}.json`);
-
-  return { exactPrefixes, dirPrefixes };
-}
-
-/**
- * Return `true` when `filePath` is a shared-config path that should appear
- * in the "Global config" section. Always returns `false` for any path under
- * `shared/projects/` (Sessions) or `shared/extras/` (Extras).
+ * Return `true` when `filePath` belongs in the "Global config" section: on the
+ * push allow-list, not a Sessions or Extras path, and under `hosts/` only the
+ * current host's override file.
  *
  * @param filePath - Repo-relative path being tested.
- * @param exactPrefixes - Set of exact file paths that are in scope.
- * @param dirPrefixes - Array of directory prefixes; membership requires a trailing `/`.
+ * @param hostname - Resolved host identifier used to match `hosts/<hostname>.json`.
+ * @param allowed - Push allow-list entries from `buildAllowList`.
  * @returns `true` when the path is in scope.
  */
-function isInScope(filePath: string, exactPrefixes: Set<string>, dirPrefixes: string[]): boolean {
-  // Explicit exclusions first (defense-in-depth).
+function isInScope(filePath: string, hostname: string, allowed: readonly string[]): boolean {
   if (filePath.startsWith('shared/projects/') || filePath.startsWith('shared/extras/')) {
     return false;
   }
-  if (exactPrefixes.has(filePath)) return true;
-  return dirPrefixes.some((prefix) => filePath.startsWith(`${prefix}/`));
+  if (filePath.startsWith('hosts/')) return filePath === `hosts/${hostname}.json`;
+  return isAllowed(filePath, allowed);
 }
 
 /**
@@ -130,12 +87,13 @@ function isInScope(filePath: string, exactPrefixes: Set<string>, dirPrefixes: st
  * @param hostname - Resolved host identifier used to match `hosts/<hostname>.json`.
  * @param opts - Options controlling which diff is captured.
  * @param opts.staged - When `true`, diff the index against HEAD; when `false`, diff HEAD vs working tree.
+ * @param opts.map - Parsed path-map (for `sharedDirs`), or `null` when there is none.
  * @returns Array of in-scope changes, one entry per affected shared-config file.
  */
 export function collectGlobalConfigChanges(
   repoHome: string,
   hostname: string,
-  opts: { staged: boolean },
+  opts: { staged: boolean; map: PathMap | null },
 ): GlobalConfigChange[] {
   const args = opts.staged
     ? ['diff', '--cached', '--name-status', '-z']
@@ -146,7 +104,7 @@ export function collectGlobalConfigChanges(
     stdio: ['ignore', 'pipe', 'pipe'],
   }).toString();
 
-  const { exactPrefixes, dirPrefixes } = buildPrefixSets(hostname);
+  const allowed = buildAllowList(opts.map ?? { projects: {} });
   const changes: GlobalConfigChange[] = [];
 
   // Split on NUL and drop the trailing empty token.
@@ -169,13 +127,13 @@ export function collectGlobalConfigChanges(
       i++; // skip old path
       /* c8 ignore next */
       const newPath = tokens[i++] ?? '';
-      if (isInScope(newPath, exactPrefixes, dirPrefixes)) {
+      if (isInScope(newPath, hostname, allowed)) {
         changes.push({ status: firstLetter, label: labelForStatus(statusToken), path: newPath });
       }
     } else {
       /* c8 ignore next */
       const filePath = tokens[i++] ?? '';
-      if (isInScope(filePath, exactPrefixes, dirPrefixes)) {
+      if (isInScope(filePath, hostname, allowed)) {
         changes.push({ status: firstLetter, label: labelForStatus(statusToken), path: filePath });
       }
     }
