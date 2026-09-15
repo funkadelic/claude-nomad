@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as childProcessModule from 'node:child_process';
 
+import type { PathMap } from '../../core/config.ts';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -47,7 +49,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'A', label: 'add', path: 'shared/skills/new.md' }]);
   });
 
@@ -60,7 +62,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/skills/existing.md' }]);
   });
 
@@ -74,7 +76,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'D', label: 'delete', path: 'shared/skills/old.md' }]);
   });
 
@@ -87,7 +89,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'B', label: 'change', path: 'shared/skills/foo.md' }]);
   });
 
@@ -102,7 +104,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'R', label: 'rename', path: 'shared/skills/new-name.md' }]);
   });
 
@@ -115,7 +117,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([]);
   });
 
@@ -128,7 +130,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([]);
   });
 
@@ -141,7 +143,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/skills/foo.md' }]);
   });
 
@@ -155,7 +157,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([]);
   });
 
@@ -168,7 +170,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/commands/do-thing.md' }]);
   });
 
@@ -181,7 +183,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/rules/my-rule.md' }]);
   });
 
@@ -195,7 +197,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([]);
   });
 
@@ -208,7 +210,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/CLAUDE.md' }]);
   });
 
@@ -221,7 +223,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/my-statusline.cjs' }]);
   });
 
@@ -234,7 +236,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'shared/settings.base.json' }]);
   });
 
@@ -247,7 +249,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([{ status: 'M', label: 'modify', path: 'hosts/myhost.json' }]);
   });
 
@@ -260,7 +262,40 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
+    expect(result).toEqual([]);
+  });
+
+  /** Run the collector over a mocked diff of `records` with the given path-map. */
+  async function collectWith(records: [string, string][], map: PathMap | null) {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof childProcessModule>();
+      return { ...actual, execFileSync: vi.fn(() => buildNameStatus(records)) };
+    });
+    const { collectGlobalConfigChanges } = await import('./global-config.ts');
+    return collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map });
+  }
+
+  it('includes path-map.json', async () => {
+    const result = await collectWith([['M', 'path-map.json']], null);
+    expect(result).toEqual([{ status: 'M', label: 'modify', path: 'path-map.json' }]);
+  });
+
+  it('includes .gitleaksignore (allow-listed repo-root file)', async () => {
+    const result = await collectWith([['A', '.gitleaksignore']], null);
+    expect(result).toEqual([{ status: 'A', label: 'add', path: '.gitleaksignore' }]);
+  });
+
+  it('includes files under a sharedDirs folder listed in the path-map', async () => {
+    const result = await collectWith([['A', 'shared/guards/check.py']], {
+      projects: {},
+      sharedDirs: ['guards'],
+    });
+    expect(result).toEqual([{ status: 'A', label: 'add', path: 'shared/guards/check.py' }]);
+  });
+
+  it('excludes a shared/ folder the path-map does not list', async () => {
+    const result = await collectWith([['A', 'shared/guards/check.py']], { projects: {} });
     expect(result).toEqual([]);
   });
 
@@ -275,7 +310,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([]);
   });
 
@@ -290,7 +325,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([]);
   });
 
@@ -303,7 +338,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([]);
   });
 
@@ -320,7 +355,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([]);
   });
 
@@ -340,7 +375,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    const result = collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(result).toEqual([
       { status: 'M', label: 'modify', path: 'shared/skills/foo.md' },
       { status: 'M', label: 'modify', path: 'hosts/myhost.json' },
@@ -360,7 +395,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    collectGlobalConfigChanges('/repo', 'myhost', { staged: true });
+    collectGlobalConfigChanges('/repo', 'myhost', { staged: true, map: null });
     expect(capturedArgs).toEqual(['diff', '--cached', '--name-status', '-z']);
   });
 
@@ -377,7 +412,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    collectGlobalConfigChanges('/repo', 'myhost', { staged: false });
+    collectGlobalConfigChanges('/repo', 'myhost', { staged: false, map: null });
     expect(capturedArgs).toEqual(['diff', 'HEAD', '--name-status', '-z']);
   });
 
@@ -394,7 +429,7 @@ describe('collectGlobalConfigChanges', () => {
       };
     });
     const { collectGlobalConfigChanges } = await import('./global-config.ts');
-    collectGlobalConfigChanges('/my/repo', 'myhost', { staged: true });
+    collectGlobalConfigChanges('/my/repo', 'myhost', { staged: true, map: null });
     expect(capturedCwd).toBe('/my/repo');
   });
 });

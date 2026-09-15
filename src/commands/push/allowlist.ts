@@ -17,7 +17,7 @@ import { fail, NomadFatal } from '../../core/utils.ts';
  * `.json` extension) is allowed, so arbitrary credentials like
  * `hosts/dell-wsl.key` are rejected even though they share the prefix.
  */
-function isAllowed(path: string, allowed: readonly string[]): boolean {
+export function isAllowed(path: string, allowed: readonly string[]): boolean {
   for (const entry of allowed) {
     if (path === entry) return true;
     if (entry === 'hosts/') {
@@ -109,27 +109,15 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
 }
 
 /**
- * Reject any staged path that is not on the push allow-list or that matches a
- * `NEVER_SYNC` entry. Builds the runtime allow-list by combining
- * `PUSH_ALLOWED_STATIC` with one `shared/projects/<logical>/` prefix per entry
- * in `path-map.json` AND, per (logical, whitelisted name) pair in
- * `map.extras ?? {}`, an exact `shared/extras/<logical>/<name>` entry plus a
- * `shared/extras/<logical>/<name>/` prefix entry. This entry generation is
- * data-driven, not a hand-rolled bypass, closing the allow-list-widening gap
- * a crafted `shared/extras/` path could otherwise exploit. The exact entry
- * permits the declared name when it is a single root file (e.g. `CLAUDE.md`);
- * the prefix entry permits the declared name's subtree when it is a
- * directory. Neither widens
- * to a logical-only prefix, so an arbitrary sibling file under the same
- * logical stays rejected. The name filter (`SUPPORTED_EXTRAS`) is the same one
- * `remapExtrasPush` honors, so manually staged content under a non-whitelisted
- * name surfaces as a FATAL instead of riding through. Logs every violation as
- * a FATAL line so the user sees the full set (not just the first), then throws
- * `NomadFatal` to unwind the caller's try/finally and release the push lock.
+ * Build the push allow-list: `PUSH_ALLOWED_STATIC`, each project's sessions dir,
+ * each whitelisted extra (exact name plus subtree, never the whole logical), and
+ * each valid `sharedDirs` folder.
+ * @param map - Parsed path-map.
+ * @returns Entries matched by `isAllowed`.
  */
-export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
+export function buildAllowList(map: PathMap): string[] {
   const extrasWhitelist: readonly string[] = SUPPORTED_EXTRAS;
-  const allowed = [
+  return [
     ...PUSH_ALLOWED_STATIC,
     ...Object.keys(map.projects).map((l) => `shared/projects/${l}/`),
     ...Object.entries(map.extras ?? {}).flatMap(([l, names]) =>
@@ -145,6 +133,14 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
       .filter(isValidSharedDir)
       .map((d) => `shared/${d}/`),
   ];
+}
+
+/**
+ * Reject any staged path that is off the `buildAllowList` list or in `NEVER_SYNC`.
+ * Logs every violation, then throws `NomadFatal` so the caller releases the push lock.
+ */
+export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
+  const allowed = buildAllowList(map);
   const neverSyncHits: string[] = [];
   const violations: string[] = [];
   for (const path of parsePorcelainZ(statusPorcelain)) {
