@@ -9,6 +9,7 @@ import { planSharedLinkDeletions, type SharedLinkDeletion } from '../sync/links.
 import { stageLocalSharedEdits, type MirrorPreviewEvent } from '../sync/links.mirror.ts';
 import { type LinkPreviewEvent, applySharedLinks } from '../sync/links.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
+import { blockedSettingsKeys, settingsBlockedMessage } from '../sync/settings-guard.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
 import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from '../sync/remap.ts';
 import { summaryRow } from './summary.ts';
@@ -109,6 +110,8 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  *   - `'section skipped (base or current missing)'` when base is absent
  *   - `'malformed hosts/<HOST>.json; ignoring overrides'` for a bad host file
  *   - `'malformed; skipping diff'` when current settings.json is unreadable
+ *   - the shared `settingsBlockedMessage` when a live top-level key would be
+ *     a promotable ahead-drift key a wet pull would refuse to overwrite
  *
  * When `diff` is `''` and `notes` is empty, the settings section is omitted
  * by the caller.
@@ -123,6 +126,11 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * cascade; when that happens the `CANONICAL_ORDER_NOTE` is appended so the user
  * still sees that settings.json will be rewritten in sorted-key order.
  * Display-only: the write path (`regenerateSettings`) is untouched.
+ *
+ * Before diffing, classifies via `blockedSettingsKeys` (the same leaf and
+ * inputs `regenerateSettings` uses); a non-empty result returns `diff: ''`
+ * plus `settingsBlockedMessage` instead of a diff that would never apply.
+ * Sets no exit code: a dry run mutates nothing, so nothing is refused.
  *
  * Exported for direct unit testing without the full computePreview harness.
  */
@@ -140,7 +148,8 @@ export function previewSettings(
   if (hostOverrides === null && existsSync(hostPath)) {
     notes.push(`malformed hosts/${HOST}.json; ignoring overrides`);
   }
-  const merged = stripGsdHookEntries(deepMerge(base, hostOverrides ?? {}));
+  const rawMerged = deepMerge(base, hostOverrides ?? {});
+  const merged = stripGsdHookEntries(rawMerged);
   const current = readJsonOrNull(settingsPath);
   if (current === null && existsSync(settingsPath)) {
     return { diff: '', notes: [...notes, 'malformed; skipping diff'] };
@@ -150,6 +159,14 @@ export function previewSettings(
   // strips them on write, so this also aligns the preview RHS with reality.
   // Mirrors classifySettingsDrift; genuine non-gsd changes still survive.
   const strippedCurrent = stripGsdHookEntries(current ?? {});
+
+  // Classify the same two objects regenerateSettings classifies (unstripped
+  // merge, raw current), so this preview cannot disagree with the wet path.
+  const blocked = blockedSettingsKeys(rawMerged, current ?? {});
+  if (blocked.length > 0) {
+    return { diff: '', notes: [...notes, settingsBlockedMessage(blocked)] };
+  }
+
   const rawEqual = JSON.stringify(strippedCurrent, null, 2) === JSON.stringify(merged, null, 2);
   const diff = diffJsonStrings(
     JSON.stringify(sortKeysDeep(strippedCurrent), null, 2),
