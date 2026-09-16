@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSessionsSection } from './sections.ts';
+import { buildSessionsSection, buildSettingsSection } from './sections.ts';
+
+describe('buildSettingsSection', () => {
+  it('renders the existing ok row unchanged when nothing is blocked', () => {
+    const s = buildSettingsSection('no host overrides', []);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain('✓');
+    expect(s.items[0]).toContain('settings.json (base + no host overrides)');
+  });
+
+  it('renders a fail row naming the blocked key and the recovery command', () => {
+    const s = buildSettingsSection('no host overrides', ['hooks']);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain('✗');
+    expect(s.items[0]).toContain('hooks');
+    expect(s.items[0]).toContain('nomad capture-settings --host');
+    expect(s.items[0]).not.toContain('base + no host overrides');
+  });
+});
 
 /**
  * Unit tests for `buildSessionsSection`'s additive `localOnly` parameter.

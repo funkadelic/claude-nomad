@@ -123,7 +123,7 @@ describe('regenerateSettings (integration)', () => {
     // The wet success log moved to a returned label (cmdPull renders the
     // Settings tree row from it). With a host override present the label is
     // `<HOST>.json`.
-    expect(result).toEqual({ label: 'test-host.json' });
+    expect(result).toEqual({ label: 'test-host.json', blocked: [] });
   });
 
   it('returns the no-overrides label when no host file matches', async () => {
@@ -135,7 +135,7 @@ describe('regenerateSettings (integration)', () => {
     );
     const { regenerateSettings } = await import('./links.ts');
     const result = regenerateSettings('20260516-000000');
-    expect(result).toEqual({ label: 'no host overrides' });
+    expect(result).toEqual({ label: 'no host overrides', blocked: [] });
   });
 
   it('leaves no .tmp sibling after a successful atomic write', async () => {
@@ -156,7 +156,9 @@ describe('regenerateSettings (integration)', () => {
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
-    const priorContent = JSON.stringify({ model: 'opus', old: true }) + '\n';
+    // `env` is a CAPTURE_EXCLUDED_KEYS key, so it differs from base without
+    // tripping the new settings-blocked gate this test is not about.
+    const priorContent = JSON.stringify({ model: 'opus', env: { FOO: 'bar' } }) + '\n';
     writeFileSync(join(claudeDir, 'settings.json'), priorContent);
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
@@ -178,17 +180,15 @@ describe('regenerateSettings (integration)', () => {
     expect(newContent).toEqual({ model: 'sonnet' });
   });
 
-  it('fires ahead-drift WARN advising nomad capture-settings when settings has local-only keys', async () => {
+  it('refuses the write and reports the key when settings has a promotable ahead-drift key', async () => {
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
-    writeFileSync(
-      join(claudeDir, 'settings.json'),
-      JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
-    );
-    // warn() routes through console.error; capture both stdio paths so the
-    // assertion remains stream-agnostic.
+    const priorContent = JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n';
+    writeFileSync(join(claudeDir, 'settings.json'), priorContent);
+    // fail()/warn() route through console.error; capture both stdio paths so
+    // the assertion remains stream-agnostic.
     const writes: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       writes.push(args.map(String).join(' ') + '\n');
@@ -198,11 +198,27 @@ describe('regenerateSettings (integration)', () => {
       return true;
     });
     const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260516-000000');
+    const result = regenerateSettings('20260516-000000');
     const captured = writes.join('');
-    expect(captured).toContain('nomad capture-settings');
+    expect(captured).toContain('nomad capture-settings --host');
     expect(captured).toContain('statusLine');
-    expect(existsSync(join(claudeDir, 'settings.json'))).toBe(true);
+    expect(result.blocked).toEqual(['statusLine']);
+    // The write is skipped entirely: the live file is byte-identical.
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(priorContent);
+  });
+
+  it('writes normally and returns blocked empty when there is no promotable ahead-drift key', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    const { regenerateSettings } = await import('./links.ts');
+    const result = regenerateSettings('20260516-000000');
+    expect(result.blocked).toEqual([]);
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(
+      JSON.stringify({ model: 'sonnet' }, null, 2) + '\n',
+    );
   });
 
   it('suppresses the drift WARN when suppressDriftWarn is set (post-capture resync)', async () => {
@@ -1734,9 +1750,9 @@ describe('regenerateSettings dry-run', () => {
     expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(priorContent);
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
     expect(existsSync(backupRoot)).toBe(false);
-    // The dry-run path still returns the override label so callers have a
-    // consistent return shape (the would-write log is unchanged).
-    expect(result).toEqual({ label: 'test-host.json' });
+    // The dry-run path still returns the override label and the blocked-key
+    // list (the drift block above runs before the dryRun early return).
+    expect(result).toEqual({ label: 'test-host.json', blocked: ['old'] });
   });
 
   it('default (no opts), dryRun:false, and empty opts all still mutate settings.json', async () => {

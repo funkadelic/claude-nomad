@@ -12,7 +12,16 @@
  * skip count never prints a header.
  */
 
-import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../render/color.ts';
+import {
+  dim,
+  failGlyph,
+  green,
+  infoGlyph,
+  okGlyph,
+  red,
+  warnGlyph,
+  yellow,
+} from '../../render/color.ts';
 import type { remapExtrasPush } from '../../sync/extras/extras.ts';
 import { type DoctorSection, addItem, renderTree, section } from '../../render/output-tree.ts';
 import type { LeakVerdict } from './leak-verdict.ts';
@@ -37,18 +46,22 @@ function collapsedSkipRow(n: number, noun: string): string | null {
 }
 
 /**
- * Build the Settings section for `cmdPull`: a single
- * `${green(okGlyph)} settings.json (base + <label>)` row. `label` is the
- * override-source tag returned by `regenerateSettings` (`'<HOST>.json'` when a
- * host override exists, else `'no host overrides'`), surfacing what was written
- * without `regenerateSettings` logging the line inline. Push has no Settings
+ * Build the Settings section for `cmdPull`. When `blocked` is empty, a
+ * single `${green(okGlyph)} settings.json (base + <label>)` row (`label` is
+ * `regenerateSettings`'s override-source tag). When `blocked` is non-empty,
+ * a `${red(failGlyph)}` row naming the keys and the recovery command instead
+ * (the write was skipped, so a ✓ row would be a lie). Push has no Settings
  * section, so this helper is pull-only.
- *
- * @param label - The override-source tag from `regenerateSettings`.
- * @returns A `Settings` `DoctorSection` holding the one settings row.
  */
-export function buildSettingsSection(label: string): DoctorSection {
+export function buildSettingsSection(label: string, blocked: string[]): DoctorSection {
   const s = section('Settings');
+  if (blocked.length > 0) {
+    addItem(
+      s,
+      `${red(failGlyph)} settings.json not written (${blocked.join(', ')} not in the repo; run 'nomad capture-settings --host')`,
+    );
+    return s;
+  }
   addItem(s, `${green(okGlyph)} settings.json (base + ${label})`);
   return s;
 }

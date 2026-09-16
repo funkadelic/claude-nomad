@@ -59,7 +59,7 @@ function mockMirrorModule(impl: ReturnType<typeof vi.fn> = vi.fn()): ReturnType<
 function mockCleanPullPipeline(onApplySharedLinks: () => void = () => undefined): void {
   vi.doMock('../../sync/links.ts', () => ({
     applySharedLinks: vi.fn(onApplySharedLinks),
-    regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+    regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
   }));
   mockMirrorModule();
   vi.doMock('../../sync/remap.ts', () => ({
@@ -272,7 +272,7 @@ describe('cmdPull: extras integration', () => {
     );
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -324,7 +324,7 @@ describe('cmdPull: extras integration', () => {
     );
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -372,7 +372,7 @@ describe('cmdPull: extras integration', () => {
     );
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -417,7 +417,7 @@ describe('cmdPull: extras integration', () => {
     );
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -454,7 +454,7 @@ describe('cmdPull: extras integration', () => {
     );
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -495,7 +495,7 @@ describe('cmdPull: extras integration', () => {
     );
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -599,7 +599,7 @@ describe('cmdPull: extras integration', () => {
     );
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -637,7 +637,7 @@ describe('cmdPull: extras integration', () => {
     );
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'test-host.json' })),
+      regenerateSettings: vi.fn(() => ({ label: 'test-host.json', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -828,7 +828,7 @@ describe('cmdPull wedge preflight', () => {
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -985,7 +985,7 @@ describe('cmdPull forceRemote routing', () => {
     // Only mock the sync side-effects that would touch ~/.claude/.
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1025,7 +1025,7 @@ describe('cmdPull forceRemote routing', () => {
     // real git ops (abort, fetch, branch, reset).
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     const mirrorSpy = mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1109,7 +1109,7 @@ describe('cmdPull forceRemote routing', () => {
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1169,7 +1169,7 @@ describe('cmdPull forceRemote routing', () => {
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1325,7 +1325,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1364,7 +1364,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     const mirrorSpy = mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1411,7 +1411,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1449,7 +1449,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1618,7 +1618,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     mkdirSync(join(tmp, '.claude'), { recursive: true });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1649,7 +1649,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     mkdirSync(join(tmp, '.claude'), { recursive: true });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1694,7 +1694,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1749,7 +1749,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1805,7 +1805,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -1887,7 +1887,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     });
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
@@ -2165,7 +2165,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
       applySharedLinks: vi.fn(() => {
         order.push('apply');
       }),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule(mirrorSpy);
     vi.doMock('../../sync/remap.ts', () => ({
@@ -2469,7 +2469,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     mockMirrorModule(discardMirrorSpy);
     vi.doMock('../../sync/links.ts', () => ({
       applySharedLinks: vi.fn(),
-      regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     vi.doMock('../../sync/remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
@@ -2586,7 +2586,10 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     // assert on.
     vi.doMock('../../sync/links.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof linksModule>();
-      return { ...actual, regenerateSettings: vi.fn(() => ({ label: 'no host overrides' })) };
+      return {
+        ...actual,
+        regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
+      };
     });
     // links.baseline.ts is deliberately NOT mocked here. It carries a
     // shared-name derivation of its own on the wet path (writeSharedBaseline),

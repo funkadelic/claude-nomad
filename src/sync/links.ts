@@ -10,14 +10,11 @@ import {
   isDeniedName,
   type PathMap,
 } from '../core/config.ts';
-import {
-  classifySettingsDrift,
-  describeSettings,
-  partitionByCaptureExclusion,
-} from '../commands/capture-settings/core.ts';
+import { classifySettingsDrift, describeSettings } from '../commands/capture-settings/core.ts';
 import { copyExtrasFilteredPreservingBy } from './extras/core.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
-import { die, log, warn, NomadFatal } from '../core/utils.ts';
+import { blockedSettingsKeys, settingsBlockedMessage } from './settings-guard.ts';
+import { die, fail, log, warn, NomadFatal } from '../core/utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from '../core/utils.fs.ts';
 import { deepMerge, readJson } from '../core/utils.json.ts';
 
@@ -479,20 +476,15 @@ function readExistingSettings(settingsPath: string): {
 }
 
 /**
- * Emit the pull-side drift WARNs by classifying the live `existing` settings
- * against the freshly `merged` result: a behind-drift key (present in the
- * synced copy, missing locally) advises `nomad pull`, and a promotable
- * ahead-drift key (local-only, capture-eligible) advises `nomad capture-settings`.
- * Informational only; extracted from `regenerateSettings` so the main function
- * stays under the cognitive-complexity gate.
- *
- * @param merged - The deep-merged base+host result about to be written.
- * @param existing - The parsed live settings.json (well-formed).
+ * Report drift between the live `existing` settings and the freshly `merged`
+ * result: a behind-drift key WARNs advising `nomad pull`; a promotable
+ * ahead-drift key is refused (via `fail`) rather than silently overwritten.
+ * Returns the blocked keys so the caller can skip the write.
  */
-function emitDriftWarnings(
+function reportSettingsDrift(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
-): void {
+): string[] {
   const drift = classifySettingsDrift(merged, existing);
   if (drift.behind.length > 0) {
     const { phrase, pronoun } = describeSettings(drift.behind);
@@ -501,14 +493,11 @@ function emitDriftWarnings(
         `run 'nomad pull' to restore ${pronoun}.`,
     );
   }
-  const { promotable } = partitionByCaptureExclusion(drift.ahead);
-  if (promotable.length > 0) {
-    const { phrase, pronoun, verb } = describeSettings(promotable);
-    warn(
-      `your settings.json has ${phrase} that ${verb} not yet synced; ` +
-        `run 'nomad capture-settings' to save ${pronoun} to the repo before the next pull overwrites ${pronoun}.`,
-    );
+  const blocked = blockedSettingsKeys(merged, existing);
+  if (blocked.length > 0) {
+    fail(settingsBlockedMessage(blocked));
   }
+  return blocked;
 }
 
 /**
@@ -533,30 +522,17 @@ function emitDriftWarnings(
  * is produced by `computePreview` in `src/render/preview.ts`, not here, to keep
  * this function's contract simple (mutation or log-only).
  *
- * Returns `{ label }` where `label` is the override-source tag
- * (`'<HOST>.json'` when a host override exists, else `'no host overrides'`).
- * The WET path no longer logs `wrote settings.json (base + <label>)` inline;
- * `cmdPull` consumes the returned label to render the Settings row of its
- * grouped tree. The dry-run `would write settings.json ...` log and the
- * drift WARN are unchanged (the WET success log is the only thing that moved).
- *
- * `opts.suppressDriftWarn` (default `false`): skip the pull-side drift WARN
- * block. Used by `nomad capture-settings`, which calls this purely to resync the
- * local file right after promoting keys into the repo: re-emitting a "run nomad
- * capture-settings" hint in the same run would be contradictory, and the only
- * keys still classified `ahead` at that point are the deliberately-excluded
- * credential keys (which capture refuses), so the hint would advise an action
- * that cannot succeed.
- *
- * @param ts - backup timestamp namespace for `backupBeforeWrite`.
- * @param opts.dryRun - when `true`, log the would-write line and skip mutation.
- * @param opts.suppressDriftWarn - when `true`, skip the pull-side drift WARN block.
- * @returns `{ label }` describing the override source for the Settings row.
+ * Returns `{ label, blocked }`. `label` is the override-source tag
+ * (`'<HOST>.json'` or `'no host overrides'`); `cmdPull` renders it as the
+ * Settings row. `blocked` is the promotable ahead-drift keys a live file
+ * would lose; non-empty SKIPS the write entirely (no backup, no atomic
+ * write). `suppressDriftWarn` (used by `nomad capture-settings`) skips this
+ * gate too, so capture never deadlocks.
  */
 export function regenerateSettings(
   ts: string,
   opts: { dryRun?: boolean; suppressDriftWarn?: boolean } = {},
-): { label: string } {
+): { label: string; blocked: string[] } {
   const dryRun = opts.dryRun === true;
   const suppressDriftWarn = opts.suppressDriftWarn === true;
   const repo = repoHome();
@@ -581,15 +557,15 @@ export function regenerateSettings(
   const { existing, present, malformed } = readExistingSettings(settingsPath);
 
   // Pull-side drift surface: classify existing settings against the merged
-  // result and emit direction-specific guidance. Informational only; pull does
-  // NOT abort. The WARN runs in dry-run mode too: the user sees the same drift
-  // signal they would see on a real pull. Malformed prior settings.json must
-  // not block regeneration; the whole point is to overwrite from base+overrides.
+  // result and emit direction-specific guidance, refusing a promotable
+  // ahead-drift write. Runs in dry-run mode too. Malformed prior
+  // settings.json bypasses the gate; the whole point is to overwrite it.
+  let blocked: string[] = [];
   if (!suppressDriftWarn && present) {
     if (malformed) {
       warn('existing settings.json is malformed; skipping drift-check and regenerating.');
     } else {
-      emitDriftWarnings(merged, existing);
+      blocked = reportSettingsDrift(merged, existing);
     }
   }
 
@@ -597,7 +573,13 @@ export function regenerateSettings(
 
   if (dryRun) {
     log(`would write settings.json (base + ${overrideLabel})`);
-    return { label: overrideLabel };
+    return { label: overrideLabel, blocked };
+  }
+
+  // A blocked write is skipped entirely: no backup (nothing changes) and no
+  // atomic write, leaving the live file exactly as it was.
+  if (blocked.length > 0) {
+    return { label: overrideLabel, blocked };
   }
 
   // Preserve the gsd-owned hook entries the live file already carries (gsd
@@ -610,5 +592,5 @@ export function regenerateSettings(
     settingsPath,
     graftGsdHookEntries(stripGsdHookEntries(merged), keepGsdHookEntries(existing)),
   );
-  return { label: overrideLabel };
+  return { label: overrideLabel, blocked };
 }

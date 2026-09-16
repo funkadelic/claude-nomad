@@ -97,6 +97,9 @@ function capturePrePostHeads(
  * header printed separately by the caller. `applySharedLinks` stays silent (no
  * Links group by design); `regenerateSettings` returns its override-source
  * label so the Settings row surfaces what was written without logging inline.
+ * When it also returns a non-empty `blocked` (a live key the write would have
+ * destroyed), this sets `process.exitCode = EXIT.SETTINGS_BLOCKED` without
+ * throwing, so skills/sessions/extras below still run.
  * Sessions/Extras reuse the verb-agnostic builders shared with `cmdPush`, fed
  * the pull-side `pulled` detail arrays. The combined session + extras
  * unmapped count and the extras-skipped count drive the Pull summary row
@@ -160,7 +163,13 @@ function buildWetPullSections(
   // previous record in place, so it replays the same already-authorized
   // removals next time instead of inventing new ones.
   writeSharedBaseline(map, { quiet: true });
-  const { label } = regenerateSettings(ts);
+  const { label, blocked } = regenerateSettings(ts);
+  // Non-fatal: sets the exit code but never throws, so skills, sessions and
+  // extras below all still run. Setting it here (not inside links.ts) keeps
+  // the sync layer free of process state and covers nomad sync's wet half too.
+  if (blocked.length > 0) {
+    process.exitCode = EXIT.SETTINGS_BLOCKED;
+  }
   syncSkillsPull(ts, prePostHeads);
   const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
   const extrasResult = remapExtrasPull(ts, { prePostHeads });
@@ -177,7 +186,7 @@ function buildWetPullSections(
   addItem(summary, summaryRow('pull', unmapped, 0, extrasResult.skipped, localOnly));
   return {
     sections: [
-      buildSettingsSection(label),
+      buildSettingsSection(label, blocked),
       buildSessionsSection(remapResult.pulled, remapResult.unmapped, localOnly),
       buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
       summary,
