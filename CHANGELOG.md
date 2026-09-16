@@ -3,6 +3,16 @@
 ## [0.69.1](https://github.com/funkadelic/claude-nomad/compare/v0.69.0...v0.69.1) (2026-09-15)
 
 
+### What's new
+
+* `nomad push` refuses to sync files it does not recognize. That message used to name a source
+  file inside the tool, which is no help if you installed from npm. It now tells you to add the
+  folder to `sharedDirs` in your `path-map.json`.
+* The summary `nomad push` prints was leaving things out. Changes to your `path-map.json`, and to
+  any folder you added through `sharedDirs`, were going up without being listed. Both now appear
+  alongside the rest of your global config.
+
+
 ### Fixed
 
 * **push:** list path-map.json and sharedDirs changes in the push summary ([#605](https://github.com/funkadelic/claude-nomad/issues/605)) ([b5ea573](https://github.com/funkadelic/claude-nomad/commit/b5ea573863ae10d895f2fbb24236de227251b282))
