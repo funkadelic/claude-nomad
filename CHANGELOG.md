@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.69.1](https://github.com/funkadelic/claude-nomad/compare/v0.69.0...v0.69.1) (2026-09-15)
+
+
+### What's new
+
+* `nomad push` refuses to sync files it does not recognize. That message used to name a source
+  file inside the tool, which is no help if you installed from npm. It now tells you to add the
+  folder to `sharedDirs` in your `path-map.json`.
+* The summary `nomad push` prints was leaving things out. Changes to your `path-map.json`, and to
+  any folder you added through `sharedDirs`, were going up without being listed. Both now appear
+  alongside the rest of your global config.
+
+
+### Fixed
+
+* **push:** list path-map.json and sharedDirs changes in the push summary ([#605](https://github.com/funkadelic/claude-nomad/issues/605)) ([b5ea573](https://github.com/funkadelic/claude-nomad/commit/b5ea573863ae10d895f2fbb24236de227251b282))
+* **push:** suggest sharedDirs when push refuses an unsynced file ([#604](https://github.com/funkadelic/claude-nomad/issues/604)) ([ff5e263](https://github.com/funkadelic/claude-nomad/commit/ff5e26321cb8cae7e61c52a12dd4228e27cc78b0))
+
+
+### Changed
+
+* add a prose check and tighten the docs ([#599](https://github.com/funkadelic/claude-nomad/issues/599)) ([2753d11](https://github.com/funkadelic/claude-nomad/commit/2753d1156a9a7a8a59235bfcab7e623489185258))
+
+
+### Dependencies
+
+* bump astro from 7.3.1 to 7.3.2 in /docs-site in the astro group ([#603](https://github.com/funkadelic/claude-nomad/issues/603)) ([8f413ea](https://github.com/funkadelic/claude-nomad/commit/8f413eac62554a7310e0271dce987a0f0376f50d))
+* bump the codeql-action group across 1 directory with 2 updates ([#602](https://github.com/funkadelic/claude-nomad/issues/602)) ([22f51e6](https://github.com/funkadelic/claude-nomad/commit/22f51e63db6a77b66fa455986e797498dae29870))
+* bump the dev-dependencies group across 1 directory with 3 updates ([#601](https://github.com/funkadelic/claude-nomad/issues/601)) ([9a0bdf6](https://github.com/funkadelic/claude-nomad/commit/9a0bdf61c295e7c7bd19874f27b323338a34e2d9))
+
 ## [0.69.0](https://github.com/funkadelic/claude-nomad/compare/v0.68.0...v0.69.0) (2026-09-11)
 
 
