@@ -23,6 +23,7 @@ import type * as linksMirrorModule from '../../sync/links.mirror.ts';
 import type * as utilsModule from '../../core/utils.ts';
 import type * as lockfileModule from '../../core/utils.lockfile.ts';
 
+import { EXIT } from '../../core/exit-codes.ts';
 import { warnGlyph } from '../../render/color.ts';
 import { plantSharedBaseline } from '../../test-support/baseline.ts';
 import { stubPlatform } from '../../test-support/platform.ts';
@@ -667,6 +668,62 @@ describe('cmdPull: extras integration', () => {
     expect(out).not.toContain('Extras');
     // Clean summary (no unmapped, no extras skipped).
     expect(out).toContain('clean');
+  });
+
+  it('leaves process.exitCode untouched on a clean pull (no blocked settings keys)', async () => {
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
+    );
+    mockCleanPullPipeline();
+    process.exitCode = 0;
+    const { cmdPull } = await import('./pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('sets EXIT.SETTINGS_BLOCKED but still completes Sessions and Extras when regenerateSettings blocks', async () => {
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
+    );
+    vi.doMock('../../sync/links.ts', () => ({
+      applySharedLinks: vi.fn(),
+      regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: ['hooks'] })),
+    }));
+    mockMirrorModule();
+    vi.doMock('../../sync/remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    vi.doMock('../../sync/extras/extras.ts', () => ({
+      remapExtrasPush: vi.fn(),
+      remapExtrasPull: vi.fn(() => ({
+        unmapped: 0,
+        skipped: 0,
+        pulled: ['foo/.planning'],
+        wouldPull: [],
+      })),
+      divergenceCheckExtras: vi.fn(),
+    }));
+    vi.doMock('../../core/utils.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsModule>();
+      return { ...actual, gitOrFatal: vi.fn() };
+    });
+    const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
+      /* captured */
+    });
+    process.exitCode = 0;
+    const { cmdPull } = await import('./pull.ts');
+    expect(() => cmdPull()).not.toThrow();
+    expect(process.exitCode).toBe(EXIT.SETTINGS_BLOCKED);
+    const out = logSpyLocal.mock.calls.map((args) => args.join(' ')).join('\n');
+    // The refused Settings row, plus Sessions and Extras still ran.
+    expect(out).toMatch(/✗ +settings\.json not written \(hooks/);
+    expect(out).toMatch(/✓ +proj-a/);
+    expect(out).toContain('Extras');
+    expect(out).toMatch(/✓ +foo\/\.planning/);
   });
 });
 

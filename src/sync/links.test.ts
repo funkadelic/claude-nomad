@@ -226,11 +226,11 @@ describe('regenerateSettings (integration)', () => {
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
-    // settings has a local-only key that would normally fire the ahead-drift WARN.
-    writeFileSync(
-      join(claudeDir, 'settings.json'),
-      JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
-    );
+    // settings has a local-only key that would normally fire the ahead-drift
+    // refusal: the escape hatch must never gate, or `nomad capture-settings`
+    // (the only recovery command) would deadlock.
+    const priorContent = JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n';
+    writeFileSync(join(claudeDir, 'settings.json'), priorContent);
     const writes: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       writes.push(args.map(String).join(' ') + '\n');
@@ -240,12 +240,13 @@ describe('regenerateSettings (integration)', () => {
       return true;
     });
     const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260516-000000', { suppressDriftWarn: true });
+    const result = regenerateSettings('20260516-000000', { suppressDriftWarn: true });
     const captured = writes.join('');
     expect(captured).not.toContain('nomad capture-settings');
     expect(captured).not.toContain('⚠︎');
-    // The resync still happens.
-    expect(existsSync(join(claudeDir, 'settings.json'))).toBe(true);
+    expect(result.blocked).toEqual([]);
+    // The resync WRITES: the file is no longer the prior content.
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).not.toBe(priorContent);
   });
 
   it('does NOT fire WARN when host file is missing but prior settings only has base keys', async () => {
@@ -282,8 +283,12 @@ describe('regenerateSettings (integration)', () => {
       return true;
     });
     const { regenerateSettings } = await import('./links.ts');
-    expect(() => regenerateSettings('20260516-000000')).not.toThrow();
+    let result: { label: string; blocked: string[] } | undefined;
+    expect(() => {
+      result = regenerateSettings('20260516-000000');
+    }).not.toThrow();
     expect(writes.join('')).toContain('⚠︎ existing settings.json is malformed');
+    expect(result?.blocked).toEqual([]);
     expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toEqual({
       model: 'sonnet',
     });
@@ -376,10 +381,10 @@ describe('regenerateSettings (integration)', () => {
     expect(captured).not.toContain('⚠︎');
   });
 
-  it('fires direction-aware WARNs when a host override exists and settings has both missing and ahead-only keys', async () => {
+  it('fires the behind WARN and the ahead refusal together when settings diverges both ways', async () => {
     // Direction-aware drift: with a host override present and a settings that
-    // diverges both ways, both behind-drift (nomad pull) and ahead-drift
-    // (nomad capture-settings) WARNs are emitted. Use `verboseOutput` (a
+    // diverges both ways, the behind-drift (nomad pull) WARN and the
+    // ahead-drift refusal both fire in the same run. Use `verboseOutput` (a
     // non-hooks key) for the behind case so the strip does not remove it.
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
@@ -389,10 +394,8 @@ describe('regenerateSettings (integration)', () => {
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ verboseOutput: true }) + '\n');
     // merged = { model: 'sonnet', verboseOutput: true }
     // settings has statusLine (ahead) but not verboseOutput (behind).
-    writeFileSync(
-      join(claudeDir, 'settings.json'),
-      JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n',
-    );
+    const priorContent = JSON.stringify({ model: 'opus', statusLine: { type: 'command' } }) + '\n';
+    writeFileSync(join(claudeDir, 'settings.json'), priorContent);
     const writes: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       writes.push(args.map(String).join(' ') + '\n');
@@ -402,14 +405,16 @@ describe('regenerateSettings (integration)', () => {
       return true;
     });
     const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260516-000000');
+    const result = regenerateSettings('20260516-000000');
     const captured = writes.join('');
     // behind: verboseOutput is missing from settings -> nomad pull
     expect(captured).toContain('nomad pull');
     expect(captured).toContain('verboseOutput');
-    // ahead: statusLine is local-only -> nomad capture-settings
-    expect(captured).toContain('nomad capture-settings');
+    // ahead: statusLine is local-only and promotable -> refused
+    expect(captured).toContain('nomad capture-settings --host');
     expect(captured).toContain('statusLine');
+    expect(result.blocked).toEqual(['statusLine']);
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(priorContent);
   });
 
   it('does NOT advise capture when settings is ahead only via a capture-excluded key', async () => {
@@ -432,11 +437,20 @@ describe('regenerateSettings (integration)', () => {
       writes.push(String(chunk));
       return true;
     });
-    const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260516-000000');
-    const captured = writes.join('');
-    expect(captured).not.toContain('nomad capture-settings');
-    expect(captured).not.toContain('env');
+    const originalExitCode = process.exitCode;
+    try {
+      const { regenerateSettings } = await import('./links.ts');
+      const result = regenerateSettings('20260516-000000');
+      const captured = writes.join('');
+      expect(captured).not.toContain('nomad capture-settings');
+      expect(captured).not.toContain('env');
+      expect(result.blocked).toEqual([]);
+      // regenerateSettings never touches process.exitCode; only the pull
+      // command layer does, and only when `blocked` is non-empty.
+      expect(process.exitCode).toBe(originalExitCode);
+    } finally {
+      process.exitCode = originalExitCode;
+    }
   });
 });
 
