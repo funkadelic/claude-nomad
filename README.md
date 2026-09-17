@@ -217,12 +217,18 @@ it:
   before the next `nomad pull` overwrites them. Add `--host` to land machine-specific values (such
   as absolute paths) in `hosts/<HOST>.json` instead of the shared base.
 
-If `nomad pull` finds settings on this machine that your sync repo does not know about, it no longer
-overwrites them. It leaves `~/.claude/settings.json` alone, lists the settings by name, and points
-you at `nomad capture-settings --host` to save them. The rest of the sync (your shared files,
-skills, sessions, and project extras) still updates, and the command exits with a non-zero status so
-a scripted or cron-driven pull does not report success. Once you have captured the settings, the
-next pull proceeds normally.
+If `nomad pull` finds settings on this machine that your sync repo does not know about, it does not
+overwrite them. It leaves `~/.claude/settings.json` alone, lists the settings by name, and suggests
+two fixes: run `nomad capture-settings` to save them to the repo (add `--host` for values that
+belong to this machine only), or delete them from `~/.claude/settings.json` if you no longer want
+them. The rest of the sync (your shared files, skills, sessions, and project extras) still updates,
+and the command exits with a non-zero status so a scripted or cron-driven pull does not report
+success. Once you have saved or deleted the settings, the next pull proceeds normally.
+
+A setting that another machine removed from the repo is removed here too, as long as the removal
+arrives with the pull itself. If it reached your sync repo earlier (for example through `nomad push`
+or `nomad pull --dry-run`, which both fetch first), pull cannot tell it apart from a setting you
+added, so it lists it like any other; delete it from `~/.claude/settings.json` and pull again.
 
 During `nomad push` and `nomad pull`, long-running steps (rebase, secret scan, git push, session
 sync) show an animated progress indicator on an interactive terminal so the CLI does not look hung.
@@ -308,15 +314,15 @@ skips with a `⚠︎` when the ref is unavailable, and is non-fatal in all cases
 Every `nomad` subcommand exits with one of a small set of codes, so a script or cron wrapper can
 branch on `$?` without parsing stderr text.
 
-| Code | Name             | Meaning                                                                                                                                 |
-| ---- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Success          | Completed successfully.                                                                                                                 |
-| 1    | Generic failure  | Unclassified failure; the default for any error not covered below.                                                                      |
-| 2    | Usage            | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                                            |
-| 4    | Conflict         | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution.                                                    |
-| 5    | Leak blocked     | gitleaks confirmed a secret in the staged tree and the push was aborted.                                                                |
-| 6    | Settings blocked | Pull found settings on this machine that are not in the sync repo, so it left your settings file untouched instead of overwriting them. |
-| 130  | Interrupted      | You pressed Ctrl+C at an interactive prompt, so nomad stopped without finishing.                                                        |
+| Code | Name             | Meaning                                                                                                                                                                    |
+| ---- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Success          | Completed successfully.                                                                                                                                                    |
+| 1    | Generic failure  | Unclassified failure; the default for any error not covered below.                                                                                                         |
+| 2    | Usage            | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                                                                               |
+| 4    | Conflict         | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution.                                                                                       |
+| 5    | Leak blocked     | gitleaks confirmed a secret in the staged tree and the push was aborted.                                                                                                   |
+| 6    | Settings blocked | Pull (or the pull half of `nomad sync`) found settings on this machine that are not in the sync repo, so it left your settings file untouched instead of overwriting them. |
+| 130  | Interrupted      | You pressed Ctrl+C at an interactive prompt, so nomad stopped without finishing.                                                                                           |
 
 A run skipped because another nomad process already holds the lock also exits 0: this is an
 intentional no-op skip, not a failure, so a backgrounded shell-rc or cron invocation never raises a
