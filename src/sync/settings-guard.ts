@@ -30,15 +30,21 @@ export function blockedSettingsKeys(
 }
 
 /**
- * Refusal sentence for a non-empty `blockedSettingsKeys` result, e.g.
- * `settings.json left unchanged: it has 1 setting (hooks) that is not in
- * the repo; run 'nomad capture-settings --host' to save it, then pull
- * again.` Splices fields in rather than branching on `keys.length`.
+ * Refusal sentence for a non-empty `blockedSettingsKeys` result, naming both
+ * ways out: capture the keys, or delete them locally if they are unwanted.
+ * @param keys - The blocked keys.
+ * @param state - `'left unchanged'` after a pull, `'would be left unchanged'` in a preview.
+ * @returns The one-line message.
  */
-export function settingsBlockedMessage(keys: string[]): string {
+export function settingsBlockedMessage(
+  keys: string[],
+  state: 'left unchanged' | 'would be left unchanged',
+): string {
   const { phrase, pronoun, verb } = describeSettings(keys);
   return (
-    `settings.json left unchanged: it has ${phrase} that ${verb} not in the repo; ` +
-    `run 'nomad capture-settings --host' to save ${pronoun}, then pull again.`
+    `settings.json ${state}: it has ${phrase} that ${verb} not in the repo; ` +
+    `run 'nomad capture-settings' to save ${pronoun} (add --host for host-specific values), ` +
+    `or delete ${pronoun} from ~/.claude/settings.json if you no longer want ${pronoun}, ` +
+    `then pull again.`
   );
 }

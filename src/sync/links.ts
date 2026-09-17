@@ -495,7 +495,7 @@ function reportSettingsDrift(
 ): string[] {
   const blocked = blockedSettingsKeys(merged, existing, preMerged);
   if (blocked.length > 0) {
-    fail(settingsBlockedMessage(blocked));
+    fail(settingsBlockedMessage(blocked, 'left unchanged'));
     return blocked;
   }
   const { behind } = classifySettingsDrift(merged, existing);

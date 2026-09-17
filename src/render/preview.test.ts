@@ -289,7 +289,7 @@ describe('previewSettings canonicalization', () => {
     const result = previewSettings(basePath, hostPath, settingsPath);
     expect(result.diff).toBe('');
     expect(result.notes.at(-1)).toContain('statusLine');
-    expect(result.notes.at(-1)).toContain('nomad capture-settings --host');
+    expect(result.notes.at(-1)).toContain('settings.json would be left unchanged');
   });
 
   it('returns the pre-change diff and notes when there is no ahead-drift key (regression)', async () => {
@@ -474,7 +474,7 @@ describe('computePreview orchestration', () => {
 
     const joined = logs.join('\n');
     expect(joined).toContain('statusLine');
-    expect(joined).toContain('nomad capture-settings --host');
+    expect(joined).toContain('settings.json would be left unchanged');
     expect(joined).not.toContain('+++ would write');
     expect(snapshotTree(claudeDir)).toEqual(beforeClaude);
     expect(process.exitCode).toBe(originalExitCode);

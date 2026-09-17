@@ -181,7 +181,7 @@ export function previewSettings(
   // merge, raw current), so this preview cannot disagree with the wet path.
   const blocked = blockedSettingsKeys(rawMerged, current ?? {}, preMerged);
   if (blocked.length > 0) {
-    return { diff: '', notes: [settingsBlockedMessage(blocked)] };
+    return { diff: '', notes: [settingsBlockedMessage(blocked, 'would be left unchanged')] };
   }
 
   const rawEqual = JSON.stringify(strippedCurrent, null, 2) === JSON.stringify(merged, null, 2);

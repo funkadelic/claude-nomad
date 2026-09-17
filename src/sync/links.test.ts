@@ -200,7 +200,7 @@ describe('regenerateSettings (integration)', () => {
     const { regenerateSettings } = await import('./links.ts');
     const result = regenerateSettings('20260516-000000');
     const captured = writes.join('');
-    expect(captured).toContain('nomad capture-settings --host');
+    expect(captured).toContain('settings.json left unchanged');
     expect(captured).toContain('statusLine');
     expect(result.blocked).toEqual(['statusLine']);
     // The write is skipped entirely: the live file is byte-identical.
@@ -411,7 +411,7 @@ describe('regenerateSettings (integration)', () => {
     expect(captured).not.toContain("run 'nomad pull' to restore");
     expect(captured).not.toContain('verboseOutput');
     // ahead: statusLine is local-only and promotable -> refused
-    expect(captured).toContain('nomad capture-settings --host');
+    expect(captured).toContain('settings.json left unchanged');
     expect(captured).toContain('statusLine');
     expect(result.blocked).toEqual(['statusLine']);
     expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(priorContent);

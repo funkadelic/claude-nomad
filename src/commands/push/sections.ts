@@ -61,7 +61,7 @@ export function buildSettingsSection(label: string, blocked: string[]): DoctorSe
   if (blocked.length > 0) {
     addItem(
       s,
-      `${red(failGlyph)} settings.json not written (${blocked.join(', ')} not in the repo; run 'nomad capture-settings --host')`,
+      `${red(failGlyph)} settings.json not written (${blocked.join(', ')} not in the repo; run 'nomad capture-settings', or delete from ~/.claude/settings.json)`,
     );
     return s;
   }

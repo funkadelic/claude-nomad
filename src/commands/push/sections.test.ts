@@ -15,7 +15,9 @@ describe('buildSettingsSection', () => {
     expect(s.items).toHaveLength(1);
     expect(s.items[0]).toContain('✗');
     expect(s.items[0]).toContain('hooks');
-    expect(s.items[0]).toContain('nomad capture-settings --host');
+    expect(s.items[0]).toContain(
+      "run 'nomad capture-settings', or delete from ~/.claude/settings.json",
+    );
     expect(s.items[0]).not.toContain('base + no host overrides');
   });
 });

@@ -39,18 +39,20 @@ describe('blockedSettingsKeys', () => {
 });
 
 describe('settingsBlockedMessage', () => {
-  it('names the key and the recovery command, singular', () => {
-    const msg = settingsBlockedMessage(['hooks']);
-    expect(msg).toContain('hooks');
-    expect(msg).toContain('nomad capture-settings --host');
-    expect(msg).toContain('1 setting');
-    expect(msg).not.toContain('1 settings');
+  it('names the key and both ways out, singular', () => {
+    expect(settingsBlockedMessage(['hooks'], 'left unchanged')).toBe(
+      'settings.json left unchanged: it has 1 setting (hooks) that is not in the repo; ' +
+        "run 'nomad capture-settings' to save it (add --host for host-specific values), " +
+        'or delete it from ~/.claude/settings.json if you no longer want it, then pull again.',
+    );
   });
 
-  it('names both keys and reads plural for two keys', () => {
-    const msg = settingsBlockedMessage(['hooks', 'model']);
-    expect(msg).toContain('hooks');
-    expect(msg).toContain('model');
-    expect(msg).toContain('2 settings');
+  it('names both keys and reads plural for two keys in a preview', () => {
+    const msg = settingsBlockedMessage(['hooks', 'model'], 'would be left unchanged');
+    expect(msg).toContain(
+      'settings.json would be left unchanged: it has 2 settings (hooks, model)',
+    );
+    expect(msg).toContain('that are not in the repo');
+    expect(msg).toContain('delete them from ~/.claude/settings.json if you no longer want them');
   });
 });
