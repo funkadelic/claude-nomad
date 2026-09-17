@@ -66,4 +66,21 @@ describe('settings preview and wet pull parity', () => {
     expect(wet.blocked).toEqual([]);
     expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({ model: 'sonnet' });
   });
+
+  it('malformed host file: the preview names no refusal the wet pull cannot reach', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
+    writeFileSync(hostPath, '{ malformed json');
+    const live = JSON.stringify({ model: 'sonnet', statusLine: 1 }) + '\n';
+    writeFileSync(settingsPath, live);
+
+    const { previewSettings } = await import('./preview.ts');
+    expect(previewSettings(basePath, hostPath, settingsPath)).toEqual({
+      diff: '',
+      notes: ['malformed hosts/test-host.json; skipping diff'],
+    });
+
+    const { regenerateSettings } = await import('../sync/links.ts');
+    expect(() => regenerateSettings('20260516-000000')).toThrow();
+    expect(readFileSync(settingsPath, 'utf8')).toBe(live);
+  });
 });

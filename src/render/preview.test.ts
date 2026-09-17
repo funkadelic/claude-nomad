@@ -720,9 +720,7 @@ describe('computePreview orchestration', () => {
 
     const { computePreview } = await import('./preview.ts');
     expect(() => computePreview('20260516-000000', { projects: {} })).not.toThrow();
-    // The malformed-host note may appear in the settings.json section.
-    // (No diff since host was ignored and merged == base == same as no-file case)
-    expect(logs.join('\n')).toContain('malformed hosts/test-host.json; ignoring overrides');
+    expect(logs.join('\n')).toContain('malformed hosts/test-host.json; skipping diff');
   });
 
   it('settings.json section shows malformed-current note without throwing', async () => {

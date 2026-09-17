@@ -115,7 +115,8 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * Returns `{ diff, notes }` where `diff` is the unified diff string (`''`
  * when no changes) and `notes` holds human-readable skip/warning messages:
  *   - `'section skipped (base or current missing)'` when base is absent
- *   - `'malformed hosts/<HOST>.json; ignoring overrides'` for a bad host file
+ *   - `'malformed hosts/<HOST>.json; skipping diff'` for a bad host file (the
+ *     wet pull cannot read it either, so no diff or refusal is computed)
  *   - `'malformed; skipping diff'` when current settings.json is unreadable
  *   - the shared `settingsBlockedMessage` when a live top-level key would be
  *     a promotable ahead-drift key a wet pull would refuse to overwrite
@@ -150,16 +151,17 @@ export function previewSettings(
   if (base === null) {
     return { diff: '', notes: ['section skipped (base or current missing)'] };
   }
-  const notes: string[] = [];
   const hostOverrides = readJsonOrNull(hostPath);
+  // The wet pull cannot read a malformed host file either, so a diff or refusal
+  // computed from base alone would describe a write that never happens.
   if (hostOverrides === null && existsSync(hostPath)) {
-    notes.push(`malformed hosts/${HOST}.json; ignoring overrides`);
+    return { diff: '', notes: [`malformed hosts/${HOST}.json; skipping diff`] };
   }
   const rawMerged = deepMerge(base, hostOverrides ?? {});
   const merged = stripGsdHookEntries(rawMerged);
   const current = readJsonOrNull(settingsPath);
   if (current === null && existsSync(settingsPath)) {
-    return { diff: '', notes: [...notes, 'malformed; skipping diff'] };
+    return { diff: '', notes: ['malformed; skipping diff'] };
   }
   // Strip gsd-owned hook entries from both sides so gsd's per-session self-heal
   // churn never surfaces as a phantom hooks delta. regenerateSettings already
@@ -171,7 +173,7 @@ export function previewSettings(
   // merge, raw current), so this preview cannot disagree with the wet path.
   const blocked = blockedSettingsKeys(rawMerged, current ?? {});
   if (blocked.length > 0) {
-    return { diff: '', notes: [...notes, settingsBlockedMessage(blocked)] };
+    return { diff: '', notes: [settingsBlockedMessage(blocked)] };
   }
 
   const rawEqual = JSON.stringify(strippedCurrent, null, 2) === JSON.stringify(merged, null, 2);
@@ -179,8 +181,7 @@ export function previewSettings(
     JSON.stringify(sortKeysDeep(strippedCurrent), null, 2),
     JSON.stringify(sortKeysDeep(merged), null, 2),
   );
-  if (diff === '' && !rawEqual) notes.push(CANONICAL_ORDER_NOTE);
-  return { diff, notes };
+  return { diff, notes: diff === '' && !rawEqual ? [CANONICAL_ORDER_NOTE] : [] };
 }
 
 /**
