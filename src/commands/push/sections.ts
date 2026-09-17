@@ -47,11 +47,14 @@ function collapsedSkipRow(n: number, noun: string): string | null {
 
 /**
  * Build the Settings section for `cmdPull`. When `blocked` is empty, a
- * single `${green(okGlyph)} settings.json (base + <label>)` row (`label` is
- * `regenerateSettings`'s override-source tag). When `blocked` is non-empty,
- * a `${red(failGlyph)}` row naming the keys and the recovery command instead
- * (the write was skipped, so a ✓ row would be a lie). Push has no Settings
- * section, so this helper is pull-only.
+ * single `${green(okGlyph)} settings.json (base + <label>)` row. When `blocked`
+ * is non-empty, a `${red(failGlyph)}` row naming the keys and the recovery
+ * command instead (the write was skipped). Push has no Settings section, so
+ * this helper is pull-only.
+ *
+ * @param label - The override-source tag from `regenerateSettings`.
+ * @param blocked - The keys that stopped the settings.json write.
+ * @returns A `Settings` `DoctorSection` holding the one settings row.
  */
 export function buildSettingsSection(label: string, blocked: string[]): DoctorSection {
   const s = section('Settings');

@@ -518,25 +518,28 @@ function reportSettingsDrift(
  * gsd-owned hook entries the live file already carries are preserved (grafted
  * back onto the stripped merge via `keepGsdHookEntries` + `graftGsdHookEntries`)
  * so pull stops deleting the hooks gsd self-heals each session; the clean path
- * (no gsd hooks in the live file) stays byte-identical. Surfaces a
- * stderr WARN when no host override exists AND prior settings has top-level
- * keys not in base; the matching doctor-side FAIL with non-zero exit lives
- * in `cmdDoctor`.
+ * (no gsd hooks in the live file) stays byte-identical. When the live file
+ * has promotable top-level keys that neither this merge nor the pre-pull
+ * merge has, prints a stderr refusal naming them and skips the write entirely
+ * (no backup, no atomic write).
  *
  * `opts.dryRun` (default `false`): when `true`, skip the
  * `backupBeforeWrite` + `writeJsonAtomic` pair and instead log a single
- * `would write settings.json ...` line. The drift-detection WARN above
- * still fires (informational), so users see the same warning a real pull
- * would produce. The unified textual diff of the would-be-written content
- * is produced by `computePreview` in `src/render/preview.ts`, not here, to keep
- * this function's contract simple (mutation or log-only).
+ * `would write settings.json ...` line. The drift report and refusal above
+ * still print, so users see what a real pull would say. The unified textual
+ * diff of the would-be-written content is produced by `computePreview` in
+ * `src/render/preview.ts`, not here, to keep this function's contract simple
+ * (mutation or log-only).
  *
- * Returns `{ label, blocked }`. `label` is the override-source tag
- * (`'<HOST>.json'` or `'no host overrides'`); `cmdPull` renders it as the
- * Settings row. `blocked` is the promotable ahead-drift keys a live file
- * would lose; non-empty SKIPS the write entirely (no backup, no atomic
- * write). `suppressDriftWarn` (used by `nomad capture-settings`) skips this
- * gate too, so capture never deadlocks.
+ * @param ts - Backup timestamp namespace for `backupBeforeWrite`.
+ * @param opts.dryRun - When `true`, log the would-write line and skip mutation.
+ * @param opts.suppressDriftWarn - When `true`, skip the drift report and the
+ *   refusal (used by `nomad capture-settings`, so capture never deadlocks).
+ * @param opts.prePostHeads - Pre/post-pull HEADs; a key the pre-pull merge had
+ *   is treated as removed upstream and deleted instead of refused.
+ * @returns `label`, the override-source tag (`'<HOST>.json'` or
+ *   `'no host overrides'`) for the Settings row, and `blocked`, the keys that
+ *   stopped the write (empty when it was written).
  */
 export function regenerateSettings(
   ts: string,
