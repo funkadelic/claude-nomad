@@ -1009,14 +1009,21 @@ describe('cmdSync --dry-run: real pull half', () => {
     await cmdSync({ dryRun: true });
     // The fourth argument is the pre-rebase win32 plan pair, empty here because
     // the planners no-op off win32 and because nothing is pending either way.
-    expect(seams.previewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull', {
-      captures: [],
-      deletions: [],
-      // Nothing derived the shared-name list off win32, so the preview's own
-      // derivation stays audible.
-      namesDerived: false,
-      derivedSharedDirs: undefined,
-    });
+    // The fifth is the pre/post HEAD pair the settings preview reads.
+    expect(seams.previewSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      { projects: {} },
+      'pull',
+      {
+        captures: [],
+        deletions: [],
+        // Nothing derived the shared-name list off win32, so the preview's own
+        // derivation stays audible.
+        namesDerived: false,
+        derivedSharedDirs: undefined,
+      },
+      { pre: 'deadbeef', post: 'deadbeef' },
+    );
   });
 
   it('falls back to an empty path-map when path-map.json is absent, on win32', async () => {
@@ -1029,14 +1036,20 @@ describe('cmdSync --dry-run: real pull half', () => {
     // me", so the pre-rebase reconcile still derives the static shared-name
     // set here and the preview must stay quiet about it. Both plans are empty
     // for the same reason as on posix: nothing is pending in the sandbox.
-    expect(seams.previewSpy).toHaveBeenCalledWith(expect.any(String), { projects: {} }, 'pull', {
-      captures: [],
-      deletions: [],
-      namesDerived: true,
-      // No `sharedDirs` field on the fallback map, so the suppression carries
-      // nothing across the rebase boundary.
-      derivedSharedDirs: undefined,
-    });
+    expect(seams.previewSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      { projects: {} },
+      'pull',
+      {
+        captures: [],
+        deletions: [],
+        namesDerived: true,
+        // No `sharedDirs` field on the fallback map, so the suppression carries
+        // nothing across the rebase boundary.
+        derivedSharedDirs: undefined,
+      },
+      { pre: 'deadbeef', post: 'deadbeef' },
+    );
   });
 });
 
