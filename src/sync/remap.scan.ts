@@ -34,6 +34,15 @@ function countLocalOnly(src: string, dst: string): number {
   return count;
 }
 
+// Walks the same iteration skeleton as `remapPull` in remap.ts: path-map read,
+// assertSafeLogical per key, skip a missing or 'TBD' host path,
+// assertSafeLocalRoot, encodePath dst resolution. The two loops live in separate
+// files now, so keep their guards in step when either changes.
+
+// Retain-merge never changes the local-only set, so the pre-copy and post-copy
+// counts are equal. That is what lets the wet pull summary and the dry-run
+// preview both call this against current state.
+
 /**
  * Total local-only session leaf files across all mapped projects, the honest
  * count behind the wet pull summary and the offline preview. Retain-merge keeps

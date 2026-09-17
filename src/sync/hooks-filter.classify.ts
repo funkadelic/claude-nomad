@@ -127,6 +127,35 @@ function resolveScriptWord(tokens: string[], from: number, underEnv: boolean): C
   return candidate;
 }
 
+// Observed gsd launcher forms, node variants. This inventory is the checklist to
+// re-verify against a live gsd-core install when touching this classifier:
+//   node /a/b/.claude/hooks/gsd-context-monitor.js
+//   node --preserve-symlinks-main /a/hooks/gsd-workflow-guard.js
+//   /home/u/.nvm/versions/node/v24/bin/node /a/hooks/gsd-config-reload.js
+
+// Observed gsd launcher forms, shells and env prefixes:
+//   bash /a/hooks/gsd-graphify-update.sh
+//   CLAUDE_PROJECT_DIR=/x node /a/hooks/gsd-x.js
+//   /usr/bin/env node /a/hooks/gsd-x.js
+
+// Observed gsd launcher forms, launcher-less and quoted:
+//   /a/hooks/gsd-x.js (launcher-less, shebang executable)
+//   "/abs/path/node" "/abs/path/gsd-x.js"
+//   "$(for n in ... done)" "/a/hooks/gsd-x.js" (gsd's inline node-resolver)
+
+// Handled defensively, NOT observed from gsd. A launcher-template change is what
+// caused the incident this module exists for, so these fail toward keeping the
+// entry rather than dropping it:
+//   `command -v node` /a/hooks/gsd-x.js
+//   sh -c "$(cat /a/x) && /a/hooks/gsd-x.js"
+//   node $(pwd)/gsd-x.js
+
+// Fail-safe direction: an unparseable command returns `false` so a user entry is
+// never dropped. `false` is NOT unconditionally safe: for an entry gsd really did
+// install it means the entry is treated as user state. That is why every
+// unresolved shape above falls back to reading a literal token rather than
+// giving up outright.
+
 /**
  * Returns `true` when a hook entry's `command` names a script whose basename
  * starts with `gsd-`, so gsd installed it rather than the user. Keys off the
