@@ -89,21 +89,21 @@ file is untouched, the update simply has not landed yet, and the copy nomad had 
 repo is cleaned up for you.
 
 If pull finds settings on this machine that the sync repo does not track, it leaves
-`~/.claude/settings.json` untouched instead of overwriting them, lists the settings by name, and
-suggests two fixes: run `nomad capture-settings` to save them to the repo (add `--host` for values
-that belong to this machine only), or delete them from `~/.claude/settings.json` if you no longer
-want them. Everything else in the same run (shared files, skills, sessions, and extras) still
-updates, and the command exits with a non-zero status (6) so a scripted or cron-driven pull does not
-report success. Pulling again after you save or delete the settings proceeds normally.
+`~/.claude/settings.json` as it is, so those settings are not lost. It lists the settings by name
+and suggests two fixes: run `nomad capture-settings` to save them to the repo (add `--host` for
+values that belong to this machine only), or delete them from `~/.claude/settings.json` if you no
+longer want them. Shared files, skills, sessions, and extras still update in the same run, and the
+command exits with a non-zero status (6) so a scripted or cron-driven pull does not report success.
+Pulling again after you save or delete the settings proceeds normally.
 
 A setting that another machine removed from the repo is removed here too, as long as the removal
-arrives with the pull itself. If it reached the sync repo earlier (for example through `nomad push`
-or `nomad pull --dry-run`, which both fetch first), pull cannot tell it apart from a setting you
-added and lists it like any other; delete it from `~/.claude/settings.json` and pull again.
+arrives with the pull itself. If it was already in the sync repo before the pull (you edited the
+repo yourself, or `nomad push` or `nomad pull --dry-run` fetched it first), pull treats it like a
+setting you added and lists it; delete it from `~/.claude/settings.json` and pull again.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). When the settings refusal above would fire, the preview reports it (naming the settings and both fixes) instead of showing a settings diff, since that diff would never actually be written; the preview itself still exits 0. On native Windows the same tree also shows every shared-config capture the pre-rebase mirror would perform and every removal the same step would make in the repo, so the preview matches the wet run in both directions. Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
+| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). When the settings refusal above would fire, the preview reports it (naming the settings and both fixes) instead of showing a settings diff, since pull would never write it; the preview itself still exits 0. On native Windows the same tree also shows every shared-config capture the pre-rebase mirror would perform and every removal the same step would make in the repo, so the preview matches the wet run in both directions. Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
 | `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. On a repo that is not wedged, prints an info line reporting there is nothing to recover and continues as a normal pull (exit status success); when the check for a stuck index cannot run at all (git missing, or the index lock still held when the check times out), it reports that it could not determine whether the repo is wedged instead of claiming the repo is clean, and continues the same way. On native Windows, when recovery genuinely runs via path (1), the pre-pull shared-config mirror is skipped because the reset to `origin/main` would otherwise be undone immediately after; the pull warns, naming how many shared names were restored from the repo copy and the backup directory holding their previous host copies. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
 
 ## `diff`
@@ -597,7 +597,7 @@ branch on `$?` without parsing stderr text.
 | 2    | Usage            | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                                                                               |
 | 4    | Conflict         | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution.                                                                                       |
 | 5    | Leak blocked     | gitleaks confirmed a secret in the staged tree and the push was aborted.                                                                                                   |
-| 6    | Settings blocked | Pull (or the pull half of `nomad sync`) found settings on this machine that are not in the sync repo, so it left your settings file untouched instead of overwriting them. |
+| 6    | Settings blocked | Pull (or the pull half of `nomad sync`) found settings on this machine that are not in the sync repo, so it did not write your settings file.                              |
 | 130  | Interrupted      | You pressed Ctrl+C at an interactive prompt, so nomad stopped without finishing.                                                                                           |
 
 A run skipped because another nomad process already holds the lock also exits 0: this is an
