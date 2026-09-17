@@ -2,15 +2,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { assertNoAutostashConflict } from '../autostash-guard.ts';
-import {
-  buildExtrasSection,
-  buildSessionsSection,
-  buildSettingsSection,
-} from '../push/sections.ts';
 import { backupBase, HOST, repoHome, type PathMap } from '../../core/config.ts';
-import { divergenceCheckExtras, remapExtrasPull } from '../../sync/extras/extras.ts';
-import { applySharedLinks, regenerateSettings } from '../../sync/links.ts';
-import { writeSharedBaseline } from '../../sync/links.baseline.ts';
+import { divergenceCheckExtras } from '../../sync/extras/extras.ts';
 import {
   buildMirrorSection,
   describeSkippedMirrorDiscard,
@@ -20,12 +13,9 @@ import {
   reconcileSharedLinksBeforePull,
 } from './win32.ts';
 import { pullWithCollisionRunbook } from './collision.ts';
-import { syncSkillsPull } from '../../sync/skills-sync.ts';
-import { renderTree, section, addItem, type DoctorSection } from '../../render/output-tree.ts';
+import { buildWetPullSections } from './wet-sections.ts';
+import { renderTree, type DoctorSection } from '../../render/output-tree.ts';
 import { computePreview } from '../../render/preview.ts';
-import { remapPull, scanLocalOnly } from '../../sync/remap.ts';
-import { withSpinner } from '../../render/spinner.ts';
-import { summaryRow } from '../../render/summary.ts';
 import {
   classifyWedgeWithProbe,
   cleanRepoForceRemoteMessage,
@@ -40,13 +30,9 @@ import { discardEmptyBackupDir, freshBackupTs } from '../../core/utils.fs.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 import { readPathMap } from '../../core/utils.json.ts';
 
-/**
- * The pull half's grouped-tree summary-section header. Exported so
- * `commands.sync.ts` can string-match against the exact same literal
- * (`pullHasNoSyncedItems` and `pullPhrase`) instead of duplicating it, which
- * would let the header and its matchers drift apart.
- */
-export const PULL_SUMMARY_HEADER = 'Pull summary';
+// Re-exported so `commands.sync.ts` can string-match against the exact same
+// literal (`pullHasNoSyncedItems` and `pullPhrase`) instead of duplicating it.
+export { PULL_SUMMARY_HEADER } from './wet-sections.ts';
 
 /**
  * Capture one REPO_HOME HEAD SHA. Returns the trimmed SHA, or `undefined` when
@@ -88,119 +74,6 @@ function capturePrePostHeads(
   const post = captureHead(repo);
   if (pre === undefined || post === undefined) return undefined;
   return { pre, post };
-}
-
-/**
- * Run the WET (non-dry-run) pull side effects in order and build (but do NOT
- * render) the doctor-style grouped tree sections: `Settings` / `Sessions` /
- * `Extras` / `Pull summary`, matching the `pull on host=... (backup=<ts>)`
- * header printed separately by the caller. `applySharedLinks` stays silent (no
- * Links group by design); `regenerateSettings` returns its override-source
- * label so the Settings row surfaces what was written without logging inline.
- * When it also returns a non-empty `blocked` (a live key the write would have
- * destroyed), this sets `process.exitCode = EXIT.SETTINGS_BLOCKED` without
- * throwing, so skills/sessions/extras below still run.
- * Sessions/Extras reuse the verb-agnostic builders shared with `cmdPush`, fed
- * the pull-side `pulled` detail arrays. The combined session + extras
- * unmapped count and the extras-skipped count drive the Pull summary row
- * exactly as `emitSummary` did.
- *
- * Returning the sections instead of rendering them lets the caller decide
- * whether to render at all (a composing caller, e.g. a future `nomad sync`,
- * may fold them into a larger compact/full output decision); the standalone
- * `cmdPull` wrapper renders them immediately via `renderTree` so its own
- * output is unchanged.
- *
- * @param ts - backup timestamp namespace shared by every WET side effect.
- * @param prePostHeads - pre/post-rebase HEADs captured by `cmdPull`; threads
- *   into `remapExtrasPull` to drive upstream-deletion propagation for .planning
- *   extras, and into `syncSkillsPull` to drive the skills root-retention
- *   decision (a never-pushed local skill survives; a skill tracked at the
- *   pre-rebase HEAD but genuinely deleted upstream is still pruned), and into
- *   `regenerateSettings` so a settings key the incoming commits removed is
- *   deleted rather than refused.
- *   `undefined` when the pre-rebase capture failed (fresh clone).
- * @param namesDerived - Whether the pre-rebase win32 reconcile already derived
- *   the shared-name list, and so already emitted any `sharedDirs` rejection
- *   WARN for this pull. Only silences the duplicate WARN: `applySharedLinks`
- *   still derives its own list from the POST-rebase map, which is the only
- *   state it can correctly act on. `false` on darwin/linux, where the
- *   reconcile step never runs, so the derivation below is the only one posix
- *   performs and must stay audible.
- * @returns The ordered `Settings`/`Sessions`/`Extras`/`Pull summary` sections
- *   plus `localOnly` (retained local-only session files), `settingsLabel` (the
- *   `regenerateSettings` override-source tag), `settingsBlocked` (the keys
- *   that made it skip the write), the combined session+extras `unmapped`
- *   count, and `extrasSkipped` (extras dirnames the whitelist declined); these
- *   let a composing caller (`nomad sync`) build its own summary without
- *   re-deriving them from the sections.
- */
-function buildWetPullSections(
-  ts: string,
-  map: PathMap,
-  prePostHeads?: { pre: string; post: string },
-  namesDerived = false,
-): {
-  sections: DoctorSection[];
-  localOnly: number;
-  settingsLabel: string;
-  settingsBlocked: string[];
-  unmapped: number;
-  extrasSkipped: number;
-} {
-  applySharedLinks(ts, map, { quietNames: namesDerived });
-  // `quiet` unconditionally, because the apply on the line above ALWAYS derives
-  // the shared-name list from this same `map`, whether audibly or not. The
-  // baseline walk derives a second time off the identical input, so leaving it
-  // loud reports one rejected sharedDirs entry twice on every win32 wet pull.
-  // This is not the flag above under another name: that one is about a
-  // derivation against a DIFFERENT (pre-rebase) map, which is why it can be
-  // false while this stays true.
-  //
-  // Record what this host now has under ~/.claude/, so the next run can tell a
-  // file the user deleted apart from a file this host has never received. The
-  // placement is the invariant, not a convenience: this function is reachable
-  // only on the wet path, so a dry run and `nomad diff` are excluded
-  // structurally rather than by a flag someone can later get wrong, and sitting
-  // on the line after the apply is what makes "after a successful apply"
-  // literally true. A run that dies before this line deliberately leaves the
-  // previous record in place, so it replays the same already-authorized
-  // removals next time instead of inventing new ones.
-  writeSharedBaseline(map, { quiet: true });
-  const { label, blocked } = regenerateSettings(ts, { prePostHeads });
-  // Non-fatal: sets the exit code but never throws, so skills, sessions and
-  // extras below all still run. Setting it here (not inside links.ts) keeps
-  // the sync layer free of process state and covers nomad sync's wet half too.
-  if (blocked.length > 0) {
-    process.exitCode = EXIT.SETTINGS_BLOCKED;
-  }
-  syncSkillsPull(ts, prePostHeads);
-  const remapResult = withSpinner('Syncing sessions', () => remapPull(ts));
-  const extrasResult = remapExtrasPull(ts, { prePostHeads });
-  // Read-only count of local-only session files retained by the overlay.
-  // Retain-merge never changes the local-only set, so scanning after the copy
-  // yields the same count as before it.
-  const localOnly = scanLocalOnly();
-  // Combine session-unmapped and extras-unmapped into one user-visible count;
-  // from the operator's perspective both mean "couldn't sync this for the
-  // host". extras-skipped (non-whitelisted dirname) stays separate because it
-  // signals config misuse, not a host-config gap.
-  const unmapped = remapResult.unmapped + extrasResult.unmapped;
-  const summary = section(PULL_SUMMARY_HEADER);
-  addItem(summary, summaryRow('pull', unmapped, 0, extrasResult.skipped, localOnly));
-  return {
-    sections: [
-      buildSettingsSection(label, blocked),
-      buildSessionsSection(remapResult.pulled, remapResult.unmapped, localOnly),
-      buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
-      summary,
-    ],
-    localOnly,
-    settingsLabel: label,
-    settingsBlocked: blocked,
-    unmapped,
-    extrasSkipped: extrasResult.skipped,
-  };
 }
 
 /**
