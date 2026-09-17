@@ -493,7 +493,7 @@ function mirrorSharedNames(
  * Win32 push-mirror for `allSharedLinks(map)` names: copies each real local
  * copy at `~/.claude/<name>` back into an EXISTING `shared/<name>` (repo
  * side), so an edit made through the win32 copy model
- * (`applySharedLinksWin32` in `links.ts`) reaches the repo at the next push.
+ * (`applySharedLinksWin32` in `links.win32.ts`) reaches the repo at the next push.
  * This is the write half of the copy-sync model; `copySharedLinkPull` in
  * `links.ts` is the read half.
  *

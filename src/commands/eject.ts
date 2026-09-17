@@ -201,7 +201,7 @@ function materializeOne(name: string, linkPath: string, sharedRoot: string): boo
  * `linkPath` means eject expected a symlink and found none, so it is reported
  * as "skipped (not a symlink)". On win32 a real file/dir is the NORMAL
  * post-copy state under the copy-sync model (see `applySharedLinksWin32` in
- * `links.ts`); eject there is near a no-op, so it is reported as "already a
+ * `links.win32.ts`); eject there is near a no-op, so it is reported as "already a
  * real copy" instead of implying a missing symlink. Shared by both
  * {@link previewDryRun} and {@link runLiveEject} so the two call sites cannot
  * drift apart.
