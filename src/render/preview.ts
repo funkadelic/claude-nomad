@@ -93,11 +93,18 @@ export function diffJsonStrings(currentJsonText: string, newJsonText: string): s
  * Read JSON from `path` returning the parsed object, or `null` on any
  * filesystem or parse failure. Used by previewSettings's tolerant read so a
  * malformed settings.json on a fresh-clone host does not abort the preview.
+ * Valid JSON that is not a plain object (null, an array, a primitive) is also
+ * `null`, matching how the wet path's `readExistingSettings` treats it.
+ *
+ * @param path - Absolute path of the JSON file.
+ * @returns The parsed object, or `null` when absent, unreadable, or not an object.
  */
 function readJsonOrNull(path: string): Record<string, unknown> | null {
   if (!existsSync(path)) return null;
   try {
-    return readJson<Record<string, unknown>>(path);
+    const parsed = readJson<unknown>(path);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
   } catch {
     return null;
   }
