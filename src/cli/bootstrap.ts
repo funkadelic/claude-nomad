@@ -30,12 +30,10 @@ export function handleTopLevelError(err: unknown): never {
     warn('cancelled.');
     process.exit(EXIT.INTERRUPTED);
   }
-  /* c8 ignore next -- package.json always carries bugs.url; the fallback is defensive */
-  const issuesUrl = pkg.bugs?.url ?? 'https://github.com/funkadelic/claude-nomad/issues';
   handleCrash(err, process.argv, {
     version: pkg.version,
     platform: process.platform,
-    issuesUrl,
+    issuesUrl: pkg.bugs.url,
   });
   process.exit(EXIT.GENERIC_FAILURE);
 }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import { EXIT } from '../core/exit-codes.ts';
 import { ProcessExit } from '../core/utils.ts';
+import pkg from '../../package.json' with { type: 'json' };
 import type * as Bootstrap from './bootstrap.ts';
 
 // The process bootstrap behind the `nomad` binary. `process.exit` is stubbed to
@@ -19,6 +20,10 @@ describe('cli/bootstrap', () => {
   let errSpy: MockInstance<(...args: unknown[]) => void>;
 
   beforeEach(() => {
+    // Cleared here, not only in afterEach: either var leaking in from the worker
+    // env would otherwise make the no-op test schedule a real crash or rejection.
+    delete process.env.NOMAD_TEST_FORCE_CRASH;
+    delete process.env.NOMAD_TEST_FORCE_ASYNC_CRASH;
     vi.resetModules();
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
       throw new ProcessExit(code);
@@ -33,6 +38,7 @@ describe('cli/bootstrap', () => {
     vi.doUnmock('../core/config.ts');
     vi.doUnmock('../core/crash-report.write.ts');
     delete process.env.NOMAD_TEST_FORCE_CRASH;
+    delete process.env.NOMAD_TEST_FORCE_ASYNC_CRASH;
   });
 
   /** Import bootstrap with `handleCrash` mocked, returning both for assertions. */
@@ -80,7 +86,7 @@ describe('cli/bootstrap', () => {
     expect(handleCrash.mock.calls[0][0]).toBe(boom);
     expect(handleCrash.mock.calls[0][2]).toMatchObject({
       platform: process.platform,
-      issuesUrl: 'https://github.com/funkadelic/claude-nomad/issues',
+      issuesUrl: pkg.bugs.url,
     });
     expect(exitSpy).toHaveBeenCalledWith(EXIT.GENERIC_FAILURE);
   });
