@@ -284,8 +284,8 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
  * reconcile (see {@link reconcileSharedLinksBeforePull}).
  *
  * Module-private on purpose, following the precedent `DeniedRevertStatus`
- * sets in `src/sync/links.mirror.ts`: it is only ever named positionally in
- * signatures declared in this same file, and exporting it would read as an
+ * sets in `src/sync/links.mirror.revert.ts`: it is only ever named positionally
+ * in signatures declared in this same file, and exporting it would read as an
  * unused export to the dead-code analysis.
  */
 type MirrorSectionEvent = MirrorPreviewEvent | SharedLinkDeletion;
