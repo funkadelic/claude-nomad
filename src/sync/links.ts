@@ -477,25 +477,31 @@ function readExistingSettings(settingsPath: string): {
 
 /**
  * Report drift between the live `existing` settings and the freshly `merged`
- * result: a behind-drift key WARNs advising `nomad pull`; a promotable
- * ahead-drift key is refused (via `fail`) rather than silently overwritten.
- * Returns the blocked keys so the caller can skip the write.
+ * result: a promotable ahead-drift key is refused (via `fail`) rather than
+ * silently overwritten; otherwise a behind-drift key WARNs advising
+ * `nomad pull`. The behind WARN is skipped on a refusal, since this pull is
+ * not restoring anything.
+ *
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @returns The blocked keys, so the caller can skip the write.
  */
 function reportSettingsDrift(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
 ): string[] {
-  const drift = classifySettingsDrift(merged, existing);
-  if (drift.behind.length > 0) {
-    const { phrase, pronoun } = describeSettings(drift.behind);
+  const blocked = blockedSettingsKeys(merged, existing);
+  if (blocked.length > 0) {
+    fail(settingsBlockedMessage(blocked));
+    return blocked;
+  }
+  const { behind } = classifySettingsDrift(merged, existing);
+  if (behind.length > 0) {
+    const { phrase, pronoun } = describeSettings(behind);
     warn(
       `your settings.json is missing ${phrase} that the synced copy has; ` +
         `run 'nomad pull' to restore ${pronoun}.`,
     );
-  }
-  const blocked = blockedSettingsKeys(merged, existing);
-  if (blocked.length > 0) {
-    fail(settingsBlockedMessage(blocked));
   }
   return blocked;
 }

@@ -381,16 +381,16 @@ describe('regenerateSettings (integration)', () => {
     expect(captured).not.toContain('⚠︎');
   });
 
-  it('fires the behind WARN and the ahead refusal together when settings diverges both ways', async () => {
-    // Direction-aware drift: with a host override present and a settings that
-    // diverges both ways, the behind-drift (nomad pull) WARN and the
-    // ahead-drift refusal both fire in the same run. Use `verboseOutput` (a
+  it('refuses without the behind-drift restore advice when settings diverges both ways', async () => {
+    // Settings diverges both ways: the ahead-drift refusal fires, and the
+    // behind-drift WARN (which says 'nomad pull' restores the key) is skipped
+    // because this refused pull restores nothing. Use `verboseOutput` (a
     // non-hooks key) for the behind case so the strip does not remove it.
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
-    // Host override with a non-hooks key so the behind-drift WARN still fires.
+    // Host override with a non-hooks key, so verboseOutput is behind.
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ verboseOutput: true }) + '\n');
     // merged = { model: 'sonnet', verboseOutput: true }
     // settings has statusLine (ahead) but not verboseOutput (behind).
@@ -407,9 +407,9 @@ describe('regenerateSettings (integration)', () => {
     const { regenerateSettings } = await import('./links.ts');
     const result = regenerateSettings('20260516-000000');
     const captured = writes.join('');
-    // behind: verboseOutput is missing from settings -> nomad pull
-    expect(captured).toContain('nomad pull');
-    expect(captured).toContain('verboseOutput');
+    // behind: verboseOutput is missing, but no restore advice on a refusal.
+    expect(captured).not.toContain("run 'nomad pull' to restore");
+    expect(captured).not.toContain('verboseOutput');
     // ahead: statusLine is local-only and promotable -> refused
     expect(captured).toContain('nomad capture-settings --host');
     expect(captured).toContain('statusLine');
