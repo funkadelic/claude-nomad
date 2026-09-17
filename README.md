@@ -217,7 +217,7 @@ it:
   before the next `nomad pull` overwrites them. Add `--host` to land machine-specific values (such
   as absolute paths) in `hosts/<HOST>.json` instead of the shared base.
 
-If `nomad pull` finds settings on this machine that your sync repo does not know about, it leaves
+If `nomad pull` finds settings on this machine that your sync repo does not track, it leaves
 `~/.claude/settings.json` as it is, so those settings are not lost. It lists the settings by name
 and suggests two fixes: run `nomad capture-settings` to save them to the repo (add `--host` for
 values that belong to this machine only), or delete them from `~/.claude/settings.json` if you no
