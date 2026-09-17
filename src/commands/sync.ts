@@ -58,12 +58,16 @@ type PushOutcome = { ok: true; result: PushCoreResult } | { ok: false; message: 
  * committed and then the network push failed), so asserting "already in
  * sync" would mask exactly the state a sync run exists to surface.
  *
+ * A pull that refused to write settings.json never collapses either: the
+ * live settings are still out of sync with the repo.
+ *
  * @param pull - The wet pull result.
  * @param pushOutcome - The push half's outcome.
  * @returns `true` when the run is a true no-op.
  */
 function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
   if (!pushOutcome.ok) return false;
+  if (pull.settingsBlocked.length > 0) return false;
   if (pull.localOnly !== 0 || pull.divergedKeptLocal !== 0) return false;
   if (pushOutcome.result.tag !== 'nothing') return false;
   if (pushOutcome.result.aheadOfOrigin === true) return false;
@@ -72,16 +76,20 @@ function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
 
 /**
  * Build the pull-half summary row from outcome data: whether the rebase
- * actually moved `REPO_HOME`'s HEAD (`incomingChanges`), naming the settings
- * override-source label regenerated on every pull regardless of whether
- * anything came in.
+ * actually moved `REPO_HOME`'s HEAD (`incomingChanges`), then either the
+ * settings override-source label regenerated on every pull or, when the pull
+ * refused the write, the keys that stopped it.
  *
  * @param pull - The wet pull result.
  * @returns The `pull: ...` row text (no leading glyph).
  */
 function buildPullSummaryRow(pull: WetPull): string {
   const applied = pull.incomingChanges ? 'upstream changes applied' : 'no upstream changes';
-  return `pull: ${applied}; settings regenerated (base + ${pull.settingsLabel})`;
+  const settings =
+    pull.settingsBlocked.length > 0
+      ? `settings.json not written (${pull.settingsBlocked.join(', ')} not in the repo)`
+      : `settings regenerated (base + ${pull.settingsLabel})`;
+  return `pull: ${applied}; ${settings}`;
 }
 
 /**

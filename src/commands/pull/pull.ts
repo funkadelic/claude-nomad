@@ -127,10 +127,11 @@ function capturePrePostHeads(
  *   performs and must stay audible.
  * @returns The ordered `Settings`/`Sessions`/`Extras`/`Pull summary` sections
  *   plus `localOnly` (retained local-only session files), `settingsLabel` (the
- *   `regenerateSettings` override-source tag), the combined session+extras
- *   `unmapped` count, and `extrasSkipped` (extras dirnames the whitelist
- *   declined); the last three let a composing caller (`nomad sync`) build its
- *   own summary without re-deriving them from the sections.
+ *   `regenerateSettings` override-source tag), `settingsBlocked` (the keys
+ *   that made it skip the write), the combined session+extras `unmapped`
+ *   count, and `extrasSkipped` (extras dirnames the whitelist declined); these
+ *   let a composing caller (`nomad sync`) build its own summary without
+ *   re-deriving them from the sections.
  */
 function buildWetPullSections(
   ts: string,
@@ -141,6 +142,7 @@ function buildWetPullSections(
   sections: DoctorSection[];
   localOnly: number;
   settingsLabel: string;
+  settingsBlocked: string[];
   unmapped: number;
   extrasSkipped: number;
 } {
@@ -193,6 +195,7 @@ function buildWetPullSections(
     ],
     localOnly,
     settingsLabel: label,
+    settingsBlocked: blocked,
     unmapped,
     extrasSkipped: extrasResult.skipped,
   };
@@ -264,10 +267,11 @@ function handleWedge(repo: string, forceRemote: boolean): boolean {
  * `divergedKeptLocal` (both-sides-modified extras files the pull kept local
  * on conflict), `incomingChanges` (whether the rebase actually moved
  * `REPO_HOME`'s HEAD, i.e. `pre !== post`, or `true` when the pre-rebase HEAD
- * could not be captured at all, an unborn HEAD on a fresh clone), and three
+ * could not be captured at all, an unborn HEAD on a fresh clone), and four
  * fields a composing caller's own summary needs without inspecting
  * `sections`: `settingsLabel` (the `regenerateSettings` override-source tag),
- * `unmapped` (the combined session+extras unmapped count), and
+ * `settingsBlocked` (the keys that stopped the settings.json write, empty when
+ * it was written), `unmapped` (the combined session+extras unmapped count), and
  * `extrasSkipped` (extras dirnames the whitelist declined). A composing
  * caller (`nomad sync`) needs `incomingChanges` rather than inspecting
  * `sections` for synced rows: the pull overlay always re-copies every mapped
@@ -284,6 +288,7 @@ export type PullCoreResult =
       divergedKeptLocal: number;
       incomingChanges: boolean;
       settingsLabel: string;
+      settingsBlocked: string[];
       unmapped: number;
       extrasSkipped: number;
     };
@@ -546,12 +551,13 @@ function runPullWithBackupTs(
   // apply's derivation stays audible there, and cleared whenever the rebase
   // moved `sharedDirs` out from under those WARNs, so an entry the fetch
   // delivered is still reported rather than silently dropped.
-  const { sections, localOnly, settingsLabel, unmapped, extrasSkipped } = buildWetPullSections(
-    ts,
-    map,
-    prePostHeads,
-    namesAlreadyReported(namesDerived, derivedSharedDirs, map),
-  );
+  const { sections, localOnly, settingsLabel, settingsBlocked, unmapped, extrasSkipped } =
+    buildWetPullSections(
+      ts,
+      map,
+      prePostHeads,
+      namesAlreadyReported(namesDerived, derivedSharedDirs, map),
+    );
   // An unborn/uncapturable pre-rebase HEAD (fresh clone) is treated as
   // "changes present" so a first-ever pull is never collapsed to a no-op;
   // otherwise the signal is the rebase's own HEAD delta, not the sections
@@ -570,6 +576,7 @@ function runPullWithBackupTs(
     divergedKeptLocal,
     incomingChanges,
     settingsLabel,
+    settingsBlocked,
     unmapped,
     extrasSkipped,
   };

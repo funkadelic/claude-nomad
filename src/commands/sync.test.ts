@@ -193,6 +193,7 @@ function wetPull(
     divergedKeptLocal?: number;
     incomingChanges?: boolean;
     settingsLabel?: string;
+    settingsBlocked?: string[];
     unmapped?: number;
     extrasSkipped?: number;
   } = {},
@@ -208,6 +209,7 @@ function wetPull(
     divergedKeptLocal: opts.divergedKeptLocal ?? 0,
     incomingChanges: opts.incomingChanges ?? true,
     settingsLabel: opts.settingsLabel ?? 'no host overrides',
+    settingsBlocked: opts.settingsBlocked ?? [],
     unmapped: opts.unmapped ?? 0,
     extrasSkipped: opts.extrasSkipped ?? 0,
   };
@@ -644,6 +646,29 @@ describe('cmdSync: wet composition', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
+  it('a refused settings write never collapses to "already in sync" and keeps its exit code', async () => {
+    vi.doMock('./pull/pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => {
+        // The real pull half sets this when it refuses the write.
+        process.exitCode = EXIT.SETTINGS_BLOCKED;
+        return wetPull({ incomingChanges: false, settingsBlocked: ['hooks', 'statusLine'] });
+      }),
+    }));
+    vi.doMock('./push/push.ts', () => ({
+      runPushCore: vi.fn(() => nothingResult()),
+    }));
+    const { cmdSync } = await import('./sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).not.toContain('already in sync');
+    expect(combined).not.toContain('settings regenerated');
+    expect(combined).toContain(
+      'pull: no upstream changes; settings.json not written (hooks, statusLine not in the repo)',
+    );
+    expect(process.exitCode).toBe(EXIT.SETTINGS_BLOCKED);
+  });
+
   it('pull row: reads "upstream changes applied" when incomingChanges is true', async () => {
     vi.doMock('./pull/pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
@@ -1041,13 +1066,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
     // `nomad push` uses.
     vi.doMock('./pull/pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
-      runPullCore: vi.fn(() => ({
-        tag: 'wet',
-        sections: pullSections(),
-        localOnly: 0,
-        divergedKeptLocal: 0,
-        incomingChanges: true,
-      })),
+      runPullCore: vi.fn(() => wetPull()),
     }));
     vi.doMock('./push/checks.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof pushChecksModule>();
