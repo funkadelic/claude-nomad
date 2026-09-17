@@ -67,6 +67,27 @@ describe('settings preview and wet pull parity', () => {
     expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({ model: 'sonnet' });
   });
 
+  it('gsd-only live hooks: neither side refuses and the wet write lands', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
+    const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-check-update.js' };
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        model: 'opus',
+        hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook] }] },
+      }) + '\n',
+    );
+
+    const { previewSettings } = await import('./preview.ts');
+    const preview = previewSettings(basePath, hostPath, settingsPath);
+    expect(preview.notes.some((n) => n.includes('capture-settings'))).toBe(false);
+    expect(preview.diff).toContain('opus');
+
+    const { regenerateSettings } = await import('../sync/links.ts');
+    expect(regenerateSettings('20260516-000000').blocked).toEqual([]);
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toMatchObject({ model: 'sonnet' });
+  });
+
   it('malformed host file: the preview names no refusal the wet pull cannot reach', async () => {
     writeFileSync(basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
     writeFileSync(hostPath, '{ malformed json');

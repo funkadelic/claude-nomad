@@ -1903,7 +1903,7 @@ describe('regenerateSettings gsd-hook filtering', () => {
     expect(written).not.toHaveProperty('hooks');
   });
 
-  it('Test 4: gsd-only divergence between base and live settings does NOT fire a spurious WARN', async () => {
+  it('Test 4: gsd-only divergence between base and live settings neither warns nor refuses', async () => {
     // Base has only gsd hooks; live settings has different gsd hooks.
     // After stripping both sides the hooks key is absent everywhere -> no drift.
     const base = {
@@ -1930,18 +1930,19 @@ describe('regenerateSettings gsd-hook filtering', () => {
       return true;
     });
     const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260101-000000');
-    // No WARN should fire for the hooks divergence.
+    const result = regenerateSettings('20260101-000000');
+    // Neither a WARN nor a refusal fires for the hooks divergence.
     expect(writes.join('')).not.toContain('⚠︎');
+    expect(writes.join('')).not.toContain('✗');
+    expect(result.blocked).toEqual([]);
   });
 
-  it('Test 4b: genuine user hook in live settings still triggers the ahead-WARN', async () => {
+  it('Test 4b: refuses on a genuine user hook in live settings', async () => {
     // Base has no hooks; live settings has a user-authored hook -> ahead drift.
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
-    // Host file exists so the ahead-WARN is emitted (gates on hostFileExists).
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({}) + '\n');
     writeFileSync(
       join(claudeDir, 'settings.json'),
@@ -1959,11 +1960,12 @@ describe('regenerateSettings gsd-hook filtering', () => {
       return true;
     });
     const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260101-000000');
+    const result = regenerateSettings('20260101-000000');
     const captured = writes.join('');
-    // The genuine user hook is ahead-only -> nomad capture-settings WARN.
+    // The genuine user hook is ahead-only -> refusal naming capture-settings.
     expect(captured).toContain('nomad capture-settings');
     expect(captured).toContain('hooks');
+    expect(result.blocked).toEqual(['hooks']);
   });
 });
 
@@ -2013,20 +2015,23 @@ describe('regenerateSettings gsd-hook preservation', () => {
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
-    // The live file carries a gsd hook (as gsd self-heals it) that base lacks.
+    // The live file carries a gsd hook (as gsd self-heals it) that base lacks,
+    // plus a stale model so the assertions below prove the file was rewritten.
     writeFileSync(
       join(claudeDir, 'settings.json'),
       JSON.stringify({
-        model: 'sonnet',
+        model: 'opus',
         hooks: { SessionStart: [{ matcher: '', hooks: [gsdCheckUpdate] }] },
       }) + '\n',
     );
     const { regenerateSettings } = await import('./links.ts');
-    regenerateSettings('20260101-000000');
+    const result = regenerateSettings('20260101-000000');
+    expect(result.blocked).toEqual([]);
     const written = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
       string,
       unknown
     >;
+    expect(written.model).toBe('sonnet');
     const event = (written.hooks as Record<string, unknown>).SessionStart as unknown[];
     expect(event).toHaveLength(1);
     const inner = (event[0] as Record<string, unknown>).hooks as unknown[];
