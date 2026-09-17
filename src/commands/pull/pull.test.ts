@@ -676,10 +676,11 @@ describe('cmdPull: extras integration', () => {
       JSON.stringify({ projects: { foo: { 'test-host': projectRoot } } }) + '\n',
     );
     mockCleanPullPipeline();
-    process.exitCode = 0;
+    // A sentinel, not 0: a regression that resets the code would still read 0.
+    process.exitCode = 42;
     const { cmdPull } = await import('./pull.ts');
     expect(() => cmdPull()).not.toThrow();
-    expect(process.exitCode).toBe(0);
+    expect(process.exitCode).toBe(42);
   });
 
   it('sets EXIT.SETTINGS_BLOCKED but still completes Sessions and Extras when regenerateSettings blocks', async () => {
