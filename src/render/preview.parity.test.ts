@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { gitInit, g, gitOut } from '../test-support/git.ts';
+
 /**
  * Parity between the settings preview (`previewSettings`) and the wet write
  * (`regenerateSettings`): for the same inputs, the preview must not report a
@@ -14,6 +16,7 @@ describe('settings preview and wet pull parity', () => {
   let originalNomadHost: string | undefined;
   let originalNomadRepo: string | undefined;
   let testHome: string;
+  let repo: string;
   let basePath: string;
   let hostPath: string;
   let settingsPath: string;
@@ -26,7 +29,7 @@ describe('settings preview and wet pull parity', () => {
     testHome = mkdtempSync(join(tmpdir(), 'nomad-preview-parity-'));
     process.env.HOME = testHome;
     process.env.NOMAD_HOST = 'test-host';
-    const repo = join(testHome, 'claude-nomad');
+    repo = join(testHome, 'claude-nomad');
     mkdirSync(join(repo, 'shared'), { recursive: true });
     mkdirSync(join(repo, 'hosts'), { recursive: true });
     mkdirSync(join(testHome, '.claude'), { recursive: true });
@@ -103,5 +106,64 @@ describe('settings preview and wet pull parity', () => {
     const { regenerateSettings } = await import('../sync/links.ts');
     expect(() => regenerateSettings('20260516-000000')).toThrow();
     expect(readFileSync(settingsPath, 'utf8')).toBe(live);
+  });
+
+  describe('a settings key removed by the incoming commits', () => {
+    const live = { model: 'sonnet', statusLine: { type: 'command' } };
+    let pre: string;
+    let post: string;
+
+    /** Commit `content` as the base file and return the new HEAD. */
+    function commitBase(content: object): string {
+      writeFileSync(basePath, JSON.stringify(content) + '\n');
+      g(['add', '-A'], repo);
+      g(['commit', '-q', '-m', 'base'], repo);
+      return gitOut(['rev-parse', 'HEAD'], repo);
+    }
+
+    /** Render the dry-run preview for `heads` and return its stdout. */
+    async function previewOutput(heads: { pre: string; post: string }): Promise<string> {
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      });
+      const { computePreview } = await import('./preview.ts');
+      computePreview('20260516-000000', { projects: {} }, 'pull', undefined, heads);
+      return logs.join('\n');
+    }
+
+    beforeEach(() => {
+      gitInit(repo);
+      writeFileSync(join(repo, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+      pre = commitBase(live);
+      post = commitBase({ model: 'sonnet' });
+      writeFileSync(settingsPath, JSON.stringify(live) + '\n');
+    });
+
+    it('is deleted, not refused, when the pull moved HEAD past its removal', async () => {
+      const out = await previewOutput({ pre, post });
+      expect(out).not.toContain('capture-settings');
+      expect(out).toContain('"statusLine"');
+
+      const { regenerateSettings } = await import('../sync/links.ts');
+      expect(
+        regenerateSettings('20260516-000000', { prePostHeads: { pre, post } }).blocked,
+      ).toEqual([]);
+      expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({ model: 'sonnet' });
+    });
+
+    it.each([
+      ['HEAD did not move', () => ({ pre: post, post })],
+      ['git cannot read the pre commit', () => ({ pre: 'f'.repeat(40), post })],
+    ])('is refused on both sides when %s', async (_label, heads) => {
+      const out = await previewOutput(heads());
+      expect(out).toContain('capture-settings');
+
+      const { regenerateSettings } = await import('../sync/links.ts');
+      expect(regenerateSettings('20260516-000000', { prePostHeads: heads() }).blocked).toEqual([
+        'statusLine',
+      ]);
+      expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual(live);
+    });
   });
 });

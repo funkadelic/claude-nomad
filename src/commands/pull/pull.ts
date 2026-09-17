@@ -116,7 +116,9 @@ function capturePrePostHeads(
  *   into `remapExtrasPull` to drive upstream-deletion propagation for .planning
  *   extras, and into `syncSkillsPull` to drive the skills root-retention
  *   decision (a never-pushed local skill survives; a skill tracked at the
- *   pre-rebase HEAD but genuinely deleted upstream is still pruned).
+ *   pre-rebase HEAD but genuinely deleted upstream is still pruned), and into
+ *   `regenerateSettings` so a settings key the incoming commits removed is
+ *   deleted rather than refused.
  *   `undefined` when the pre-rebase capture failed (fresh clone).
  * @param namesDerived - Whether the pre-rebase win32 reconcile already derived
  *   the shared-name list, and so already emitted any `sharedDirs` rejection
@@ -165,7 +167,7 @@ function buildWetPullSections(
   // previous record in place, so it replays the same already-authorized
   // removals next time instead of inventing new ones.
   writeSharedBaseline(map, { quiet: true });
-  const { label, blocked } = regenerateSettings(ts);
+  const { label, blocked } = regenerateSettings(ts, { prePostHeads });
   // Non-fatal: sets the exit code but never throws, so skills, sessions and
   // extras below all still run. Setting it here (not inside links.ts) keeps
   // the sync layer free of process state and covers nomad sync's wet half too.
@@ -518,7 +520,7 @@ function runPullWithBackupTs(
     // sections for cmdPull to render: a composing caller (cmdSync) continues
     // with its own output afterwards, and a 'complete' line mid-stream reads
     // as if the command had ended.
-    computePreview(ts, map, 'pull', plansAgainst(sharedPlans, map));
+    computePreview(ts, map, 'pull', plansAgainst(sharedPlans, map), prePostHeads);
     return { tag: 'dry' };
   }
   // The discard the warning below names does not happen here; it happens a

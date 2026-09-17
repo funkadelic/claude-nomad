@@ -1695,6 +1695,70 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(existsSync(join(projectRoot, '.planning', 'PLAN.md'))).toBe(true);
   });
 
+  /**
+   * A local clone whose base carried `statusLine`, a live settings.json that still has it, and an
+   * origin commit removing it (already pulled into the clone when `alreadyPulled`).
+   */
+  function buildSettingsRemovalWorld(alreadyPulled: boolean): { settingsPath: string } {
+    const { local, origin } = buildSyncedRepo(tmp);
+    process.env.HOME = tmp;
+    process.env.NOMAD_REPO = local;
+    const other = join(tmp, 'other');
+    g(['clone', '-q', origin, other], tmp);
+    g(['config', 'user.email', 'test@example.invalid'], other);
+    g(['config', 'user.name', 'test'], other);
+    const commitBase = (content: object): void => {
+      writeFileSync(join(other, 'shared', 'settings.base.json'), JSON.stringify(content) + '\n');
+      g(['commit', '-q', '-am', 'base'], other);
+      g(['push', '-q', 'origin', 'main'], other);
+    };
+    commitBase({ model: 'sonnet', statusLine: { type: 'command' } });
+    g(['pull', '--rebase', '-q'], local);
+    commitBase({ model: 'sonnet' });
+    if (alreadyPulled) g(['pull', '--rebase', '-q'], local);
+    mkdirSync(join(tmp, '.claude'), { recursive: true });
+    const settingsPath = join(tmp, '.claude', 'settings.json');
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ model: 'sonnet', statusLine: { type: 'command' } }) + '\n',
+    );
+    mockMirrorModule();
+    vi.doMock('../../sync/remap.ts', () => ({
+      scanLocalOnly: vi.fn(() => 0),
+      remapPull: vi.fn(() => ({ unmapped: 0, pulled: [], wouldPull: [] })),
+      remapPush: vi.fn(),
+    }));
+    return { settingsPath };
+  }
+
+  it('cmdPull deletes a settings key the incoming commits removed instead of refusing', async () => {
+    const { settingsPath } = buildSettingsRemovalWorld(false);
+    const { cmdPull } = await import('./pull.ts');
+    cmdPull();
+    expect(process.exitCode).toBe(0);
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({ model: 'sonnet' });
+  });
+
+  it('cmdPull --dry-run reports no refusal for a key the incoming commits removed', async () => {
+    const { settingsPath } = buildSettingsRemovalWorld(false);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const { cmdPull } = await import('./pull.ts');
+    cmdPull({ dryRun: true });
+    const out = logSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(out).toContain('"statusLine"');
+    expect(out).not.toContain('capture-settings');
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toHaveProperty('statusLine');
+  });
+
+  it('cmdPull still refuses the same key once its removal was already pulled', async () => {
+    const { settingsPath } = buildSettingsRemovalWorld(true);
+    const before = readFileSync(settingsPath, 'utf8');
+    const { cmdPull } = await import('./pull.ts');
+    cmdPull();
+    expect(process.exitCode).toBe(EXIT.SETTINGS_BLOCKED);
+    expect(readFileSync(settingsPath, 'utf8')).toBe(before);
+  });
+
   it('cmdPull preserves local-only .planning file (overlay semantics end-to-end)', async () => {
     const { local, projectRoot } = buildSyncedRepo(tmp);
     process.env.HOME = tmp;

@@ -9,18 +9,24 @@ import {
   describeSettings,
   partitionByCaptureExclusion,
 } from '../commands/capture-settings/core.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
 
 /**
- * Ahead-drift keys minus `CAPTURE_EXCLUDED_KEYS`: what a pull would refuse to
- * overwrite. Returns `promotable` only, never `ahead`, so a credential key
- * name never reaches a caller.
+ * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
+ * named). A key `preMerged` had was removed upstream, so it is not blocked.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
+ * @returns The blocked keys, sorted.
  */
 export function blockedSettingsKeys(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
 ): string[] {
   const { ahead } = classifySettingsDrift(merged, existing);
-  return partitionByCaptureExclusion(ahead).promotable;
+  const removedUpstream = new Set(Object.keys(stripGsdHookEntries(preMerged)));
+  return partitionByCaptureExclusion(ahead.filter((key) => !removedUpstream.has(key))).promotable;
 }
 
 /**

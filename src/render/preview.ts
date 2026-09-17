@@ -10,6 +10,7 @@ import { stageLocalSharedEdits, type MirrorPreviewEvent } from '../sync/links.mi
 import { type LinkPreviewEvent, applySharedLinks } from '../sync/links.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
 import { blockedSettingsKeys, settingsBlockedMessage } from '../sync/settings-guard.ts';
+import { preRebaseSettingsMerge } from '../sync/settings-upstream.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
 import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from '../sync/remap.ts';
 import { summaryRow } from './summary.ts';
@@ -136,16 +137,23 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * Display-only: the write path (`regenerateSettings`) is untouched.
  *
  * Before diffing, classifies via `blockedSettingsKeys` (the same leaf and
- * inputs `regenerateSettings` uses); a non-empty result returns `diff: ''`
- * plus `settingsBlockedMessage` instead of a diff that would never apply.
- * Sets no exit code: a dry run mutates nothing, so nothing is refused.
+ * inputs `regenerateSettings` uses, including `preMerged`); a non-empty result
+ * returns `diff: ''` plus `settingsBlockedMessage` instead of a diff that
+ * would never apply. Sets no exit code: a dry run mutates nothing.
  *
  * Exported for direct unit testing without the full computePreview harness.
+ *
+ * @param basePath - Path to `shared/settings.base.json`.
+ * @param hostPath - Path to `hosts/<HOST>.json`.
+ * @param settingsPath - Path to the live `~/.claude/settings.json`.
+ * @param preMerged - The merge at the pre-pull HEAD (`preRebaseSettingsMerge`).
+ * @returns The unified diff (`''` for none) and any notes.
  */
 export function previewSettings(
   basePath: string,
   hostPath: string,
   settingsPath: string,
+  preMerged: Record<string, unknown> = {},
 ): { diff: string; notes: string[] } {
   const base = readJsonOrNull(basePath);
   if (base === null) {
@@ -171,7 +179,7 @@ export function previewSettings(
 
   // Classify the same two objects regenerateSettings classifies (unstripped
   // merge, raw current), so this preview cannot disagree with the wet path.
-  const blocked = blockedSettingsKeys(rawMerged, current ?? {});
+  const blocked = blockedSettingsKeys(rawMerged, current ?? {}, preMerged);
   if (blocked.length > 0) {
     return { diff: '', notes: [settingsBlockedMessage(blocked)] };
   }
@@ -400,12 +408,16 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *   'pull' so existing callers compile unchanged.
  * @param plans - Pre-rebase win32 capture and deletion plans; omit to compute
  *   them here against current repo state (see {@link SharedLinkPlans}).
+ * @param prePostHeads - Pre/post-rebase HEADs from a rebasing caller; omitted
+ *   by `nomad diff`, which moves no HEAD, so no settings key counts as removed.
+ * @returns Session-unmapped, collision, and local-only counts.
  */
 export function computePreview(
   ts: string,
   map: PathMap,
   verb: PreviewVerb = 'pull',
   plans?: SharedLinkPlans,
+  prePostHeads?: { pre: string; post: string },
 ): { unmapped: number; collisions: number; localOnly: number } {
   const repo = repoHome();
   const claude = claudeHome();
@@ -432,6 +444,7 @@ export function computePreview(
     join(repo, 'shared', 'settings.base.json'),
     join(repo, 'hosts', `${HOST}.json`),
     join(claude, 'settings.json'),
+    preRebaseSettingsMerge(repo, prePostHeads),
   );
   const settingsSection = buildSettingsSectionForPreview(settingsResult);
 

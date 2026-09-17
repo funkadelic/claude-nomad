@@ -14,6 +14,7 @@ import { classifySettingsDrift, describeSettings } from '../commands/capture-set
 import { copyExtrasFilteredPreservingBy } from './extras/core.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import { blockedSettingsKeys, settingsBlockedMessage } from './settings-guard.ts';
+import { preRebaseSettingsMerge } from './settings-upstream.ts';
 import { die, fail, log, warn, NomadFatal } from '../core/utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from '../core/utils.fs.ts';
 import { deepMerge, readJson } from '../core/utils.json.ts';
@@ -484,13 +485,15 @@ function readExistingSettings(settingsPath: string): {
  *
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
  * @returns The blocked keys, so the caller can skip the write.
  */
 function reportSettingsDrift(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
 ): string[] {
-  const blocked = blockedSettingsKeys(merged, existing);
+  const blocked = blockedSettingsKeys(merged, existing, preMerged);
   if (blocked.length > 0) {
     fail(settingsBlockedMessage(blocked));
     return blocked;
@@ -537,7 +540,11 @@ function reportSettingsDrift(
  */
 export function regenerateSettings(
   ts: string,
-  opts: { dryRun?: boolean; suppressDriftWarn?: boolean } = {},
+  opts: {
+    dryRun?: boolean;
+    suppressDriftWarn?: boolean;
+    prePostHeads?: { pre: string; post: string };
+  } = {},
 ): { label: string; blocked: string[] } {
   const dryRun = opts.dryRun === true;
   const suppressDriftWarn = opts.suppressDriftWarn === true;
@@ -571,7 +578,11 @@ export function regenerateSettings(
     if (malformed) {
       warn('existing settings.json is malformed; skipping drift-check and regenerating.');
     } else {
-      blocked = reportSettingsDrift(merged, existing);
+      blocked = reportSettingsDrift(
+        merged,
+        existing,
+        preRebaseSettingsMerge(repo, opts.prePostHeads),
+      );
     }
   }
 
