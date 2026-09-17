@@ -1,5 +1,5 @@
-import { cpSync, existsSync, lstatSync, realpathSync, rmSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   allSharedLinks,
@@ -14,9 +14,19 @@ import {
   validateSharedDirEntry,
   type SharedDirRejectionReason,
 } from '../core/config.sharedDirs.guard.ts';
-import { die, fail, item, log } from '../core/utils.ts';
-import { renameAtomicRetry } from '../core/utils.fs.ts';
+import { fail, item, log } from '../core/utils.ts';
 import { readPathMap } from '../core/utils.json.ts';
+import {
+  classifyName,
+  errMessage,
+  isManagedTarget,
+  materializeOneOrDie,
+  resolveSharedRoot,
+  skipRealMessage,
+  type NameClass,
+} from './eject.materialize.ts';
+
+export { errMessage };
 
 /**
  * Build the manual-remainder checklist using call-time path values.
@@ -36,45 +46,6 @@ export function ejectChecklist(): string {
 }
 
 /**
- * Classification of a managed name's current state in `~/.claude/`.
- *
- * - `absent`: no entry at the link path (not even a dangling symlink)
- * - `skip-real`: a real file or directory (not a symlink); leave it alone
- * - `materialize`: a valid symlink with an accessible target; can be replaced
- * - `dangling`: a symlink whose target is missing; abort before any mutation
- */
-type NameClass = 'absent' | 'skip-real' | 'materialize' | 'dangling';
-
-/**
- * Extract a human-readable message from a caught value. Errors carry their
- * `.message`; anything else is coerced with `String`. Exported so both branches
- * can be unit-tested without forcing a non-Error throw out of `node:fs`.
- *
- * @param err The caught value.
- * @returns The error message or its string coercion.
- */
-export function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-/**
- * lstat-based existence check that does NOT follow symlinks: a dangling symlink
- * at `p` returns true. Used to detect any entry (file, dir, or symlink) at a
- * path without resolving through the link.
- *
- * @param p Absolute path to probe.
- * @returns True when any entry exists at `p`.
- */
-function lexists(p: string): boolean {
-  try {
-    lstatSync(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Read `path-map.json` if present; fall back to an empty map when absent.
  *
  * @param repoHome Absolute path to the nomad repo root.
@@ -83,136 +54,6 @@ function lexists(p: string): boolean {
 function readMapIfPresent(repoHome: string): PathMap {
   const mapPath = join(repoHome, 'path-map.json');
   return existsSync(mapPath) ? readPathMap(mapPath) : { projects: {} };
-}
-
-/**
- * Classify a single managed name based on what is currently at `linkPath`.
- *
- * @param linkPath Absolute path to probe (`claudeHome/<name>`).
- * @returns Classification string.
- */
-function classifyName(linkPath: string): NameClass {
-  if (!lexists(linkPath)) return 'absent';
-  if (!lstatSync(linkPath).isSymbolicLink()) return 'skip-real';
-  // `existsSync` follows the link; false means dangling.
-  if (!existsSync(linkPath)) return 'dangling';
-  return 'materialize';
-}
-
-/**
- * Resolve the canonical `shared/` root under `repoHome`. Eject only owns links
- * that resolve into this tree (see {@link isManagedTarget}).
- *
- * A failure here means the repo checkout is incomplete (`shared/` missing) while
- * symlinks still resolve, which is a state eject cannot reason about. Convert it
- * to a NomadFatal with a `nomad pull` hint rather than copying from an unknown
- * source.
- *
- * @param repoHome Absolute path to the nomad repo root.
- * @returns The realpath of `repoHome/shared`.
- */
-function resolveSharedRoot(repoHome: string): string {
-  try {
-    return realpathSync(join(repoHome, 'shared'));
-  } catch {
-    return die(
-      `cannot resolve ${join(repoHome, 'shared')} (repo checkout incomplete). ` +
-        `run \`nomad pull\` first, then re-run \`nomad eject\``,
-    );
-  }
-}
-
-/**
- * Decide whether a resolved symlink target is a nomad-managed source: it must
- * live strictly inside `sharedRoot` (a child, not `sharedRoot` itself). Uses a
- * trailing-separator prefix test so `/repo/shared-other` is not mistaken for a
- * child of `/repo/shared`.
- *
- * @param target Realpath the symlink resolves to.
- * @param sharedRoot Realpath of the repo's `shared/` directory.
- * @returns True when `target` is contained under `sharedRoot`.
- */
-function isManagedTarget(target: string, sharedRoot: string): boolean {
-  return target.startsWith(sharedRoot + sep);
-}
-
-/**
- * Materialize one symlink: copy the resolved target to a sibling temp path,
- * remove the symlink, then rename the temp into place.
- *
- * Crash-safety windows: a crash before `rmSync(linkPath)` leaves the original
- * symlink intact (only the temp copy exists, and it is pre-cleaned on the next
- * run by the unique-suffix + pre-clean). After `rmSync` and before the final
- * rename the symlink is GONE and the temp holds the only copy; a crash in that
- * narrow window leaves the name missing until eject is re-run (idempotent:
- * re-running re-classifies the absent name and reports it skipped, while
- * already-real names are left alone). The final rename routes through
- * `renameAtomicRetry` (win32-only bounded EPERM/EBUSY retry; a single
- * unmodified `renameSync` call on posix), after which the real copy is in
- * place.
- *
- * The `dereference: true` flag on `cpSync` is the `cp -rL` equivalent that
- * follows symlinks inside the target tree and copies real content.
- *
- * Containment gate: the resolved target must live under `repoHome/shared/`. A
- * managed name that points somewhere else (left by another tool, or a
- * user-redirected link) is reported and skipped without mutation so eject only
- * materializes links it owns.
- *
- * @param name The managed name being materialized (for log messages).
- * @param linkPath Absolute path of the symlink.
- * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
- * @returns True when the target was materialized; false when skipped as unmanaged.
- */
-function materializeOne(name: string, linkPath: string, sharedRoot: string): boolean {
-  const target = realpathSync(linkPath);
-  if (!isManagedTarget(target, sharedRoot)) {
-    item(`skipped (not a nomad-managed target): ${name} -> ${target}`);
-    return false;
-  }
-  const tmp = `${linkPath}.eject.tmp.${process.pid}.${Date.now()}`;
-  try {
-    // Clear any stale leftover (crash residue, or a type-mismatched dir/file)
-    // so cpSync never hits ERR_FS_CP_DIR_TO_NON_DIR.
-    rmSync(tmp, { recursive: true, force: true });
-    cpSync(target, tmp, {
-      recursive: true,
-      force: true,
-      dereference: true,
-      preserveTimestamps: true,
-    });
-    rmSync(linkPath, { force: true });
-    renameAtomicRetry(tmp, linkPath);
-    item(`ejected: ${name}`);
-    return true;
-  } catch (err) {
-    // Clean up the temp on any error before re-throwing.
-    try {
-      rmSync(tmp, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup; ignore secondary error
-    }
-    throw err;
-  }
-}
-
-/**
- * Render the report line for a `skip-real` name: on posix a real file/dir at
- * `linkPath` means eject expected a symlink and found none, so it is reported
- * as "skipped (not a symlink)". On win32 a real file/dir is the NORMAL
- * post-copy state under the copy-sync model (see `applySharedLinksWin32` in
- * `links.ts`); eject there is near a no-op, so it is reported as "already a
- * real copy" instead of implying a missing symlink. Shared by both
- * {@link previewDryRun} and {@link runLiveEject} so the two call sites cannot
- * drift apart.
- *
- * @param name The managed name being reported.
- * @returns The report line (without the `item()` dim prefix).
- */
-function skipRealMessage(name: string): string {
-  return process.platform === 'win32'
-    ? `already a real copy (win32 copy-sync): ${name}`
-    : `skipped (not a symlink): ${name}`;
 }
 
 /**
@@ -318,36 +159,6 @@ function runLiveEject(
   }
   log(`materialized ${done.length}, skipped ${skipped}`);
   log(ejectChecklist());
-}
-
-/**
- * Run {@link materializeOne}, converting any raw fs fault into a NomadFatal with
- * actionable mixed-state context. Extracted from the loop to keep
- * {@link runLiveEject} under the cognitive-complexity gate.
- *
- * @param name The managed name being materialized.
- * @param linkPath Absolute path of the symlink.
- * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
- * @param done Names already materialized in this run (for the failure message).
- * @returns True when materialized; false when skipped as unmanaged.
- */
-function materializeOneOrDie(
-  name: string,
-  linkPath: string,
-  sharedRoot: string,
-  done: string[],
-): boolean {
-  try {
-    return materializeOne(name, linkPath, sharedRoot);
-  } catch (err) {
-    const msg = errMessage(err);
-    return die(
-      `failed to materialize ${name}: ${msg}. ` +
-        `already materialized: ${done.join(', ') || '(none)'}. ` +
-        `the remaining names are still symlinks; do NOT delete ${repoHome()} yet, ` +
-        `fix the cause and re-run \`nomad eject\` (it is idempotent on already-real names)`,
-    );
-  }
 }
 
 /**

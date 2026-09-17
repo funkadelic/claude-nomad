@@ -25,6 +25,12 @@ export const EXIT = {
   /** gitleaks confirmed a secret in the staged tree and the push was aborted. */
   LEAK_BLOCKED: 5,
   /**
+   * A pull found live top-level `settings.json` keys the sync repo does not
+   * track, so it skipped the settings write rather than destroying them; the
+   * rest of the pull still ran.
+   */
+  SETTINGS_BLOCKED: 6,
+  /**
    * The user interrupted an interactive prompt with Ctrl+C and nothing was
    * left half-written. The conventional 128 + SIGINT(2) value.
    */

@@ -88,9 +88,22 @@ stops before applying anything and, underneath git's own untracked-file error, p
 file is untouched, the update simply has not landed yet, and the copy nomad had made in the sync
 repo is cleaned up for you.
 
+If pull finds settings on this machine that the sync repo does not track, it leaves
+`~/.claude/settings.json` as it is, so those settings are not lost. It lists the settings by name
+and suggests two fixes: run `nomad capture-settings` to save them to the repo (add `--host` for
+values that belong to this machine only), or delete them from `~/.claude/settings.json` if you no
+longer want them. Shared files, skills, sessions, and extras still update in the same run, and the
+command exits with a non-zero status (6) so a scripted or cron-driven pull does not report success.
+Pulling again after you save or delete the settings proceeds normally.
+
+A setting that another machine removed from the repo is removed here too, as long as the removal
+arrives with the pull itself. If it was already in the sync repo before the pull (you edited the
+repo yourself, or `nomad push` or `nomad pull --dry-run` fetched it first), pull treats it like a
+setting you added and lists it; delete it from `~/.claude/settings.json` and pull again.
+
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). On native Windows the same tree also shows every shared-config capture the pre-rebase mirror would perform and every removal the same step would make in the repo, so the preview matches the wet run in both directions. Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
+| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). When the settings refusal above would fire, the preview reports it (naming the settings and both fixes) instead of showing a settings diff, since pull would never write it; the preview itself still exits 0. On native Windows the same tree also shows every shared-config capture the pre-rebase mirror would perform and every removal the same step would make in the repo, so the preview matches the wet run in both directions. Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
 | `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. On a repo that is not wedged, prints an info line reporting there is nothing to recover and continues as a normal pull (exit status success); when the check for a stuck index cannot run at all (git missing, or the index lock still held when the check times out), it reports that it could not determine whether the repo is wedged instead of claiming the repo is clean, and continues the same way. On native Windows, when recovery genuinely runs via path (1), the pre-pull shared-config mirror is skipped because the reset to `origin/main` would otherwise be undone immediately after; the pull warns, naming how many shared names were restored from the repo copy and the backup directory holding their previous host copies. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
 
 ## `diff`
@@ -162,20 +175,21 @@ leading `Symlinks` section naming what the pre-fetch mirror captured and what it
 Settings, Global config, Sessions, Extras, and Leak scan, as applicable) before the summary, the
 same tree every `nomad sync` run used to print unconditionally.
 
-A pull-half failure (for example a wedged repo) stops the run immediately; no push is attempted.
-Run `nomad pull --force-remote` to recover, then re-run `nomad sync` (`sync` itself has no
+A pull-half failure (for example a wedged repo) stops the run immediately; no push is attempted. Run
+`nomad pull --force-remote` to recover, then re-run `nomad sync` (`sync` itself has no
 `--force-remote` flag; that recovery stays on the low-level `pull` command). A push-half failure
 after a successful pull reports `pull: applied, push: failed (<reason>)` and exits non-zero; there
-is no rollback, since the pull half already retained everything and made local state strictly
-better than before. A run where neither half changed anything prints a single compact
-`already in sync` line. If the sync repo holds commits that never reached the remote (for example a
-push interrupted mid-run), the run does not claim to be in sync; the Sync summary adds a
-`sync repo has unpushed commits` note instead. A run where the pull half retained diverged extras
-or local-only sessions and the push half then reconciled them still exits 0, with the push row's
-own parenthetical naming how many items were reconciled (this is treated as resolved work, not a
-standing problem). If `nomad push`'s secret scan finds something mid-sync, the same interactive
-Redact/Allow/Drop/Skip menu you would see from a plain `nomad push` opens; recovery behaves
-identically either way.
+is no rollback, since the pull half already retained everything and made local state strictly better
+than before. A run where neither half changed anything prints a single compact `already in sync`
+line. If the pull half refused to overwrite `settings.json` (see [`pull`](#pull)), the run never
+claims to be in sync: the Sync summary reads `settings.json not written` and the run exits 6. If the
+sync repo holds commits that never reached the remote (for example a push interrupted mid-run), the
+run does not claim to be in sync either; the Sync summary adds a `sync repo has unpushed commits`
+note instead. A run where the pull half retained diverged extras or local-only sessions and the push
+half then reconciled them still exits 0, with the push row's own parenthetical naming how many items
+were reconciled (this is treated as resolved work, not a standing problem). If `nomad push`'s secret
+scan finds something mid-sync, the same interactive Redact/Allow/Drop/Skip menu you would see from a
+plain `nomad push` opens; recovery behaves identically either way.
 
 `--dry-run` previews both halves: the pull preview renders first, then a one-line note that the
 push preview below is computed against pre-pull state (a real sync runs the push half after the
@@ -353,6 +367,11 @@ command refuses to write unless `--yes` is given.
 Credential- and secret-bearing keys (`apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`,
 `otelHeadersHelper`, and `env`) are never promoted, so a secret placed in live settings cannot ride
 into the shared repo.
+
+When `nomad pull` stops because it found settings on this machine the sync repo does not track,
+this command saves them so the next pull goes through (deleting them from
+`~/.claude/settings.json` is the other way out). Use `--host` for machine-specific values, such as
+absolute paths, that should not sync to every machine.
 
 | Flag        | Description                                                                                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -571,14 +590,15 @@ test and useful for ad-hoc upgrade checks.
 Every `nomad` subcommand exits with one of a small set of codes, so a script or cron wrapper can
 branch on `$?` without parsing stderr text.
 
-| Code | Name            | Meaning                                                                                                               |
-| ---- | --------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 0    | Success         | Completed successfully.                                                                                                 |
-| 1    | Generic failure | Unclassified failure; the default for any error not covered below.                                                     |
-| 2    | Usage           | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                            |
-| 4    | Conflict        | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution. |
-| 5    | Leak blocked    | gitleaks confirmed a secret in the staged tree and the push was aborted.                                               |
-| 130  | Interrupted     | You pressed Ctrl+C at an interactive prompt, so nomad stopped without finishing.                                        |
+| Code | Name             | Meaning                                                                                                                                                                    |
+| ---- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Success          | Completed successfully.                                                                                                                                                    |
+| 1    | Generic failure  | Unclassified failure; the default for any error not covered below.                                                                                                         |
+| 2    | Usage            | Bad argv: an unknown subcommand, an unknown flag, or a malformed flag value.                                                                                               |
+| 4    | Conflict         | The sync repo is wedged (e.g. an unresolved rebase) and needs manual git resolution.                                                                                       |
+| 5    | Leak blocked     | gitleaks confirmed a secret in the staged tree and the push was aborted.                                                                                                   |
+| 6    | Settings blocked | Pull (or the pull half of `nomad sync`) found settings on this machine that are not in the sync repo, so it did not write your settings file.                              |
+| 130  | Interrupted      | You pressed Ctrl+C at an interactive prompt, so nomad stopped without finishing.                                                                                           |
 
 A run skipped because another nomad process already holds the lock also exits 0: this is an
 intentional no-op skip, not a failure, so a backgrounded shell-rc or cron invocation never raises a

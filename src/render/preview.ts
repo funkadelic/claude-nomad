@@ -9,6 +9,8 @@ import { planSharedLinkDeletions, type SharedLinkDeletion } from '../sync/links.
 import { stageLocalSharedEdits, type MirrorPreviewEvent } from '../sync/links.mirror.ts';
 import { type LinkPreviewEvent, applySharedLinks } from '../sync/links.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
+import { blockedSettingsKeys, settingsBlockedMessage } from '../sync/settings-guard.ts';
+import { preRebaseSettingsMerge } from '../sync/settings-upstream.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
 import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from '../sync/remap.ts';
 import { summaryRow } from './summary.ts';
@@ -92,11 +94,18 @@ export function diffJsonStrings(currentJsonText: string, newJsonText: string): s
  * Read JSON from `path` returning the parsed object, or `null` on any
  * filesystem or parse failure. Used by previewSettings's tolerant read so a
  * malformed settings.json on a fresh-clone host does not abort the preview.
+ * Valid JSON that is not a plain object (null, an array, a primitive) is also
+ * `null`, matching how the wet path's `readExistingSettings` treats it.
+ *
+ * @param path - Absolute path of the JSON file.
+ * @returns The parsed object, or `null` when absent, unreadable, or not an object.
  */
 function readJsonOrNull(path: string): Record<string, unknown> | null {
   if (!existsSync(path)) return null;
   try {
-    return readJson<Record<string, unknown>>(path);
+    const parsed = readJson<unknown>(path);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -107,8 +116,11 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * Returns `{ diff, notes }` where `diff` is the unified diff string (`''`
  * when no changes) and `notes` holds human-readable skip/warning messages:
  *   - `'section skipped (base or current missing)'` when base is absent
- *   - `'malformed hosts/<HOST>.json; ignoring overrides'` for a bad host file
+ *   - `'malformed hosts/<HOST>.json; skipping diff'` for a bad host file (the
+ *     wet pull cannot read it either, so no diff or refusal is computed)
  *   - `'malformed; skipping diff'` when current settings.json is unreadable
+ *   - the shared `settingsBlockedMessage` when a live top-level key would be
+ *     a promotable ahead-drift key a wet pull would refuse to overwrite
  *
  * When `diff` is `''` and `notes` is empty, the settings section is omitted
  * by the caller.
@@ -124,39 +136,60 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * still sees that settings.json will be rewritten in sorted-key order.
  * Display-only: the write path (`regenerateSettings`) is untouched.
  *
+ * Before diffing, classifies via `blockedSettingsKeys` (the same leaf and
+ * inputs `regenerateSettings` uses, including `preMerged`); a non-empty result
+ * returns `diff: ''` plus `settingsBlockedMessage` instead of a diff that
+ * would never apply. Sets no exit code: a dry run mutates nothing.
+ *
  * Exported for direct unit testing without the full computePreview harness.
+ *
+ * @param basePath - Path to `shared/settings.base.json`.
+ * @param hostPath - Path to `hosts/<HOST>.json`.
+ * @param settingsPath - Path to the live `~/.claude/settings.json`.
+ * @param preMerged - The merge at the pre-pull HEAD (`preRebaseSettingsMerge`).
+ * @returns The unified diff (`''` for none) and any notes.
  */
 export function previewSettings(
   basePath: string,
   hostPath: string,
   settingsPath: string,
+  preMerged: Record<string, unknown> = {},
 ): { diff: string; notes: string[] } {
   const base = readJsonOrNull(basePath);
   if (base === null) {
     return { diff: '', notes: ['section skipped (base or current missing)'] };
   }
-  const notes: string[] = [];
   const hostOverrides = readJsonOrNull(hostPath);
+  // The wet pull cannot read a malformed host file either, so a diff or refusal
+  // computed from base alone would describe a write that never happens.
   if (hostOverrides === null && existsSync(hostPath)) {
-    notes.push(`malformed hosts/${HOST}.json; ignoring overrides`);
+    return { diff: '', notes: [`malformed hosts/${HOST}.json; skipping diff`] };
   }
-  const merged = stripGsdHookEntries(deepMerge(base, hostOverrides ?? {}));
+  const rawMerged = deepMerge(base, hostOverrides ?? {});
+  const merged = stripGsdHookEntries(rawMerged);
   const current = readJsonOrNull(settingsPath);
   if (current === null && existsSync(settingsPath)) {
-    return { diff: '', notes: [...notes, 'malformed; skipping diff'] };
+    return { diff: '', notes: ['malformed; skipping diff'] };
   }
   // Strip gsd-owned hook entries from both sides so gsd's per-session self-heal
   // churn never surfaces as a phantom hooks delta. regenerateSettings already
   // strips them on write, so this also aligns the preview RHS with reality.
   // Mirrors classifySettingsDrift; genuine non-gsd changes still survive.
   const strippedCurrent = stripGsdHookEntries(current ?? {});
+
+  // Classify the same two objects regenerateSettings classifies (unstripped
+  // merge, raw current), so this preview cannot disagree with the wet path.
+  const blocked = blockedSettingsKeys(rawMerged, current ?? {}, preMerged);
+  if (blocked.length > 0) {
+    return { diff: '', notes: [settingsBlockedMessage(blocked, 'would be left unchanged')] };
+  }
+
   const rawEqual = JSON.stringify(strippedCurrent, null, 2) === JSON.stringify(merged, null, 2);
   const diff = diffJsonStrings(
     JSON.stringify(sortKeysDeep(strippedCurrent), null, 2),
     JSON.stringify(sortKeysDeep(merged), null, 2),
   );
-  if (diff === '' && !rawEqual) notes.push(CANONICAL_ORDER_NOTE);
-  return { diff, notes };
+  return { diff, notes: diff === '' && !rawEqual ? [CANONICAL_ORDER_NOTE] : [] };
 }
 
 /**
@@ -375,12 +408,16 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *   'pull' so existing callers compile unchanged.
  * @param plans - Pre-rebase win32 capture and deletion plans; omit to compute
  *   them here against current repo state (see {@link SharedLinkPlans}).
+ * @param prePostHeads - Pre/post-rebase HEADs from a rebasing caller; omitted
+ *   by `nomad diff`, which moves no HEAD, so no settings key counts as removed.
+ * @returns Session-unmapped, collision, and local-only counts.
  */
 export function computePreview(
   ts: string,
   map: PathMap,
   verb: PreviewVerb = 'pull',
   plans?: SharedLinkPlans,
+  prePostHeads?: { pre: string; post: string },
 ): { unmapped: number; collisions: number; localOnly: number } {
   const repo = repoHome();
   const claude = claudeHome();
@@ -407,6 +444,7 @@ export function computePreview(
     join(repo, 'shared', 'settings.base.json'),
     join(repo, 'hosts', `${HOST}.json`),
     join(claude, 'settings.json'),
+    preRebaseSettingsMerge(repo, prePostHeads),
   );
   const settingsSection = buildSettingsSectionForPreview(settingsResult);
 

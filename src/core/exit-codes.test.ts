@@ -23,6 +23,10 @@ describe('EXIT', () => {
     expect(EXIT.LEAK_BLOCKED).toBe(5);
   });
 
+  it('resolves SETTINGS_BLOCKED to 6', () => {
+    expect(EXIT.SETTINGS_BLOCKED).toBe(6);
+  });
+
   it('resolves INTERRUPTED to 130', () => {
     expect(EXIT.INTERRUPTED).toBe(130);
   });
@@ -34,7 +38,15 @@ describe('EXIT', () => {
   it('is a flat object of numeric values only', () => {
     expect(Object.values(EXIT).every((v) => typeof v === 'number')).toBe(true);
     expect(Object.keys(EXIT).sort()).toEqual(
-      ['SUCCESS', 'GENERIC_FAILURE', 'USAGE', 'CONFLICT', 'LEAK_BLOCKED', 'INTERRUPTED'].sort(),
+      [
+        'SUCCESS',
+        'GENERIC_FAILURE',
+        'USAGE',
+        'CONFLICT',
+        'LEAK_BLOCKED',
+        'SETTINGS_BLOCKED',
+        'INTERRUPTED',
+      ].sort(),
     );
   });
 });

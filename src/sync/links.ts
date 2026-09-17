@@ -1,25 +1,19 @@
 import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  allSharedLinks,
-  claudeHome,
-  repoHome,
-  ALWAYS_NEVER_SYNC,
-  HOST,
-  isDeniedName,
-  type PathMap,
-} from '../core/config.ts';
-import {
-  classifySettingsDrift,
-  describeSettings,
-  partitionByCaptureExclusion,
-} from '../commands/capture-settings/core.ts';
-import { copyExtrasFilteredPreservingBy } from './extras/core.ts';
+import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
+import { classifySettingsDrift, describeSettings } from '../commands/capture-settings/core.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
-import { die, log, warn, NomadFatal } from '../core/utils.ts';
+import { blockedSettingsKeys, settingsBlockedMessage } from './settings-guard.ts';
+import { preRebaseSettingsMerge } from './settings-upstream.ts';
+import { applySharedLinksWin32 } from './links.win32.ts';
+import { die, fail, log, warn } from '../core/utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from '../core/utils.fs.ts';
 import { deepMerge, readJson } from '../core/utils.json.ts';
+
+// Re-exported so `../commands/adopt.recover.ts` and its test doubles keep
+// importing (and mocking) this single name from `links.ts`.
+export { copySharedLinkPull } from './links.win32.ts';
 
 /**
  * Event emitted by `applySharedLinks` when `onPreview` is provided. `create`
@@ -69,19 +63,6 @@ function emitCreate(onPreview: LinkOpts['onPreview'], from: string, to: string):
 }
 
 /**
- * Emit a dry-run copy event via onPreview or fall back to log(). Used by the
- * win32 branch of `applySharedLinks` (`applySharedLinksWin32`), where a real
- * copy replaces symlink creation.
- */
-function emitCopy(onPreview: LinkOpts['onPreview'], from: string, to: string): void {
-  if (onPreview) {
-    onPreview({ kind: 'copy', from, to });
-  } else {
-    log(`would copy: ${from} -> ${to}`);
-  }
-}
-
-/**
  * Return true when a symlink already exists at `linkPath`, meaning
  * `ensureSymlink` would no-op. `existsSync` follows the symlink, so a dangling
  * symlink (broken target) returns false and is NOT considered satisfied.
@@ -115,268 +96,6 @@ function runAutoMovePasses(
     }
     backupBeforeWrite(linkPath, ts);
     rmSync(linkPath, { recursive: true, force: true });
-  }
-}
-
-/**
- * Win32 copy-model helper: overlays `shared/<name>` (repo side) into
- * `~/.claude/<name>` (host side) via `copyExtrasFilteredPreservingBy`, the
- * same predicate-driven preserving-copy primitive `skills-sync.ts` uses for
- * `copySkillsPull`. `SHARED_LINKS` names are not gsd-owned, so no gsd-prefix
- * filter is needed here (contrast `isSkillExcluded`); the predicate only
- * excludes `ALWAYS_NEVER_SYNC` names at every depth, so a crafted
- * `shared/<name>/settings.local.json`-style entry cannot ride into
- * `~/.claude/` from a poisoned repo. `src` may be a single file (`CLAUDE.md`,
- * `my-statusline.cjs`) or a directory (`commands`, `rules`); the underlying
- * `cpSync` handles both.
- *
- * The narrower set here is deliberate, and the asymmetry with the host-to-repo
- * mirror (which filters on the full `NEVER_SYNC`; see `mirrorOneSharedName` in
- * `links.mirror.ts`) is not an oversight. This is the READ half: widening it
- * changes what an already-synced host RECEIVES on its next pull, so a host that
- * has been getting a directory spelled like a `NEVER_SYNC` entry (`sessions`,
- * `tasks`, ...) under a shared name would silently stop getting it, with no
- * signal at pull time. That is a migration with its own blast radius, not a
- * symmetry tidy-up: what the mirror WRITES into the repo is a separate
- * decision from what a pull is allowed to land on the host.
- *
- * @param src - Source path (`shared/<name>`, repo side).
- * @param dst - Destination path (`~/.claude/<name>`, host side).
- */
-export function copySharedLinkPull(src: string, dst: string): void {
-  copyExtrasFilteredPreservingBy(src, dst, (name) => isDeniedName(ALWAYS_NEVER_SYNC, name));
-}
-
-/**
- * Whether something still occupies `abs`, without following it.
- *
- * `lstat` rather than `existsSync` so a symlink whose target is gone still
- * answers `true`: the question is whether an entry is there, not whether it
- * resolves. A path that cannot be stat-ed for any OTHER reason (no permission
- * on the parent directory, a name over the Windows limit) is reported PRESENT,
- * because the caller uses this to decide what to claim about the path, and
- * guessing absent would hand it a claim it cannot support. Same discipline as
- * `presentAt` in `links.mirror.ts`, applied to the repo-to-host half.
- *
- * @param abs - Absolute path to probe.
- * @returns `true` when something is there, or when it cannot be determined.
- */
-function stillOccupied(abs: string): boolean {
-  try {
-    return lstatSync(abs, { throwIfNoEntry: false }) !== undefined;
-  } catch {
-    return true;
-  }
-}
-
-/**
- * What `snapshotBeforeWin32Copy` did, as opposed to what a caller could guess
- * it would do. `snapshotted` means a copy of the previous content was written
- * and can be pointed at; `nothing-to-snapshot` means the snapshot ran but had
- * nothing to copy, which is what a dangling symlink or an entry that vanished
- * between the caller's stat and the backup looks like; `failed` means the
- * snapshot itself errored. Only `failed` stops the copy, and only
- * `snapshotted` earns a mention of the backup dir in a later warning.
- */
-type Win32SnapshotOutcome = 'snapshotted' | 'nothing-to-snapshot' | 'failed';
-
-/**
- * Snapshot the `~/.claude/<name>` entry a win32 copy is about to overwrite,
- * reporting both whether the copy may proceed and whether a snapshot exists to
- * name afterwards.
- *
- * The snapshot gets its OWN try/catch, ahead of the copy's, for two reasons.
- * Every way it can fail (no space in the cache directory, no permission on it,
- * a destination over the Windows path limit) happens under
- * `~/.cache/claude-nomad/backup/<ts>/` and says nothing about `linkPath`, so
- * folding it into the copy's catch would blame the file for a failure that
- * happened in the cache directory, the same reason `removeUntrackedDenied`
- * separates the two in `links.mirror.ts`. And a failed snapshot abandons the
- * copy for that name deliberately: the copy is destructive and the snapshot is
- * the only thing that keeps an unpushed local edit recoverable, so proceeding
- * without one would trade a reported, bounded staleness for silent loss of the
- * user's only copy.
- *
- * A snapshot that copied nothing is not a failure and does not stop the copy:
- * `backupBeforeWrite` no-ops when the entry is already gone (its own existence
- * check runs after the caller's stat, so an entry can vanish in between) or
- * when it resolves outside `~/.claude/`. There is simply no backup to point at
- * afterwards, which is why that case is reported rather than folded into the
- * proceed case.
- *
- * @param linkPath - Host-side path about to be overwritten.
- * @param ts - Backup timestamp namespace for `backupBeforeWrite`.
- * @returns The outcome; see `Win32SnapshotOutcome`.
- */
-function snapshotBeforeWin32Copy(linkPath: string, ts: string): Win32SnapshotOutcome {
-  try {
-    return backupBeforeWrite(linkPath, ts) ? 'snapshotted' : 'nothing-to-snapshot';
-  } catch (err) {
-    warn(
-      `could not snapshot ${linkPath} before updating it (${(err as Error).message}), so it was left as it is. The rest of the pull continues`,
-    );
-    return 'failed';
-  }
-}
-
-/**
- * Report one win32 apply failure without claiming more than is known.
- *
- * The guard spans the destructive half of the copy, so by the time this runs
- * the entry can be untouched, half-rewritten, or gone: a symlink-era leftover
- * is removed before the copy runs at all, and `copyExtrasFilteredPreservingBy`
- * prunes entries and can remove the destination outright before it writes
- * anything back. An unconditional "it keeps the copy it had" would therefore
- * be exactly wrong in the cases that cost the user something, so only two
- * things are stated. Whether an entry is there now, which `stillOccupied`
- * answers (and answers PRESENT when it cannot tell). And whether a snapshot of
- * the previous content exists to recover from, which the snapshot step reports
- * for itself rather than the caller predicting it, so a snapshot that found
- * nothing left to copy is never advertised as one.
- *
- * @param linkPath - Host-side path the copy was for.
- * @param ts - Backup timestamp, named so the user can find the snapshot.
- * @param err - The caught error; its message is quoted verbatim.
- * @param snapshotted - `true` when a copy of the previous content was written.
- */
-function warnWin32ApplyFailed(
-  linkPath: string,
-  ts: string,
-  err: unknown,
-  snapshotted: boolean,
-): void {
-  const state = stillOccupied(linkPath)
-    ? 'it may be unchanged, or partly updated'
-    : 'nothing is at that path now';
-  const recover = snapshotted
-    ? ` A copy of what it held before this pull is under backup/${ts}/.`
-    : '';
-  warn(
-    `${linkPath} could not be updated (${(err as Error).message}), so ${state}.${recover} The rest of the pull continues. Check its permissions, or whether another program has it open, then run 'nomad pull' again to update it`,
-  );
-}
-
-/**
- * Wet-path apply of one shared name on win32: snapshot whatever is already at
- * `linkPath`, clear a symlink-era leftover, then overlay `target` onto it.
- * Extracted from `applySharedLinksWin32`'s loop so both functions stay well
- * inside the cognitive-complexity gate.
- *
- * The whole write half runs inside one `try`/`catch`, so a locked or
- * permission-denied destination costs exactly one name plus one WARN rather
- * than aborting the pull. The catch is deliberately broad (no `err.code`
- * dispatch): the calls it spans bottom out in different syscalls (`lstatSync`,
- * `cpSync`, `readdirSync`, `rmSync`), each of which can raise a different
- * Windows errno for the same underlying lock, so narrowing would miss real
- * cases rather than filter noise. It spans the write half and not just the
- * stat because on win32 a lock on the destination being overwritten is likelier
- * than one on the stat itself.
- *
- * Breadth stops at deliberate failures. A `NomadFatal` is re-thrown: it carries
- * its own message and exit code, and the one this path can raise (the repo-file
- * against host-directory type collision from `copyExtrasFilteredPreservingBy`)
- * names `nomad pull --force-remote`, which is the only command that clears it.
- * `instanceof` is safe for it, unlike `isUserAbort`'s structural match, because
- * the class is thrown from within this process rather than across a library
- * boundary. A backup failure is also a `NomadFatal` now, but `snapshotBeforeWin32Copy`
- * catches it one frame earlier and never lets it reach here; moving a backup
- * call inside this `try` would turn that warn-and-continue into a pull abort.
- *
- * @param target - Source path (`shared/<name>`, repo side).
- * @param linkPath - Destination path (`~/.claude/<name>`, host side).
- * @param ts - Backup timestamp for the pre-write snapshot.
- */
-function applyOneSharedLinkWin32(target: string, linkPath: string, ts: string): void {
-  let snapshotted = false;
-  try {
-    const stat = lstatSync(linkPath, { throwIfNoEntry: false });
-    if (stat !== undefined) {
-      const snapshot = snapshotBeforeWin32Copy(linkPath, ts);
-      if (snapshot === 'failed') return;
-      snapshotted = snapshot === 'snapshotted';
-      if (stat.isSymbolicLink()) {
-        rmSync(linkPath, { recursive: true, force: true });
-      }
-    }
-    copySharedLinkPull(target, linkPath);
-  } catch (err) {
-    if (err instanceof NomadFatal) throw err;
-    warnWin32ApplyFailed(linkPath, ts, err, snapshotted);
-  }
-}
-
-/**
- * Win32 branch of `applySharedLinks`: materializes each shared link name as a
- * real copy via `copySharedLinkPull` instead of a symlink. Symlink creation on
- * Windows needs Developer Mode or admin, and junctions are directory-only, so
- * file entries like `CLAUDE.md` have no unprivileged symlink equivalent; the
- * accepted trade-off is that Windows edits are captured at the next
- * `nomad push`, the same semantics `skills/` already has.
- *
- * Skips a name entirely when the repo has no `shared/<name>` counterpart
- * (mirrors the posix skip-when-no-counterpart behavior). Any pre-existing
- * entry at `linkPath` is snapshotted via `backupBeforeWrite` before the
- * destructive overlay, so an unpushed local edit is always recoverable from
- * the backup dir: when `linkPath` is a live symlink (a symlink-era leftover
- * from before this branch existed, or a host that previously shared
- * `~/.claude` with a symlink-capable OS), it is backed up and removed before
- * the copy, mirroring `syncSkillsPull`'s migration guard; when `linkPath` is a
- * real, non-symlink entry (the normal post-copy state on win32), it is backed
- * up and then simply overwritten by the copy (no rm needed, `cpSync` inside
- * `copySharedLinkPull` handles the overwrite). A snapshot that fails abandons
- * the copy for that name rather than proceeding unbacked; see
- * `snapshotBeforeWin32Copy`. It is NOT routed through `runAutoMovePasses`
- * (that pass is posix-only and would wrongly treat every already-copied file
- * as a conflict to migrate on every subsequent pull).
- *
- * Kept as a separate function (rather than inlined into `applySharedLinks`)
- * so the win32 loop body stays flat under the cognitive-complexity gate.
- *
- * The wet path per name runs through `applyOneSharedLinkWin32`, whose guard
- * turns a locked or permission-denied destination into one skipped name plus
- * one WARN rather than an aborted pull. That guard is NOT the same shape as
- * the host-to-repo mirror's, and the difference is deliberate rather than a
- * drift to be tidied up: `mirrorOneSharedName` (`links.mirror.ts`) wraps only
- * its `lstatSync` and lets its own writes propagate to
- * `reconcileSharedLinksBeforePull`, because on that side the destination is
- * the repo and a skip costs one uncaptured edit with the host untouched. Here
- * the destination is the host entry, which is the thing likely to be locked on
- * win32 and the thing that can be left destroyed by a failed write, so the
- * guard spans the write half and the WARN has to speak to that (see
- * `warnWin32ApplyFailed`).
- *
- * The posix symlink arm of `applySharedLinks`, below, is deliberately left
- * unguarded. Its per-name failure runs through `ensureSymlink`, which calls
- * `die`: a clean `NomadFatal` message plus `EXIT.GENERIC_FAILURE`, no crash
- * report, rather than a raw throw. That failure's trigger is a genuine
- * misconfiguration (a non-symlink squatting the link path), not a transient
- * lock, so whether it should also skip-and-continue rather than stop is a
- * separate question, deliberately not settled here.
- *
- * @param linkNames - Names to materialize (from `allSharedLinks(map)`).
- * @param claude - `claudeHome()` (host `~/.claude` dir).
- * @param repo - `repoHome()` (local sync repo checkout).
- * @param ts - Backup timestamp for a symlink-era migration.
- * @param dryRun - When `true`, emit a preview event instead of copying.
- * @param onPreview - Structured-event sink; see `LinkOpts.onPreview`.
- */
-function applySharedLinksWin32(
-  linkNames: readonly string[],
-  claude: string,
-  repo: string,
-  ts: string,
-  dryRun: boolean,
-  onPreview: LinkOpts['onPreview'],
-): void {
-  for (const name of linkNames) {
-    const target = join(repo, 'shared', name);
-    if (!existsSync(target)) continue;
-    const linkPath = join(claude, name);
-    if (dryRun) {
-      emitCopy(onPreview, linkPath, target);
-      continue;
-    }
-    applyOneSharedLinkWin32(target, linkPath, ts);
   }
 }
 
@@ -479,36 +198,36 @@ function readExistingSettings(settingsPath: string): {
 }
 
 /**
- * Emit the pull-side drift WARNs by classifying the live `existing` settings
- * against the freshly `merged` result: a behind-drift key (present in the
- * synced copy, missing locally) advises `nomad pull`, and a promotable
- * ahead-drift key (local-only, capture-eligible) advises `nomad capture-settings`.
- * Informational only; extracted from `regenerateSettings` so the main function
- * stays under the cognitive-complexity gate.
+ * Report drift between the live `existing` settings and the freshly `merged`
+ * result: a promotable ahead-drift key is refused (via `fail`) rather than
+ * silently overwritten; otherwise a behind-drift key WARNs advising
+ * `nomad pull`. The behind WARN is skipped on a refusal, since this pull is
+ * not restoring anything.
  *
- * @param merged - The deep-merged base+host result about to be written.
- * @param existing - The parsed live settings.json (well-formed).
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
+ * @returns The blocked keys, so the caller can skip the write.
  */
-function emitDriftWarnings(
+function reportSettingsDrift(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
-): void {
-  const drift = classifySettingsDrift(merged, existing);
-  if (drift.behind.length > 0) {
-    const { phrase, pronoun } = describeSettings(drift.behind);
+  preMerged: Record<string, unknown>,
+): string[] {
+  const blocked = blockedSettingsKeys(merged, existing, preMerged);
+  if (blocked.length > 0) {
+    fail(settingsBlockedMessage(blocked, 'left unchanged'));
+    return blocked;
+  }
+  const { behind } = classifySettingsDrift(merged, existing);
+  if (behind.length > 0) {
+    const { phrase, pronoun } = describeSettings(behind);
     warn(
       `your settings.json is missing ${phrase} that the synced copy has; ` +
         `run 'nomad pull' to restore ${pronoun}.`,
     );
   }
-  const { promotable } = partitionByCaptureExclusion(drift.ahead);
-  if (promotable.length > 0) {
-    const { phrase, pronoun, verb } = describeSettings(promotable);
-    warn(
-      `your settings.json has ${phrase} that ${verb} not yet synced; ` +
-        `run 'nomad capture-settings' to save ${pronoun} to the repo before the next pull overwrites ${pronoun}.`,
-    );
-  }
+  return blocked;
 }
 
 /**
@@ -520,43 +239,37 @@ function emitDriftWarnings(
  * gsd-owned hook entries the live file already carries are preserved (grafted
  * back onto the stripped merge via `keepGsdHookEntries` + `graftGsdHookEntries`)
  * so pull stops deleting the hooks gsd self-heals each session; the clean path
- * (no gsd hooks in the live file) stays byte-identical. Surfaces a
- * stderr WARN when no host override exists AND prior settings has top-level
- * keys not in base; the matching doctor-side FAIL with non-zero exit lives
- * in `cmdDoctor`.
+ * (no gsd hooks in the live file) stays byte-identical. When the live file
+ * has promotable top-level keys that neither this merge nor the pre-pull
+ * merge has, prints a stderr refusal naming them and skips the write entirely
+ * (no backup, no atomic write).
  *
  * `opts.dryRun` (default `false`): when `true`, skip the
  * `backupBeforeWrite` + `writeJsonAtomic` pair and instead log a single
- * `would write settings.json ...` line. The drift-detection WARN above
- * still fires (informational), so users see the same warning a real pull
- * would produce. The unified textual diff of the would-be-written content
- * is produced by `computePreview` in `src/render/preview.ts`, not here, to keep
- * this function's contract simple (mutation or log-only).
+ * `would write settings.json ...` line. The drift report and refusal above
+ * still print, so users see what a real pull would say. The unified textual
+ * diff of the would-be-written content is produced by `computePreview` in
+ * `src/render/preview.ts`, not here, to keep this function's contract simple
+ * (mutation or log-only).
  *
- * Returns `{ label }` where `label` is the override-source tag
- * (`'<HOST>.json'` when a host override exists, else `'no host overrides'`).
- * The WET path no longer logs `wrote settings.json (base + <label>)` inline;
- * `cmdPull` consumes the returned label to render the Settings row of its
- * grouped tree. The dry-run `would write settings.json ...` log and the
- * drift WARN are unchanged (the WET success log is the only thing that moved).
- *
- * `opts.suppressDriftWarn` (default `false`): skip the pull-side drift WARN
- * block. Used by `nomad capture-settings`, which calls this purely to resync the
- * local file right after promoting keys into the repo: re-emitting a "run nomad
- * capture-settings" hint in the same run would be contradictory, and the only
- * keys still classified `ahead` at that point are the deliberately-excluded
- * credential keys (which capture refuses), so the hint would advise an action
- * that cannot succeed.
- *
- * @param ts - backup timestamp namespace for `backupBeforeWrite`.
- * @param opts.dryRun - when `true`, log the would-write line and skip mutation.
- * @param opts.suppressDriftWarn - when `true`, skip the pull-side drift WARN block.
- * @returns `{ label }` describing the override source for the Settings row.
+ * @param ts - Backup timestamp namespace for `backupBeforeWrite`.
+ * @param opts.dryRun - When `true`, log the would-write line and skip mutation.
+ * @param opts.suppressDriftWarn - When `true`, skip the drift report and the
+ *   refusal (used by `nomad capture-settings`, so capture never deadlocks).
+ * @param opts.prePostHeads - Pre/post-pull HEADs; a key the pre-pull merge had
+ *   is treated as removed upstream and deleted instead of refused.
+ * @returns `label`, the override-source tag (`'<HOST>.json'` or
+ *   `'no host overrides'`) for the Settings row, and `blocked`, the keys that
+ *   stopped the write (empty when it was written).
  */
 export function regenerateSettings(
   ts: string,
-  opts: { dryRun?: boolean; suppressDriftWarn?: boolean } = {},
-): { label: string } {
+  opts: {
+    dryRun?: boolean;
+    suppressDriftWarn?: boolean;
+    prePostHeads?: { pre: string; post: string };
+  } = {},
+): { label: string; blocked: string[] } {
   const dryRun = opts.dryRun === true;
   const suppressDriftWarn = opts.suppressDriftWarn === true;
   const repo = repoHome();
@@ -581,15 +294,19 @@ export function regenerateSettings(
   const { existing, present, malformed } = readExistingSettings(settingsPath);
 
   // Pull-side drift surface: classify existing settings against the merged
-  // result and emit direction-specific guidance. Informational only; pull does
-  // NOT abort. The WARN runs in dry-run mode too: the user sees the same drift
-  // signal they would see on a real pull. Malformed prior settings.json must
-  // not block regeneration; the whole point is to overwrite from base+overrides.
+  // result and emit direction-specific guidance, refusing a promotable
+  // ahead-drift write. Runs in dry-run mode too. Malformed prior
+  // settings.json bypasses the gate; the whole point is to overwrite it.
+  let blocked: string[] = [];
   if (!suppressDriftWarn && present) {
     if (malformed) {
       warn('existing settings.json is malformed; skipping drift-check and regenerating.');
     } else {
-      emitDriftWarnings(merged, existing);
+      blocked = reportSettingsDrift(
+        merged,
+        existing,
+        preRebaseSettingsMerge(repo, opts.prePostHeads),
+      );
     }
   }
 
@@ -597,7 +314,13 @@ export function regenerateSettings(
 
   if (dryRun) {
     log(`would write settings.json (base + ${overrideLabel})`);
-    return { label: overrideLabel };
+    return { label: overrideLabel, blocked };
+  }
+
+  // A blocked write is skipped entirely: no backup (nothing changes) and no
+  // atomic write, leaving the live file exactly as it was.
+  if (blocked.length > 0) {
+    return { label: overrideLabel, blocked };
   }
 
   // Preserve the gsd-owned hook entries the live file already carries (gsd
@@ -610,5 +333,5 @@ export function regenerateSettings(
     settingsPath,
     graftGsdHookEntries(stripGsdHookEntries(merged), keepGsdHookEntries(existing)),
   );
-  return { label: overrideLabel };
+  return { label: overrideLabel, blocked };
 }

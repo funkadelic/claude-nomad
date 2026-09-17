@@ -280,6 +280,64 @@ describe('previewSettings canonicalization', () => {
     // No malformed-host note when the file simply doesn't exist.
     expect(result.notes.some((n) => n.includes('malformed'))).toBe(false);
   });
+
+  it('reports the shared refusal note and no diff for a promotable ahead-drift key', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(settingsPath, JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2));
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result.diff).toBe('');
+    expect(result.notes.at(-1)).toContain('statusLine');
+    expect(result.notes.at(-1)).toContain('settings.json would be left unchanged');
+  });
+
+  it('returns the pre-change diff and notes when there is no ahead-drift key (regression)', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'opus', hooks: {}, statusLine: 1 }, null, 2));
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ statusLine: 1, hooks: {}, model: 'opus' }, null, 2),
+    );
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result).toEqual({
+      diff: '',
+      notes: ['settings.json will be rewritten in canonical key order; no value changes'],
+    });
+  });
+
+  it('never names a CAPTURE_EXCLUDED_KEYS key (env) in the refusal note, even ahead-only', async () => {
+    // env is excluded from capture, so it can never appear in the shared
+    // blocked note even though it is the only ahead-drift key here. The
+    // ordinary diff still reflects it: that rendering is pre-existing and
+    // unrelated to the blocked-note wiring this test targets.
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ model: 'opus', env: { ANTHROPIC_API_KEY: 'sk-secret' } }, null, 2),
+    );
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result.notes.some((n) => n.includes('env'))).toBe(false);
+    expect(result.notes.some((n) => n.includes('capture-settings'))).toBe(false);
+  });
+
+  it('keeps the malformed-current early return and adds no blocked note', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(settingsPath, '{ malformed json');
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result).toEqual({ diff: '', notes: ['malformed; skipping diff'] });
+  });
+
+  it('keeps the absent-base early return and adds no blocked note', async () => {
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result).toEqual({ diff: '', notes: ['section skipped (base or current missing)'] });
+  });
 });
 
 describe('computePreview orchestration', () => {
@@ -394,6 +452,32 @@ describe('computePreview orchestration', () => {
 
     // Summary section header present.
     expect(joined).toContain('Summary');
+  });
+
+  it('renders the blocked-settings note for a promotable ahead-drift key and writes nothing', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2) + '\n',
+    );
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const beforeClaude = snapshotTree(claudeDir);
+    const originalExitCode = process.exitCode;
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} });
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('statusLine');
+    expect(joined).toContain('settings.json would be left unchanged');
+    expect(joined).not.toContain('+++ would write');
+    expect(snapshotTree(claudeDir)).toEqual(beforeClaude);
+    expect(process.exitCode).toBe(originalExitCode);
   });
 
   it('surfaces the retained local-only count as a plain Sessions row and a non-clean Summary', async () => {
@@ -636,9 +720,7 @@ describe('computePreview orchestration', () => {
 
     const { computePreview } = await import('./preview.ts');
     expect(() => computePreview('20260516-000000', { projects: {} })).not.toThrow();
-    // The malformed-host note may appear in the settings.json section.
-    // (No diff since host was ignored and merged == base == same as no-file case)
-    expect(logs.join('\n')).toContain('malformed hosts/test-host.json; ignoring overrides');
+    expect(logs.join('\n')).toContain('malformed hosts/test-host.json; skipping diff');
   });
 
   it('settings.json section shows malformed-current note without throwing', async () => {
