@@ -13,19 +13,26 @@ import { stripGsdHookEntries } from './hooks-filter.ts';
 
 /**
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
- * named). A key `preMerged` had was removed upstream, so it is not blocked.
+ * named). A key `preMerged` had, or that `written` names, was removed upstream,
+ * so it is not blocked.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
+ * @param written - Top-level keys the last successful settings write produced
+ *   on this host, or `null` for no record; unions with `preMerged`'s keys.
  * @returns The blocked keys, sorted.
  */
 export function blockedSettingsKeys(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
+  written: readonly string[] | null = null,
 ): string[] {
   const { ahead } = classifySettingsDrift(merged, existing);
-  const removedUpstream = new Set(Object.keys(stripGsdHookEntries(preMerged)));
+  const removedUpstream = new Set([
+    ...Object.keys(stripGsdHookEntries(preMerged)),
+    ...(written ?? []),
+  ]);
   return partitionByCaptureExclusion(ahead.filter((key) => !removedUpstream.has(key))).promotable;
 }
 

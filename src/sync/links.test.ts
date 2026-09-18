@@ -457,6 +457,26 @@ describe('regenerateSettings (integration)', () => {
       process.exitCode = originalExitCode;
     }
   });
+
+  it('removes a key the record names once the repo no longer carries it', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const result = regenerateSettings('20260516-000000');
+
+    expect(result.blocked).toEqual([]);
+    expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toEqual({
+      model: 'sonnet',
+    });
+  });
 });
 
 describe('applySharedLinks auto-move', () => {

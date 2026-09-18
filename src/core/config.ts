@@ -129,6 +129,20 @@ export function sharedBaselinePath(): string {
 }
 
 /**
+ * Per-host record of the top-level keys the last successful settings write
+ * produced: `~/.cache/claude-nomad/settings-written-<HOST>.json`. Same
+ * call-time HOME and HOST-encoding conventions as `sharedBaselinePath()`.
+ */
+export function settingsWrittenPath(): string {
+  return join(
+    home(),
+    '.cache',
+    'claude-nomad',
+    `settings-written-${encodeURIComponent(HOST)}.json`,
+  );
+}
+
+/**
  * The official Claude Code settings JSON schema. Source of truth for
  * `SCHEMA_KEYS` (kept current by `scripts/sync-settings-keys.ts`) and the
  * on-demand `nomad doctor --check-schema` reporter, which fetches it live to
