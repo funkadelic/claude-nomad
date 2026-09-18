@@ -11,6 +11,7 @@ import { type LinkPreviewEvent, applySharedLinks } from '../sync/links.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
 import { blockedSettingsKeys, settingsBlockedMessage } from '../sync/settings-guard.ts';
 import { preRebaseSettingsMerge } from '../sync/settings-upstream.ts';
+import { readWrittenSettingsKeys } from '../sync/settings-written.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
 import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from '../sync/remap.ts';
 import { summaryRow } from './summary.ts';
@@ -147,6 +148,7 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * @param hostPath - Path to `hosts/<HOST>.json`.
  * @param settingsPath - Path to the live `~/.claude/settings.json`.
  * @param preMerged - The merge at the pre-pull HEAD (`preRebaseSettingsMerge`).
+ * @param written - Recorded keys from the last successful write; see `blockedSettingsKeys`.
  * @returns The unified diff (`''` for none) and any notes.
  */
 export function previewSettings(
@@ -154,6 +156,7 @@ export function previewSettings(
   hostPath: string,
   settingsPath: string,
   preMerged: Record<string, unknown> = {},
+  written: readonly string[] | null = null,
 ): { diff: string; notes: string[] } {
   const base = readJsonOrNull(basePath);
   if (base === null) {
@@ -179,7 +182,7 @@ export function previewSettings(
 
   // Classify the same two objects regenerateSettings classifies (unstripped
   // merge, raw current), so this preview cannot disagree with the wet path.
-  const blocked = blockedSettingsKeys(rawMerged, current ?? {}, preMerged);
+  const blocked = blockedSettingsKeys(rawMerged, current ?? {}, preMerged, written);
   if (blocked.length > 0) {
     return { diff: '', notes: [settingsBlockedMessage(blocked, 'would be left unchanged')] };
   }
@@ -445,6 +448,7 @@ export function computePreview(
     join(repo, 'hosts', `${HOST}.json`),
     join(claude, 'settings.json'),
     preRebaseSettingsMerge(repo, prePostHeads),
+    readWrittenSettingsKeys(),
   );
   const settingsSection = buildSettingsSectionForPreview(settingsResult);
 
