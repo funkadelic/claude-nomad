@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -381,6 +381,34 @@ describe('reportSettingsDriftCheck', () => {
     expect(out).toContain('nomad capture-settings');
     expect(out).not.toContain(warnGlyph);
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('WARNs for a local-only key the written-keys record names, since the next pull deletes it', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'sonnet', theme: 'dark', agentPushNotifEnabled: true }) + '\n',
+    );
+    const cache = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(
+      join(cache, 'settings-written-test-host.json'),
+      JSON.stringify(['model', 'theme']),
+    );
+    const { items } = await runCheck();
+    const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
+    expect(warnRow).toContain('theme');
+    expect(warnRow).toContain("the next 'nomad pull' removes them");
+    expect(warnRow).not.toContain('agentPushNotifEnabled');
+    // An unrecorded key is still just a promotion candidate.
+    expect(items.find((i) => i.includes('agentPushNotifEnabled'))).toContain(infoGlyph);
   });
 
   it('emits a name-free count row for excluded local-only keys (no capture advice, no secret name)', async () => {
