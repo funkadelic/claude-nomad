@@ -231,12 +231,12 @@ them and will not stop for them. When it finds some your repo does not track, it
 `settings.json` as usual and tells you how many it replaced. Keep values like these in
 `~/.claude/settings.local.json`, which nomad never touches.
 
-A setting that another machine removed from the repo is removed here too. Each time a pull succeeds,
-nomad records which settings it wrote on this machine. A setting in that record that the repo no
-longer carries is one nomad put there, so the next pull removes it. A setting missing from the
-record is one you added, so it is kept and listed as above. The timing no longer matters: the
-removal can arrive with this pull, or have reached your repo earlier through an edit you made, a
-`nomad push`, or a `nomad pull --dry-run`.
+A setting that another machine removed from the repo is removed here too. Each time nomad writes
+your settings, on a pull or a `nomad capture-settings`, it records which settings it wrote on this
+machine. A setting in that record that the repo no longer carries is one nomad put there, so the
+next pull removes it. A setting missing from the record is one you added, so it is kept and listed
+as above. The timing no longer matters: the removal can arrive with this pull, or have reached your
+repo earlier through an edit you made, a `nomad push`, or a `nomad pull --dry-run`.
 
 A machine that has not finished a pull yet, or whose cache folder was cleared, has nothing recorded.
 There a removal that reached the repo earlier is still listed as a setting you added. Save it or

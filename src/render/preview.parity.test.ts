@@ -117,6 +117,10 @@ describe('settings preview and wet pull parity', () => {
   it('an unrecorded local addition: both sides refuse', async () => {
     writeFileSync(basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
     writeFileSync(settingsPath, JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n');
+    // A record naming a DIFFERENT key, so this exercises the record-present
+    // branch rather than the no-record fallback both sides took before.
+    const { recordWrittenSettingsKeys } = await import('../sync/settings-written.ts');
+    recordWrittenSettingsKeys({ model: 'sonnet' });
 
     const { previewSettings } = await import('./preview.ts');
     const { readWrittenSettingsKeys } = await import('../sync/settings-written.ts');

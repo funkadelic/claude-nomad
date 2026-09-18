@@ -4,7 +4,7 @@
  * itself wrote (and the repo no longer carries) from a local addition.
  */
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { settingsWrittenPath } from '../core/config.ts';
@@ -19,10 +19,8 @@ import { stripGsdHookEntries } from './hooks-filter.ts';
  * throws.
  */
 export function readWrittenSettingsKeys(): readonly string[] | null {
-  const path = settingsWrittenPath();
-  if (!existsSync(path)) return null;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    const parsed: unknown = JSON.parse(readFileSync(settingsWrittenPath(), 'utf8'));
     if (!Array.isArray(parsed) || !parsed.every((k): k is string => typeof k === 'string')) {
       return null;
     }

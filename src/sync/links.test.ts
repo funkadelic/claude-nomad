@@ -530,7 +530,10 @@ describe('regenerateSettings (integration)', () => {
     expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(step2Content);
   });
 
-  it('the empty-hooks-block variant never reaches the record even absent a live file', async () => {
+  it('an empty hooks block in the host file never reaches the record', async () => {
+    // Not the strip guard: the merge-side strip already drops an empty hooks
+    // block before the payload is built, so this passes with or without the
+    // strip inside recordWrittenSettingsKeys. The graft test above is the guard.
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
@@ -592,7 +595,7 @@ describe('regenerateSettings (integration)', () => {
     expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model']);
   });
 
-  it('a garbage record file falls back to today behavior: a local addition is still blocked', async () => {
+  it('a garbage record file falls back to the pre-record behavior: a local addition is blocked', async () => {
     mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
     writeFileSync(writtenRecordPath(), '{ not an array');
     writeFileSync(

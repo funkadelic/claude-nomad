@@ -132,6 +132,8 @@ export function sharedBaselinePath(): string {
  * Per-host record of the top-level keys the last successful settings write
  * produced: `~/.cache/claude-nomad/settings-written-<HOST>.json`. Same
  * call-time HOME and HOST-encoding conventions as `sharedBaselinePath()`.
+ * Keyed on HOME and HOST but NOT the repo, so a `NOMAD_REPO` override pointing
+ * at a second checkout reads a record the first one wrote.
  */
 export function settingsWrittenPath(): string {
   return join(
