@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
   allSharedLinks,
@@ -32,7 +32,7 @@ export { errMessage };
  * Build the manual-remainder checklist using call-time path values.
  * Exported so tests can assert on the exact wording.
  *
- * @returns The checklist string with current repoHome()/backupBase() values.
+ * @returns The checklist string with current repoHome() and cache-dir values.
  */
 export function ejectChecklist(): string {
   return [
@@ -41,7 +41,8 @@ export function ejectChecklist(): string {
     `  2. Remove NOMAD_HOST and NOMAD_REPO from your shell rc (~/.zshrc or ~/.bashrc)`,
     `  3. Optionally delete the local sync checkout: rm -rf ${repoHome()}`,
     `  4. Optionally delete the private sync repo on GitHub`,
-    `  5. Optionally delete the backup cache: rm -rf ${backupBase()}`,
+    `  5. Optionally delete nomad's cache folder, which holds backups, crash reports, and what`,
+    `     nomad remembers about this host (safe once ejected): rm -rf ${dirname(backupBase())}`,
   ].join('\n');
 }
 

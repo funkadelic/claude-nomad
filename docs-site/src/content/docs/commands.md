@@ -354,7 +354,9 @@ dangling symlink (the target is missing) causes the whole command to abort befor
 copy is written, with a hint to run `nomad pull` first to restore the missing target. After all
 copies succeed, eject prints a checklist of the manual steps remaining: uninstall the CLI, remove
 `NOMAD_HOST` and `NOMAD_REPO` from your shell rc, and optionally delete the local sync checkout
-and backup cache. `eject` never writes to the sync repo, never invokes git, and never touches
+and nomad's cache folder, `~/.cache/claude-nomad/`. That folder holds backups, crash reports, and
+what nomad remembers about this machine from past pulls and pushes, so delete all of it rather than
+just `backup/`: a leftover record would be trusted again if you later set nomad up on this machine. `eject` never writes to the sync repo, never invokes git, and never touches
 `~/.claude/projects/` (session transcripts are already real files). On native Windows there is
 usually nothing to materialize: under the win32 copy-sync modality the managed names are already
 real copies, so each is reported as `already a real copy (win32 copy-sync)` and only the manual

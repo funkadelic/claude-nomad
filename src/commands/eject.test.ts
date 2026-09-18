@@ -11,12 +11,12 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { cmdEject, ejectChecklist, ejectNames, errMessage, previewMaterialize } from './eject.ts';
-import type { PathMap } from '../core/config.ts';
+import { backupBase, type PathMap } from '../core/config.ts';
 import { stubPlatform } from '../test-support/platform.ts';
 
 // Windows chmod only toggles the read-only attribute: a 0o500 dir still
@@ -317,6 +317,10 @@ describe('cmdEject', () => {
     expect(ejectChecklist()).toContain('npm uninstall -g claude-nomad');
     expect(ejectChecklist()).toContain('NOMAD_HOST');
     expect(ejectChecklist()).toContain('NOMAD_REPO');
+  });
+
+  it('ejectChecklist() points at the whole cache dir, not just backup/', () => {
+    expect(ejectChecklist().endsWith(`rm -rf ${dirname(backupBase())}`)).toBe(true);
   });
 
   it('tally: live run logs a materialized/skipped summary before the checklist', () => {
