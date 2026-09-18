@@ -24,9 +24,47 @@ export function blockedSettingsKeys(
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
 ): string[] {
+  return partitionByCaptureExclusion(aheadKeysAtRisk(merged, existing, preMerged)).promotable;
+}
+
+/** Live-only keys the merge would drop, minus the ones removed upstream. */
+function aheadKeysAtRisk(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+): string[] {
   const { ahead } = classifySettingsDrift(merged, existing);
   const removedUpstream = new Set(Object.keys(stripGsdHookEntries(preMerged)));
-  return partitionByCaptureExclusion(ahead.filter((key) => !removedUpstream.has(key))).promotable;
+  return ahead.filter((key) => !removedUpstream.has(key));
+}
+
+/**
+ * How many live-only `CAPTURE_EXCLUDED_KEYS` the merge would drop, never naming them.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
+ */
+export function credentialOverwriteCount(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+): number {
+  return partitionByCaptureExclusion(aheadKeysAtRisk(merged, existing, preMerged)).excluded.length;
+}
+
+/**
+ * Count-only WARN for `credentialOverwriteCount`, naming no key. Tense-neutral so
+ * it reads correctly in a dry run and a real pull alike.
+ * @param count - A non-zero `credentialOverwriteCount` result.
+ * @returns The one-line message.
+ */
+export function credentialOverwriteMessage(count: number): string {
+  const one = count === 1;
+  return (
+    `your settings.json has ${count} credential ${one ? 'setting' : 'settings'} ` +
+    `that the repo does not carry; a pull overwrites ${one ? 'it' : 'them'}, so keep ` +
+    `per-host credential settings in ~/.claude/settings.local.json, which nomad never syncs.`
+  );
 }
 
 /**

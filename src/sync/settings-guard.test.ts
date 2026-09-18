@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { blockedSettingsKeys, settingsBlockedMessage } from './settings-guard.ts';
+import {
+  blockedSettingsKeys,
+  credentialOverwriteCount,
+  credentialOverwriteMessage,
+  settingsBlockedMessage,
+} from './settings-guard.ts';
 
 describe('blockedSettingsKeys', () => {
   // `statusLine`, not `hooks`: an empty `hooks: {}` block is stripped away by
@@ -35,6 +40,45 @@ describe('blockedSettingsKeys', () => {
 
   it('never returns an excluded key even when it is the only ahead key', () => {
     expect(blockedSettingsKeys({}, { env: { K: 'v' } }, {})).toEqual([]);
+  });
+});
+
+describe('credentialOverwriteCount', () => {
+  it('counts a live-only credential key the merge would drop', () => {
+    expect(credentialOverwriteCount({ a: 1 }, { a: 1, env: { K: 'v' } }, {})).toBe(1);
+  });
+
+  it('counts every excluded key independently of the promotable ones', () => {
+    const live = { env: { K: 'v' }, apiKeyHelper: '/bin/key', theme: 'dark' };
+    expect(credentialOverwriteCount({}, live, {})).toBe(2);
+  });
+
+  it('returns 0 when the credential key is also in the merge', () => {
+    expect(credentialOverwriteCount({ env: { K: 'v' } }, { env: { K: 'v' } }, {})).toBe(0);
+  });
+
+  it('does not count a credential key the pre-pull merge had (removed upstream)', () => {
+    expect(credentialOverwriteCount({}, { env: { K: 'v' } }, { env: { K: 'old' } })).toBe(0);
+  });
+});
+
+describe('credentialOverwriteMessage', () => {
+  it('reads singular and names no key', () => {
+    const msg = credentialOverwriteMessage(1);
+    expect(msg).toBe(
+      'your settings.json has 1 credential setting that the repo does not carry; ' +
+        'a pull overwrites it, so keep per-host credential settings in ' +
+        '~/.claude/settings.local.json, which nomad never syncs.',
+    );
+  });
+
+  it('reads plural and still names no key', () => {
+    const msg = credentialOverwriteMessage(2);
+    expect(msg).toContain('has 2 credential settings');
+    expect(msg).toContain('a pull overwrites them');
+    for (const key of ['env', 'apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport']) {
+      expect(msg).not.toContain(key);
+    }
   });
 });
 
