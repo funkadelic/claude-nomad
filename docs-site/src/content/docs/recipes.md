@@ -285,7 +285,9 @@ npm uninstall -g claude-nomad
 # 3. Optional: delete the local clone of the sync repo once you no longer need it.
 rm -rf ~/claude-nomad
 
-# 4. Optional: delete nomad's cache folder (backups and crash reports) once you no
+# 4. Optional: delete the private sync repo on GitHub.
+
+# 5. Optional: delete nomad's cache folder (backups and crash reports) once you no
 #    longer need the backups in it.
 rm -rf ~/.cache/claude-nomad
 ```
