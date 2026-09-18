@@ -105,7 +105,8 @@ them and will not stop for them. When it finds some the repo does not track, it 
 A setting that another machine removed from the repo is removed here too. After each successful
 settings write, pull records in `~/.cache/claude-nomad/` the top-level settings it wrote on this
 machine. A setting in that record that the repo no longer carries is one pull wrote, so it is
-removed. A setting missing from the record is one you added, so it is kept and listed as above. The
+removed. It names each setting it removes, and the file from before the pull stays in
+`~/.cache/claude-nomad/backup/`. A setting missing from the record is one you added, so it is kept and listed as above. The
 timing no longer matters: an edit you made to the repo, a `nomad push`, or an earlier
 `nomad pull --dry-run` all behave the same as a removal arriving with the pull. The record is one
 per machine, never synced, and holds setting names only.

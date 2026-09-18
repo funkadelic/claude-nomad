@@ -470,12 +470,18 @@ describe('regenerateSettings (integration)', () => {
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
     const result = regenerateSettings('20260516-000000');
 
     expect(result.blocked).toEqual([]);
     expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toEqual({
       model: 'sonnet',
     });
+    // The deletion is announced by name, not hidden behind the green row.
+    expect(writes.join('')).toContain('the repo no longer carries 1 setting (theme)');
   });
 
   /** Path of the per-host written-keys record under the sandbox HOME. */

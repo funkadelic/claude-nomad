@@ -4,7 +4,9 @@ import {
   blockedSettingsKeys,
   credentialOverwriteCount,
   credentialOverwriteMessage,
+  removedSettingsKeys,
   settingsBlockedMessage,
+  settingsRemovedMessage,
 } from './settings-guard.ts';
 
 describe('blockedSettingsKeys', () => {
@@ -125,5 +127,34 @@ describe('settingsBlockedMessage', () => {
     );
     expect(msg).toContain('that are not in the repo');
     expect(msg).toContain('delete them from ~/.claude/settings.json if you no longer want them');
+  });
+});
+
+describe('removedSettingsKeys', () => {
+  const live = { a: 1, theme: 'dark', statusLine: 1, env: { K: 'v' } };
+
+  it('returns live-only keys the pre-pull merge or the record carried', () => {
+    expect(removedSettingsKeys({ a: 1 }, live, { theme: 'x' }, ['statusLine'])).toEqual([
+      'statusLine',
+      'theme',
+    ]);
+  });
+
+  it('excludes keys the pull refuses instead of deleting', () => {
+    expect(removedSettingsKeys({ a: 1 }, live, {}, null)).toEqual([]);
+  });
+
+  it('leaves credential keys to the count-only WARN', () => {
+    expect(removedSettingsKeys({ a: 1 }, live, {}, ['env'])).toEqual([]);
+  });
+});
+
+describe('settingsRemovedMessage', () => {
+  it('names the keys and the backup location', () => {
+    expect(settingsRemovedMessage(['theme'])).toBe(
+      'the repo no longer carries 1 setting (theme); a pull removes it from settings.json ' +
+        '(the file from before the pull is kept under ~/.cache/claude-nomad/backup/).',
+    );
+    expect(settingsRemovedMessage(['a', 'b'])).toContain('2 settings (a, b); a pull removes them');
   });
 });

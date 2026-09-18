@@ -8,6 +8,8 @@ import {
   blockedSettingsKeys,
   credentialOverwriteCount,
   credentialOverwriteMessage,
+  removedSettingsKeys,
+  settingsRemovedMessage,
   settingsBlockedMessage,
 } from './settings-guard.ts';
 import { preRebaseSettingsMerge } from './settings-upstream.ts';
@@ -208,7 +210,8 @@ function readExistingSettings(settingsPath: string): {
  * result: a promotable ahead-drift key is refused (via `fail`) rather than
  * silently overwritten; otherwise a behind-drift key WARNs advising
  * `nomad pull`. The behind WARN is skipped on a refusal, since this pull is
- * not restoring anything. A live-only credential key WARNs by count only.
+ * not restoring anything. A key removed upstream WARNs by name before it is
+ * deleted; a live-only credential key WARNs by count only.
  *
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
@@ -235,6 +238,8 @@ function reportSettingsDrift(
         `run 'nomad pull' to restore ${pronoun}.`,
     );
   }
+  const removed = removedSettingsKeys(merged, existing, preMerged, written);
+  if (removed.length > 0) warn(settingsRemovedMessage(removed));
   const credentials = credentialOverwriteCount(merged, existing);
   if (credentials > 0) warn(credentialOverwriteMessage(credentials));
   return blocked;
