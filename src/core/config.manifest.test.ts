@@ -1,8 +1,8 @@
 import { basename } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { HOST, manifestPath, sharedBaselinePath } from './config.ts';
+import { HOST, manifestPath, settingsWrittenPath, sharedBaselinePath } from './config.ts';
 
 /**
  * Behavior tests for `manifestPath()`. Asserts the per-host manifest file
@@ -88,5 +88,56 @@ describe('sharedBaselinePath', () => {
 
   it('does not collide with the push manifest path', () => {
     expect(sharedBaselinePath()).not.toBe(manifestPath());
+  });
+});
+
+/**
+ * Behavior tests for `settingsWrittenPath()`. Same conventions as
+ * `manifestPath`/`sharedBaselinePath`: a per-host filename and call-time
+ * HOME resolution.
+ */
+describe('settingsWrittenPath', () => {
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+  });
+
+  afterEach(() => {
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+  });
+
+  it('embeds HOST under <home>/.cache/claude-nomad/', () => {
+    const p = settingsWrittenPath();
+    expect(p).toContain('.cache');
+    expect(p).toContain('claude-nomad');
+    expect(basename(p)).toBe(`settings-written-${encodeURIComponent(HOST)}.json`);
+  });
+
+  it('reflects a mid-process HOME swap without resetModules', () => {
+    process.env.HOME = '/home/original';
+    const p1 = settingsWrittenPath();
+    process.env.HOME = '/home/swapped';
+    const p2 = settingsWrittenPath();
+    expect(p1).toContain('original');
+    expect(p2).toContain('swapped');
+    expect(p1).not.toBe(p2);
+  });
+
+  it('encodes a HOST holding a path separator so it cannot escape the filename slot', async () => {
+    const original = process.env.NOMAD_HOST;
+    process.env.NOMAD_HOST = 'evil/host';
+    vi.resetModules();
+    try {
+      const { settingsWrittenPath: freshPath } = await import('./config.ts');
+      const p = freshPath();
+      expect(p).not.toContain('evil/host');
+      expect(basename(p)).toBe(`settings-written-${encodeURIComponent('evil/host')}.json`);
+    } finally {
+      if (original !== undefined) process.env.NOMAD_HOST = original;
+      else delete process.env.NOMAD_HOST;
+      vi.resetModules();
+    }
   });
 });

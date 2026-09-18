@@ -11,6 +11,7 @@ import {
   settingsBlockedMessage,
 } from './settings-guard.ts';
 import { preRebaseSettingsMerge } from './settings-upstream.ts';
+import { readWrittenSettingsKeys, recordWrittenSettingsKeys } from './settings-written.ts';
 import { applySharedLinksWin32 } from './links.win32.ts';
 import { die, fail, log, warn } from '../core/utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from '../core/utils.fs.ts';
@@ -212,14 +213,16 @@ function readExistingSettings(settingsPath: string): {
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
+ * @param written - Recorded keys from the last successful write; see `blockedSettingsKeys`.
  * @returns The blocked keys, so the caller can skip the write.
  */
 function reportSettingsDrift(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
+  written: readonly string[] | null,
 ): string[] {
-  const blocked = blockedSettingsKeys(merged, existing, preMerged);
+  const blocked = blockedSettingsKeys(merged, existing, preMerged, written);
   if (blocked.length > 0) {
     fail(settingsBlockedMessage(blocked, 'left unchanged'));
     return blocked;
@@ -313,6 +316,7 @@ export function regenerateSettings(
         merged,
         existing,
         preRebaseSettingsMerge(repo, opts.prePostHeads),
+        readWrittenSettingsKeys(),
       );
     }
   }
@@ -336,9 +340,8 @@ export function regenerateSettings(
   // hooks in the live file, or an absent/malformed file) is a byte-identical
   // no-op.
   backupBeforeWrite(settingsPath, ts);
-  writeJsonAtomic(
-    settingsPath,
-    graftGsdHookEntries(stripGsdHookEntries(merged), keepGsdHookEntries(existing)),
-  );
+  const payload = graftGsdHookEntries(stripGsdHookEntries(merged), keepGsdHookEntries(existing));
+  writeJsonAtomic(settingsPath, payload);
+  recordWrittenSettingsKeys(payload);
   return { label: overrideLabel, blocked };
 }

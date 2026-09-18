@@ -102,10 +102,17 @@ them and will not stop for them. When it finds some the repo does not track, it 
 `settings.json` as usual and tells you how many it replaced. Keep values like these in
 `~/.claude/settings.local.json`, which nomad never touches.
 
-A setting that another machine removed from the repo is removed here too, as long as the removal
-arrives with the pull itself. If it was already in the sync repo before the pull (you edited the
-repo yourself, or `nomad push` or `nomad pull --dry-run` fetched it first), pull treats it like a
-setting you added and lists it; delete it from `~/.claude/settings.json` and pull again.
+A setting that another machine removed from the repo is removed here too. After each successful
+settings write, pull records in `~/.cache/claude-nomad/` the top-level settings it wrote on this
+machine. A setting in that record that the repo no longer carries is one pull wrote, so it is
+removed. A setting missing from the record is one you added, so it is kept and listed as above. The
+timing no longer matters: an edit you made to the repo, a `nomad push`, or an earlier
+`nomad pull --dry-run` all behave the same as a removal arriving with the pull. The record is one
+per machine, never synced, and holds setting names only.
+
+A machine with no record yet, either before its first successful pull or after the cache folder is
+cleared, keeps the older behavior. A removal already present in the repo is listed as a setting you
+added and the pull exits 6. Save or delete the setting as above and pull again.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

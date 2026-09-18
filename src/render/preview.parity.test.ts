@@ -91,6 +91,52 @@ describe('settings preview and wet pull parity', () => {
     expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toMatchObject({ model: 'sonnet' });
   });
 
+  it('a recorded key removed from the repo: neither side refuses', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n');
+    const { regenerateSettings } = await import('../sync/links.ts');
+    regenerateSettings('20260516-000000');
+
+    writeFileSync(basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
+    const { previewSettings } = await import('./preview.ts');
+    const { readWrittenSettingsKeys } = await import('../sync/settings-written.ts');
+    const preview = previewSettings(
+      basePath,
+      hostPath,
+      settingsPath,
+      {},
+      readWrittenSettingsKeys(),
+    );
+    expect(preview.notes.some((n) => n.includes('would be left unchanged'))).toBe(false);
+    expect(preview.diff).not.toBe('');
+
+    const wet = regenerateSettings('20260516-000000');
+    expect(wet.blocked).toEqual([]);
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({ model: 'sonnet' });
+  });
+
+  it('an unrecorded local addition: both sides refuse', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
+    writeFileSync(settingsPath, JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n');
+    // A record naming a DIFFERENT key, so this exercises the record-present
+    // branch rather than the no-record fallback both sides took before.
+    const { recordWrittenSettingsKeys } = await import('../sync/settings-written.ts');
+    recordWrittenSettingsKeys({ model: 'sonnet' });
+
+    const { previewSettings } = await import('./preview.ts');
+    const { readWrittenSettingsKeys } = await import('../sync/settings-written.ts');
+    const preview = previewSettings(
+      basePath,
+      hostPath,
+      settingsPath,
+      {},
+      readWrittenSettingsKeys(),
+    );
+    expect(preview.notes.at(-1)).toContain('theme');
+
+    const { regenerateSettings } = await import('../sync/links.ts');
+    expect(regenerateSettings('20260516-000000').blocked).toEqual(['theme']);
+  });
+
   it('malformed host file: the preview names no refusal the wet pull cannot reach', async () => {
     writeFileSync(basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
     writeFileSync(hostPath, '{ malformed json');

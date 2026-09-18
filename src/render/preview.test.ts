@@ -292,6 +292,16 @@ describe('previewSettings canonicalization', () => {
     expect(result.notes.at(-1)).toContain('settings.json would be left unchanged');
   });
 
+  it('with the ahead key named in written, reports a diff and no refusal', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(settingsPath, JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2));
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath, {}, ['statusLine']);
+    expect(result.notes.some((n) => n.includes('would be left unchanged'))).toBe(false);
+    expect(result.diff).not.toBe('');
+  });
+
   it('returns the pre-change diff and notes when there is no ahead-drift key (regression)', async () => {
     writeFileSync(basePath, JSON.stringify({ model: 'opus', hooks: {}, statusLine: 1 }, null, 2));
     writeFileSync(
@@ -478,6 +488,32 @@ describe('computePreview orchestration', () => {
     expect(joined).not.toContain('+++ would write');
     expect(snapshotTree(claudeDir)).toEqual(beforeClaude);
     expect(process.exitCode).toBe(originalExitCode);
+  });
+
+  it('with a record file naming the ahead key, renders a diff instead of the refusal', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2) + '\n',
+    );
+    writeFileSync(join(repoUnderHome, 'path-map.json'), JSON.stringify({ projects: {} }) + '\n');
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(
+      join(testHome, '.cache', 'claude-nomad', 'settings-written-test-host.json'),
+      JSON.stringify(['statusLine']),
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} });
+
+    const joined = logs.join('\n');
+    expect(joined).not.toContain('would be left unchanged');
+    expect(joined).toContain('+++ would write');
   });
 
   it('surfaces the retained local-only count as a plain Sessions row and a non-clean Summary', async () => {

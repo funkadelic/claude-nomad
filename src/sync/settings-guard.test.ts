@@ -41,6 +41,31 @@ describe('blockedSettingsKeys', () => {
   it('never returns an excluded key even when it is the only ahead key', () => {
     expect(blockedSettingsKeys({}, { env: { K: 'v' } }, {})).toEqual([]);
   });
+
+  it('does not block a key the record names, even when preMerged is empty (removed upstream)', () => {
+    const live = { a: 1, theme: 'dark' };
+    expect(blockedSettingsKeys({ a: 1 }, live, {}, ['theme'])).toEqual([]);
+  });
+
+  it('still blocks a key the record does not name (local addition)', () => {
+    const live = { a: 1, theme: 'dark' };
+    expect(blockedSettingsKeys({ a: 1 }, live, {}, ['model'])).toEqual(['theme']);
+  });
+
+  it('unions preMerged and the record: a key only preMerged had is still excluded', () => {
+    const live = { a: 1, statusLine: 1, theme: 'dark' };
+    expect(blockedSettingsKeys({ a: 1 }, live, { a: 1, statusLine: 1 }, ['theme'])).toEqual([]);
+  });
+
+  it('an empty record array blocks exactly as a null record does', () => {
+    const live = { a: 1, theme: 'dark' };
+    expect(blockedSettingsKeys({ a: 1 }, live, {}, [])).toEqual(['theme']);
+  });
+
+  it('keeps a credential key (env) out of the blocked list whether or not the record names it', () => {
+    expect(blockedSettingsKeys({ a: 1 }, { a: 1, env: { K: 'v' } }, {}, [])).toEqual([]);
+    expect(blockedSettingsKeys({ a: 1 }, { a: 1, env: { K: 'v' } }, {}, ['env'])).toEqual([]);
+  });
 });
 
 describe('credentialOverwriteCount', () => {
