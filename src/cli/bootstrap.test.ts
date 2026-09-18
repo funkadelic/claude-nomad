@@ -5,13 +5,13 @@ import { ProcessExit } from '../core/utils.ts';
 import pkg from '../../package.json' with { type: 'json' };
 import type * as Bootstrap from './bootstrap.ts';
 
-// The process bootstrap behind the `nomad` binary. `process.exit` is stubbed to
-// throw a ProcessExit sentinel so a `never`-typed branch returns to the test
-// instead of killing the worker, and crash-report.write.ts is mocked so the
-// crash branch writes no file. NomadFatal is imported dynamically because
-// handleTopLevelError uses `instanceof` and vi.resetModules() splits realms;
-// ProcessExit is not, since it is matched by a registered-symbol brand. The
-// async arm of forceTestCrash is deliberately
+// `process.exit` is stubbed to throw a ProcessExit sentinel so a `never`-typed
+// branch returns to the test instead of killing the worker, and
+// crash-report.write.ts is mocked so the crash branch writes no file.
+
+// NomadFatal is imported dynamically because handleTopLevelError matches it with
+// `instanceof` and vi.resetModules() splits realms; ProcessExit is matched by a
+// registered-symbol brand instead. The async arm of forceTestCrash stays
 // uncovered here (see its c8 ignore); src/nomad.crash.test.ts spawns the real
 // binary for it.
 

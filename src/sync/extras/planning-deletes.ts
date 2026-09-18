@@ -1,7 +1,6 @@
 /**
- * Propagation of upstream `.planning` deletions into the host-side project
- * tree, split out of `remap.ts` so the git-diff delete pass and its
- * delete-vs-edit conflict rules live apart from the extras copy loop.
+ * Propagates upstream `.planning` deletions into the host-side project tree.
+ * `remap.ts` runs this after its extras copy loop, on the pull side only.
  */
 
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';

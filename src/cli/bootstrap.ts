@@ -1,7 +1,7 @@
 /**
  * Process-level bootstrap for the `nomad` binary: the home-directory
  * preflight, the single fatal-error funnel, and the test-only crash seam.
- * Split out of `nomad.ts` so that file stays argv dispatch.
+ * `nomad.ts` calls these around its argv dispatch.
  */
 
 import { home } from '../core/config.ts';

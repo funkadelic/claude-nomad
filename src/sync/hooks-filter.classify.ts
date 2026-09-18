@@ -1,8 +1,7 @@
 /**
- * Classifies a hook entry's `command` string as gsd-owned or user-authored,
- * split out of `hooks-filter.ts` so shell-command parsing lives apart from the
- * settings-block filtering that consumes it. Sibling of
- * `hooks-filter.command-sub.ts`, which handles command substitutions.
+ * Classifies a hook entry's `command` string as gsd-owned or user-authored.
+ * `hooks-filter.ts` consumes this to filter the settings `hooks` block, and
+ * `hooks-filter.command-sub.ts` handles the substitutions the walk steps over.
  */
 
 import { GSD_PREFIX } from '../core/config.ts';

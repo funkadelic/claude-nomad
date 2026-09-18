@@ -1,7 +1,6 @@
 /**
  * Read-only accounting of session files that exist on this host but not in the
- * repo, split out of `remap.ts` so the counter stays clear of the copy paths.
- * Performs no filesystem mutation.
+ * repo. Performs no filesystem mutation; `remap.ts` owns the copy paths.
  */
 
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
@@ -40,8 +39,8 @@ function countLocalOnly(src: string, dst: string): number {
 // files now, so keep their guards in step when either changes.
 
 // Retain-merge never changes the local-only set, so the pre-copy and post-copy
-// counts are equal. That is what lets the wet pull summary and the dry-run
-// preview both call this against current state.
+// counts are equal and both the wet pull summary and the dry-run preview can
+// call this against current state.
 
 /**
  * Total local-only session leaf files across all mapped projects, the honest
