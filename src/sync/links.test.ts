@@ -477,6 +477,138 @@ describe('regenerateSettings (integration)', () => {
       model: 'sonnet',
     });
   });
+
+  /** Path of the per-host written-keys record under the sandbox HOME. */
+  function writtenRecordPath(): string {
+    return join(testHome, '.cache', 'claude-nomad', 'settings-written-test-host.json');
+  }
+
+  it('never deletes a live non-gsd hook after a write that grafted gsd hooks back in', async () => {
+    const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+    const userHook = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({
+        model: 'opus',
+        hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook] }] },
+      }) + '\n',
+    );
+
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+
+    const writtenFile = JSON.parse(
+      readFileSync(join(claudeDir, 'settings.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(writtenFile).toHaveProperty('hooks');
+    expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model']);
+
+    const step2Content =
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { PreToolUse: [{ matcher: '', hooks: [userHook] }] },
+      }) + '\n';
+    writeFileSync(join(claudeDir, 'settings.json'), step2Content);
+
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' ') + '\n');
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    const result = regenerateSettings('20260516-000000');
+    expect(result.blocked).toEqual(['hooks']);
+    expect(writes.join('')).toContain('hooks');
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(step2Content);
+  });
+
+  it('the empty-hooks-block variant never reaches the record even absent a live file', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model']);
+  });
+
+  it('a successful regenerate writes the record file with the written top-level keys', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model', 'theme']);
+  });
+
+  it('the blocked path writes no record', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'opus', statusLine: 1 }) + '\n',
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const { regenerateSettings } = await import('./links.ts');
+    const result = regenerateSettings('20260516-000000');
+    expect(result.blocked).toEqual(['statusLine']);
+    expect(existsSync(writtenRecordPath())).toBe(false);
+  });
+
+  it('the dry-run path writes no record', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000', { dryRun: true });
+    expect(existsSync(writtenRecordPath())).toBe(false);
+  });
+
+  it('suppressDriftWarn: true still refreshes the record, because it still writes', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'sonnet', statusLine: 1 }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000', { suppressDriftWarn: true });
+    expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model']);
+  });
+
+  it('a garbage record file falls back to today behavior: a local addition is still blocked', async () => {
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(writtenRecordPath(), '{ not an array');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'sonnet', statusLine: 1 }) + '\n',
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const { regenerateSettings } = await import('./links.ts');
+    const result = regenerateSettings('20260516-000000');
+    expect(result.blocked).toEqual(['statusLine']);
+  });
 });
 
 describe('applySharedLinks auto-move', () => {
