@@ -66,9 +66,10 @@ session history survives different file paths and your secrets never ride along.
   warning, not a failure), and settings drift in both directions: keys present in the repo merge but
   absent from your live `settings.json` (behind; the next `nomad pull` will restore them, fix:
   `nomad pull`) and keys present locally but not yet in the repo (ahead; local-only additions, fix:
-  `nomad capture-settings`). Each issue includes a fix hint. By default the report is compact: it
-  shows only checks that need action plus a one-line verdict. Add `--verbose` (or `--all` / `-v`) to
-  see the full per-check tree, including everything that passed.
+  `nomad capture-settings`), plus a warning for a local setting the next pull will remove because
+  the repo dropped it. Each issue includes a fix hint. By default the report is compact: it shows
+  only checks that need action plus a one-line verdict. Add `--verbose` (or `--all` / `-v`) to see
+  the full per-check tree, including everything that passed.
 - **Self-healing sync.** Every overwrite is backed up first, and `nomad pull --force-remote`
   recovers two kinds of stuck sync repo: a repo stuck mid-rebase or mid-merge (aborts the operation,
   parks stranded work on a branch, refuses if shared config is at risk), and a repo where the rebase
@@ -234,10 +235,11 @@ them and will not stop for them. When it finds some your repo does not track, it
 A setting that another machine removed from the repo is removed here too. Each time nomad writes
 your settings, on a pull or a `nomad capture-settings`, it records which settings it wrote on this
 machine. A setting in that record that the repo no longer carries is one nomad put there, so the
-next pull removes it. It names each setting it removes, and the file from before the pull stays in
-`~/.cache/claude-nomad/backup/`. A setting missing from the record is one you added, so it is kept
-and listed as above. The timing no longer matters: the removal can arrive with this pull, or have
-reached your repo earlier through an edit you made, a `nomad push`, or a `nomad pull --dry-run`.
+next pull removes it. The pull names each setting it removes (so does `nomad pull --dry-run`), and
+the file from before the pull stays in `~/.cache/claude-nomad/backup/`. A setting missing from the
+record is one you added, so it is kept and listed as above. The timing no longer matters: the
+removal can arrive with this pull, or have reached your repo earlier through an edit you made, a
+`nomad push`, or a `nomad pull --dry-run`.
 
 A machine that has not finished a pull yet, or whose cache folder was cleared, has nothing recorded.
 There a removal that reached the repo earlier is still listed as a setting you added. Save it or

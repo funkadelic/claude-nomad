@@ -150,11 +150,18 @@ describe('removedSettingsKeys', () => {
 });
 
 describe('settingsRemovedMessage', () => {
-  it('names the keys and the backup location', () => {
-    expect(settingsRemovedMessage(['theme'])).toBe(
-      'the repo no longer carries 1 setting (theme); a pull removes it from settings.json ' +
-        '(the file from before the pull is kept under ~/.cache/claude-nomad/backup/).',
+  it('reports a finished pull with its backup file', () => {
+    expect(settingsRemovedMessage(['theme'], '20260101-000000')).toBe(
+      'this pull removed 1 setting (theme) from settings.json because the repo no longer ' +
+        'carries it; the previous file is at ' +
+        '~/.cache/claude-nomad/backup/20260101-000000/settings.json.',
     );
-    expect(settingsRemovedMessage(['a', 'b'])).toContain('2 settings (a, b); a pull removes them');
+  });
+
+  it('previews without a timestamp', () => {
+    expect(settingsRemovedMessage(['a', 'b'])).toBe(
+      'a pull would remove 2 settings (a, b) from settings.json because the repo no longer ' +
+        'carries them.',
+    );
   });
 });

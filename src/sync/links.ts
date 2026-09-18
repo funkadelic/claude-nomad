@@ -210,25 +210,27 @@ function readExistingSettings(settingsPath: string): {
  * result: a promotable ahead-drift key is refused (via `fail`) rather than
  * silently overwritten; otherwise a behind-drift key WARNs advising
  * `nomad pull`. The behind WARN is skipped on a refusal, since this pull is
- * not restoring anything. A key removed upstream WARNs by name before it is
- * deleted; a live-only credential key WARNs by count only.
+ * not restoring anything. A live-only credential key WARNs by count only.
+ * Keys removed upstream are returned, not reported: the caller names them
+ * once the write has happened.
  *
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
  * @param written - Recorded keys from the last successful write; see `blockedSettingsKeys`.
- * @returns The blocked keys, so the caller can skip the write.
+ * @returns The blocked keys, so the caller can skip the write, and the keys
+ *   the write removes (empty when blocked).
  */
 function reportSettingsDrift(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: readonly string[] | null,
-): string[] {
+): { blocked: string[]; removed: string[] } {
   const blocked = blockedSettingsKeys(merged, existing, preMerged, written);
   if (blocked.length > 0) {
     fail(settingsBlockedMessage(blocked, 'left unchanged'));
-    return blocked;
+    return { blocked, removed: [] };
   }
   const { behind } = classifySettingsDrift(merged, existing);
   if (behind.length > 0) {
@@ -238,11 +240,9 @@ function reportSettingsDrift(
         `run 'nomad pull' to restore ${pronoun}.`,
     );
   }
-  const removed = removedSettingsKeys(merged, existing, preMerged, written);
-  if (removed.length > 0) warn(settingsRemovedMessage(removed));
   const credentials = credentialOverwriteCount(merged, existing);
   if (credentials > 0) warn(credentialOverwriteMessage(credentials));
-  return blocked;
+  return { blocked, removed: removedSettingsKeys(merged, existing, preMerged, written) };
 }
 
 /**
@@ -274,8 +274,9 @@ function reportSettingsDrift(
  * @param opts.prePostHeads - Pre/post-pull HEADs; a key the pre-pull merge had
  *   is treated as removed upstream and deleted instead of refused.
  * @returns `label`, the override-source tag (`'<HOST>.json'` or
- *   `'no host overrides'`) for the Settings row, and `blocked`, the keys that
- *   stopped the write (empty when it was written).
+ *   `'no host overrides'`) for the Settings row, `blocked`, the keys that
+ *   stopped the write (empty when it was written), and `removed`, the keys the
+ *   write dropped because the repo no longer carries them.
  */
 export function regenerateSettings(
   ts: string,
@@ -284,7 +285,7 @@ export function regenerateSettings(
     suppressDriftWarn?: boolean;
     prePostHeads?: { pre: string; post: string };
   } = {},
-): { label: string; blocked: string[] } {
+): { label: string; blocked: string[]; removed: string[] } {
   const dryRun = opts.dryRun === true;
   const suppressDriftWarn = opts.suppressDriftWarn === true;
   const repo = repoHome();
@@ -313,30 +314,32 @@ export function regenerateSettings(
   // ahead-drift write. Runs in dry-run mode too. Malformed prior
   // settings.json bypasses the gate; the whole point is to overwrite it.
   let blocked: string[] = [];
+  let removed: string[] = [];
   if (!suppressDriftWarn && present) {
     if (malformed) {
       warn('existing settings.json is malformed; skipping drift-check and regenerating.');
     } else {
-      blocked = reportSettingsDrift(
+      ({ blocked, removed } = reportSettingsDrift(
         merged,
         existing,
         preRebaseSettingsMerge(repo, opts.prePostHeads),
         readWrittenSettingsKeys(),
-      );
+      ));
     }
   }
 
   const overrideLabel = hasOverrides ? `${HOST}.json` : 'no host overrides';
 
   if (dryRun) {
+    if (removed.length > 0) warn(settingsRemovedMessage(removed));
     log(`would write settings.json (base + ${overrideLabel})`);
-    return { label: overrideLabel, blocked };
+    return { label: overrideLabel, blocked, removed };
   }
 
   // A blocked write is skipped entirely: no backup (nothing changes) and no
   // atomic write, leaving the live file exactly as it was.
   if (blocked.length > 0) {
-    return { label: overrideLabel, blocked };
+    return { label: overrideLabel, blocked, removed };
   }
 
   // Preserve the gsd-owned hook entries the live file already carries (gsd
@@ -348,5 +351,7 @@ export function regenerateSettings(
   const payload = graftGsdHookEntries(stripGsdHookEntries(merged), keepGsdHookEntries(existing));
   writeJsonAtomic(settingsPath, payload);
   recordWrittenSettingsKeys(payload);
-  return { label: overrideLabel, blocked };
+  // Named only after the write, so a failed write never announces a removal.
+  if (removed.length > 0) warn(settingsRemovedMessage(removed, ts));
+  return { label: overrideLabel, blocked, removed };
 }

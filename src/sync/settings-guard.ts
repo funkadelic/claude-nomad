@@ -72,17 +72,19 @@ function splitAheadKeys(
 }
 
 /**
- * WARN for a non-empty `removedSettingsKeys` result, naming the keys and where
- * the pre-pull copy lives. Tense-neutral for dry run and real pull alike.
+ * WARN for a non-empty `removedSettingsKeys` result, naming the keys. With
+ * `ts` it reports a finished pull and names its backup; without, a preview.
  * @param keys - The removed keys.
+ * @param ts - The pull's backup timestamp, or omitted for a preview.
  * @returns The one-line message.
  */
-export function settingsRemovedMessage(keys: string[]): string {
+export function settingsRemovedMessage(keys: string[], ts?: string): string {
   const { phrase, pronoun } = describeSettings(keys);
-  return (
-    `the repo no longer carries ${phrase}; a pull removes ${pronoun} from settings.json ` +
-    `(the file from before the pull is kept under ~/.cache/claude-nomad/backup/).`
-  );
+  const because = `because the repo no longer carries ${pronoun}`;
+  return ts === undefined
+    ? `a pull would remove ${phrase} from settings.json ${because}.`
+    : `this pull removed ${phrase} from settings.json ${because}; ` +
+        `the previous file is at ~/.cache/claude-nomad/backup/${ts}/settings.json.`;
 }
 
 /**
