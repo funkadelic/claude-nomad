@@ -232,7 +232,7 @@ function reportSettingsDrift(
         `run 'nomad pull' to restore ${pronoun}.`,
     );
   }
-  const credentials = credentialOverwriteCount(merged, existing, preMerged);
+  const credentials = credentialOverwriteCount(merged, existing);
   if (credentials > 0) warn(credentialOverwriteMessage(credentials));
   return blocked;
 }

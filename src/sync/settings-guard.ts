@@ -24,32 +24,23 @@ export function blockedSettingsKeys(
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
 ): string[] {
-  return partitionByCaptureExclusion(aheadKeysAtRisk(merged, existing, preMerged)).promotable;
-}
-
-/** Live-only keys the merge would drop, minus the ones removed upstream. */
-function aheadKeysAtRisk(
-  merged: Record<string, unknown>,
-  existing: Record<string, unknown>,
-  preMerged: Record<string, unknown>,
-): string[] {
   const { ahead } = classifySettingsDrift(merged, existing);
   const removedUpstream = new Set(Object.keys(stripGsdHookEntries(preMerged)));
-  return ahead.filter((key) => !removedUpstream.has(key));
+  return partitionByCaptureExclusion(ahead.filter((key) => !removedUpstream.has(key))).promotable;
 }
 
 /**
- * How many live-only `CAPTURE_EXCLUDED_KEYS` the merge would drop, never naming them.
+ * How many live-only `CAPTURE_EXCLUDED_KEYS` the merge would drop, never naming
+ * them. No `preMerged` filter: the write keeps only `merged`, so an upstream
+ * removal destroys the live value just the same.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
- * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
  */
 export function credentialOverwriteCount(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
-  preMerged: Record<string, unknown>,
 ): number {
-  return partitionByCaptureExclusion(aheadKeysAtRisk(merged, existing, preMerged)).excluded.length;
+  return partitionByCaptureExclusion(classifySettingsDrift(merged, existing).ahead).excluded.length;
 }
 
 /**

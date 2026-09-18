@@ -45,20 +45,22 @@ describe('blockedSettingsKeys', () => {
 
 describe('credentialOverwriteCount', () => {
   it('counts a live-only credential key the merge would drop', () => {
-    expect(credentialOverwriteCount({ a: 1 }, { a: 1, env: { K: 'v' } }, {})).toBe(1);
+    expect(credentialOverwriteCount({ a: 1 }, { a: 1, env: { K: 'v' } })).toBe(1);
   });
 
   it('counts every excluded key independently of the promotable ones', () => {
     const live = { env: { K: 'v' }, apiKeyHelper: '/bin/key', theme: 'dark' };
-    expect(credentialOverwriteCount({}, live, {})).toBe(2);
+    expect(credentialOverwriteCount({}, live)).toBe(2);
   });
 
   it('returns 0 when the credential key is also in the merge', () => {
-    expect(credentialOverwriteCount({ env: { K: 'v' } }, { env: { K: 'v' } }, {})).toBe(0);
+    expect(credentialOverwriteCount({ env: { K: 'v' } }, { env: { K: 'v' } })).toBe(0);
   });
 
-  it('does not count a credential key the pre-pull merge had (removed upstream)', () => {
-    expect(credentialOverwriteCount({}, { env: { K: 'v' } }, { env: { K: 'old' } })).toBe(0);
+  it('counts a credential key removed upstream, which the write still destroys', () => {
+    // Unlike the refusal, an upstream removal is no reason to stay quiet: the
+    // write keeps only `merged`, so the live value is gone either way.
+    expect(credentialOverwriteCount({}, { env: { K: 'v' } })).toBe(1);
   });
 });
 
