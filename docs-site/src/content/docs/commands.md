@@ -352,9 +352,9 @@ skipped. A managed name that is a symlink pointing outside the sync repo's `shar
 skipped as not nomad-managed and left untouched, so eject only materializes links it owns. A
 dangling symlink (the target is missing) causes the whole command to abort before any
 copy is written, with a hint to run `nomad pull` first to restore the missing target. After all
-copies succeed, eject deletes what nomad remembers about this machine from past pulls and pushes
-(the per-host records in `~/.cache/claude-nomad/`), so a later setup on this machine starts fresh
-instead of trusting them. `--dry-run` lists those records without deleting them. Eject then prints
+copies succeed, eject deletes the records nomad keeps about this machine in
+`~/.cache/claude-nomad/`, so a later setup on this machine starts fresh instead of trusting them.
+`--dry-run` lists those records without deleting them. Eject then prints
 a checklist of the manual steps remaining: uninstall the CLI, remove `NOMAD_HOST` and `NOMAD_REPO`
 from your shell rc, and optionally delete the local sync checkout and the rest of
 `~/.cache/claude-nomad/` (backups and crash reports) once you no longer need the backups in it.

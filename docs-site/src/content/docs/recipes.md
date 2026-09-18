@@ -272,7 +272,7 @@ Eject only touches symlinks nomad created: real files and directories are left u
 aborts (pointing you at `nomad pull`) if it finds a dangling symlink rather than copying from an
 unknown target. On native Windows the managed names are already real copies (the win32 copy-sync
 modality), so eject has nothing to materialize and goes straight to the checklist. It also deletes
-the records nomad kept about this machine, so setting nomad up here again later starts fresh. When
+the records nomad keeps about this machine, so setting nomad up here again later starts fresh. When
 it finishes it prints a manual-remainder checklist for the steps it cannot do for you:
 
 ```bash
