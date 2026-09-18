@@ -420,7 +420,7 @@ describe('regenerateSettings (integration)', () => {
   it('does NOT advise capture when settings is ahead only via a capture-excluded key', async () => {
     // ahead-only drift whose sole local-only key is excluded from capture (env):
     // advising nomad capture-settings would be a no-op and would name a
-    // secret-bearing key, so no ahead-drift WARN fires.
+    // secret-bearing key, so the count-only credential WARN fires instead.
     writeFileSync(
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
@@ -444,6 +444,11 @@ describe('regenerateSettings (integration)', () => {
       const captured = writes.join('');
       expect(captured).not.toContain('nomad capture-settings');
       expect(captured).not.toContain('env');
+      // The write still takes the key, so a count-only WARN says so without
+      // naming it or the value it held.
+      expect(captured).toContain('1 credential setting that the repo does not carry');
+      expect(captured).toContain('settings.local.json');
+      expect(captured).not.toContain('sk-secret');
       expect(result.blocked).toEqual([]);
       // regenerateSettings never touches process.exitCode; only the pull
       // command layer does, and only when `blocked` is non-empty.

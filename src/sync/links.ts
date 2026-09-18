@@ -4,7 +4,12 @@ import { join } from 'node:path';
 import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { classifySettingsDrift, describeSettings } from '../commands/capture-settings/core.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
-import { blockedSettingsKeys, settingsBlockedMessage } from './settings-guard.ts';
+import {
+  blockedSettingsKeys,
+  credentialOverwriteCount,
+  credentialOverwriteMessage,
+  settingsBlockedMessage,
+} from './settings-guard.ts';
 import { preRebaseSettingsMerge } from './settings-upstream.ts';
 import { applySharedLinksWin32 } from './links.win32.ts';
 import { die, fail, log, warn } from '../core/utils.ts';
@@ -202,7 +207,7 @@ function readExistingSettings(settingsPath: string): {
  * result: a promotable ahead-drift key is refused (via `fail`) rather than
  * silently overwritten; otherwise a behind-drift key WARNs advising
  * `nomad pull`. The behind WARN is skipped on a refusal, since this pull is
- * not restoring anything.
+ * not restoring anything. A live-only credential key WARNs by count only.
  *
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
@@ -227,6 +232,8 @@ function reportSettingsDrift(
         `run 'nomad pull' to restore ${pronoun}.`,
     );
   }
+  const credentials = credentialOverwriteCount(merged, existing);
+  if (credentials > 0) warn(credentialOverwriteMessage(credentials));
   return blocked;
 }
 

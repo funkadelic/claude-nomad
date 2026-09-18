@@ -30,6 +30,35 @@ export function blockedSettingsKeys(
 }
 
 /**
+ * How many live-only `CAPTURE_EXCLUDED_KEYS` the merge would drop, never naming
+ * them. No `preMerged` filter: the write keeps only `merged`, so an upstream
+ * removal destroys the live value just the same.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ */
+export function credentialOverwriteCount(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): number {
+  return partitionByCaptureExclusion(classifySettingsDrift(merged, existing).ahead).excluded.length;
+}
+
+/**
+ * Count-only WARN for `credentialOverwriteCount`, naming no key. Tense-neutral so
+ * it reads correctly in a dry run and a real pull alike.
+ * @param count - A non-zero `credentialOverwriteCount` result.
+ * @returns The one-line message.
+ */
+export function credentialOverwriteMessage(count: number): string {
+  const one = count === 1;
+  return (
+    `your settings.json has ${count} credential ${one ? 'setting' : 'settings'} ` +
+    `that the repo does not carry; a pull overwrites ${one ? 'it' : 'them'}, so keep ` +
+    `per-host credential settings in ~/.claude/settings.local.json, which nomad never syncs.`
+  );
+}
+
+/**
  * Refusal sentence for a non-empty `blockedSettingsKeys` result, naming both
  * ways out: capture the keys, or delete them locally if they are unwanted.
  * @param keys - The blocked keys.

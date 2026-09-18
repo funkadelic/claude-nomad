@@ -225,6 +225,12 @@ longer want them. Your shared files, skills, sessions, and project extras still 
 command exits with a non-zero status so a scripted or cron-driven pull does not report success. Once
 you have saved or deleted the settings, the next pull proceeds normally.
 
+Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
+`awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
+them and will not stop for them. When it finds some your repo does not track, it writes
+`settings.json` as usual and tells you how many it replaced. Keep values like these in
+`~/.claude/settings.local.json`, which nomad never touches.
+
 A setting that another machine removed from the repo is removed here too, as long as the removal
 arrives with the pull itself. If it was already in your sync repo before the pull (you edited the
 repo yourself, or `nomad push` or `nomad pull --dry-run` fetched it first), pull treats it like a
