@@ -66,6 +66,9 @@ export function loadValidatedExtras(opts: {
   return { map, extrasMap };
 }
 
+/** One yielded extras target: a (logical, host localRoot, dirname) triple. */
+export type ExtrasTarget = { logical: string; localRoot: string; dirname: string };
+
 /**
  * Yield every surviving `{ logical, localRoot, dirname }` extras target after
  * the per-project and per-dirname skip filters, mutating `counts` as it goes
@@ -82,7 +85,7 @@ export function loadValidatedExtras(opts: {
 export function* eachExtrasTarget(
   v: ValidatedExtras,
   counts: ExtrasCounts,
-): Generator<{ logical: string; localRoot: string; dirname: string }> {
+): Generator<ExtrasTarget> {
   const whitelist: readonly string[] = SUPPORTED_EXTRAS;
   for (const [logical, dirnames] of Object.entries(v.extrasMap)) {
     const localRoot = v.map.projects[logical]?.[HOST];
