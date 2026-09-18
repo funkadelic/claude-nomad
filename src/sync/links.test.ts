@@ -101,6 +101,7 @@ describe('regenerateSettings (integration)', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.doUnmock('../core/utils.fs.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -123,7 +124,7 @@ describe('regenerateSettings (integration)', () => {
     // The wet success log moved to a returned label (cmdPull renders the
     // Settings tree row from it). With a host override present the label is
     // `<HOST>.json`.
-    expect(result).toEqual({ label: 'test-host.json', blocked: [] });
+    expect(result).toEqual({ label: 'test-host.json', blocked: [], removed: [] });
   });
 
   it('returns the no-overrides label when no host file matches', async () => {
@@ -135,7 +136,7 @@ describe('regenerateSettings (integration)', () => {
     );
     const { regenerateSettings } = await import('./links.ts');
     const result = regenerateSettings('20260516-000000');
-    expect(result).toEqual({ label: 'no host overrides', blocked: [] });
+    expect(result).toEqual({ label: 'no host overrides', blocked: [], removed: [] });
   });
 
   it('leaves no .tmp sibling after a successful atomic write', async () => {
@@ -470,12 +471,98 @@ describe('regenerateSettings (integration)', () => {
       join(sharedDir, 'settings.base.json'),
       JSON.stringify({ model: 'sonnet' }) + '\n',
     );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
     const result = regenerateSettings('20260516-000000');
 
-    expect(result.blocked).toEqual([]);
+    expect(result).toMatchObject({ blocked: [], removed: ['theme'] });
     expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toEqual({
       model: 'sonnet',
     });
+    // The deletion is announced by name, with the backup it can be restored from.
+    expect(writes.join('')).toContain('this pull removed 1 setting (theme)');
+    expect(writes.join('')).toContain('backup/20260516-000000/settings.json');
+  });
+
+  it('dry run names the removal without writing', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+    const result = regenerateSettings('20260516-000001', { dryRun: true });
+    expect(result.removed).toEqual(['theme']);
+    expect(writes.join('')).toContain('a pull would remove 1 setting (theme)');
+    expect(JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8'))).toHaveProperty(
+      'theme',
+    );
+  });
+
+  it('names no removal when a blocked key refuses the write', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    const live = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ ...live, statusLine: 1 }));
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const result = regenerateSettings('20260516-000000');
+    expect(result).toMatchObject({ blocked: ['statusLine'], removed: [] });
+    expect(writes.join('')).not.toContain('removed');
+  });
+
+  it('a failed write never announces a removal', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    vi.resetModules();
+    vi.doMock('../core/utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return {
+        ...actual,
+        writeJsonAtomic: () => {
+          throw new Error('ENOSPC: no space left on device');
+        },
+      };
+    });
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+    const fresh = await import('./links.ts');
+    expect(() => fresh.regenerateSettings('20260516-000001')).toThrow('ENOSPC');
+    expect(writes.join('')).not.toContain('removed');
   });
 
   /** Path of the per-host written-keys record under the sandbox HOME. */
@@ -1926,7 +2013,7 @@ describe('regenerateSettings dry-run', () => {
     expect(existsSync(backupRoot)).toBe(false);
     // The dry-run path still returns the override label and the blocked-key
     // list (the drift block above runs before the dryRun early return).
-    expect(result).toEqual({ label: 'test-host.json', blocked: ['old'] });
+    expect(result).toEqual({ label: 'test-host.json', blocked: ['old'], removed: [] });
   });
 
   it('default (no opts), dryRun:false, and empty opts all still mutate settings.json', async () => {

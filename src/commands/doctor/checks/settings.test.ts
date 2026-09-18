@@ -128,6 +128,33 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('counts, never names, a credential key in the no-host-file FAIL', async () => {
+    process.env.NOMAD_HOST = 'nonexistent-host';
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ statusLine: { type: 'command' }, apiKeyHelper: '/bin/key' }) + '\n',
+    );
+    const { cmdDoctor } = await import('../doctor.ts');
+    cmdDoctor({ verbose: true });
+    const failLine =
+      joinedLog(env.logSpy)
+        .split('\n')
+        .find((l) => l.includes('unbased keys')) ?? '';
+    expect(failLine).toContain('["statusLine"] plus 1 credential or host-local key(s)');
+    expect(failLine).not.toContain('apiKeyHelper');
+  });
+
+  it('names no key at all when every unbased key is a credential key', async () => {
+    process.env.NOMAD_HOST = 'nonexistent-host';
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ apiKeyHelper: '/bin/key' }) + '\n',
+    );
+    const { cmdDoctor } = await import('../doctor.ts');
+    cmdDoctor({ verbose: true });
+    expect(joinedLog(env.logSpy)).toContain('unbased keys 1 credential or host-local key(s)');
+  });
+
   it('FAILs without a candidates line when hostFile missing, settings drift, AND hosts/ dir absent', async () => {
     process.env.NOMAD_HOST = 'nonexistent-host';
     // Remove the hosts/ dir so existsSync(hostsDir) takes its false path: the

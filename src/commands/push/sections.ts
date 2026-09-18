@@ -49,19 +49,32 @@ function collapsedSkipRow(n: number, noun: string): string | null {
  * Build the Settings section for `cmdPull`. When `blocked` is empty, a
  * single `${green(okGlyph)} settings.json (base + <label>)` row. When `blocked`
  * is non-empty, a `${red(failGlyph)}` row naming the keys and the recovery
- * command instead (the write was skipped). Push has no Settings section, so
+ * command instead (the write was skipped). When `removed` is non-empty, a
+ * `${yellow(warnGlyph)}` row names them. Push has no Settings section, so
  * this helper is pull-only.
  *
  * @param label - The override-source tag from `regenerateSettings`.
  * @param blocked - The keys that stopped the settings.json write.
+ * @param removed - The keys the write dropped because the repo no longer carries them.
  * @returns A `Settings` `DoctorSection` holding the one settings row.
  */
-export function buildSettingsSection(label: string, blocked: string[]): DoctorSection {
+export function buildSettingsSection(
+  label: string,
+  blocked: string[],
+  removed: string[] = [],
+): DoctorSection {
   const s = section('Settings');
   if (blocked.length > 0) {
     addItem(
       s,
       `${red(failGlyph)} settings.json not written (${blocked.join(', ')} not in the repo; run 'nomad capture-settings', or delete from ~/.claude/settings.json)`,
+    );
+    return s;
+  }
+  if (removed.length > 0) {
+    addItem(
+      s,
+      `${yellow(warnGlyph)} settings.json (base + ${label}); removed ${removed.join(', ')}, no longer in the repo`,
     );
     return s;
   }

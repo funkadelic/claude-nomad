@@ -20,6 +20,13 @@ describe('buildSettingsSection', () => {
     );
     expect(s.items[0]).not.toContain('base + no host overrides');
   });
+
+  it('renders a warn row naming the settings the write removed', () => {
+    const s = buildSettingsSection('no host overrides', [], ['theme']);
+    expect(s.items).toEqual([
+      '⚠︎ settings.json (base + no host overrides); removed theme, no longer in the repo',
+    ]);
+  });
 });
 
 /**

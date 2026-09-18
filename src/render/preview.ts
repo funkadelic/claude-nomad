@@ -9,7 +9,12 @@ import { planSharedLinkDeletions, type SharedLinkDeletion } from '../sync/links.
 import { stageLocalSharedEdits, type MirrorPreviewEvent } from '../sync/links.mirror.ts';
 import { type LinkPreviewEvent, applySharedLinks } from '../sync/links.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
-import { blockedSettingsKeys, settingsBlockedMessage } from '../sync/settings-guard.ts';
+import {
+  blockedSettingsKeys,
+  removedSettingsKeys,
+  settingsBlockedMessage,
+  settingsRemovedMessage,
+} from '../sync/settings-guard.ts';
 import { preRebaseSettingsMerge } from '../sync/settings-upstream.ts';
 import { readWrittenSettingsKeys } from '../sync/settings-written.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
@@ -192,7 +197,10 @@ export function previewSettings(
     JSON.stringify(sortKeysDeep(strippedCurrent), null, 2),
     JSON.stringify(sortKeysDeep(merged), null, 2),
   );
-  return { diff, notes: diff === '' && !rawEqual ? [CANONICAL_ORDER_NOTE] : [] };
+  const notes = diff === '' && !rawEqual ? [CANONICAL_ORDER_NOTE] : [];
+  const removed = removedSettingsKeys(rawMerged, current ?? {}, preMerged, written);
+  if (removed.length > 0) notes.push(settingsRemovedMessage(removed));
+  return { diff, notes };
 }
 
 /**

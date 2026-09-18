@@ -105,10 +105,11 @@ them and will not stop for them. When it finds some the repo does not track, it 
 A setting that another machine removed from the repo is removed here too. After each successful
 settings write, pull records in `~/.cache/claude-nomad/` the top-level settings it wrote on this
 machine. A setting in that record that the repo no longer carries is one pull wrote, so it is
-removed. A setting missing from the record is one you added, so it is kept and listed as above. The
-timing no longer matters: an edit you made to the repo, a `nomad push`, or an earlier
-`nomad pull --dry-run` all behave the same as a removal arriving with the pull. The record is one
-per machine, never synced, and holds setting names only.
+removed. The pull names each setting it removes (so does `nomad pull --dry-run`), and the file from
+before the pull stays in `~/.cache/claude-nomad/backup/`. A setting missing from the record is one
+you added, so it is kept and listed as above. The timing no longer matters: an edit you made to the
+repo, a `nomad push`, or an earlier `nomad pull --dry-run` all behave the same as a removal arriving
+with the pull. The record is one per machine, never synced, and holds setting names only.
 
 A machine with no record yet, either before its first successful pull or after the cache folder is
 cleared, keeps the older behavior. A removal already present in the repo is listed as a setting you
@@ -578,8 +579,14 @@ absent from the merge as promotion candidates for `shared/settings.base.json` or
 `hosts/<NOMAD_HOST>.json`, since those are typically transient state written between pulls (for
 example notification toggles), not an error; when this host has no `hosts/<NOMAD_HOST>.json` at
 all, that info line is withheld because the host-overrides row above it already flags the same
-keys as a failure. A `⚠︎` warning also fires when `hosts/<NOMAD_HOST>.json` exists but does not
-parse, since `nomad pull` would stop on that file. The check reports key names only and never
+keys as a failure. A local-only key that nomad itself wrote on an earlier pull, and that the repo
+has since dropped, gets a `⚠︎` warning instead, shown with or without a host file: the next
+`nomad pull` removes it, which is what you want if it was removed from the repo on purpose. To keep
+it on this machine only, run `nomad capture-settings --host`; a plain `nomad capture-settings`
+would put it back in the repo for every machine. If other local-only keys are present too, the
+pull refuses until those are captured or deleted, and the warning says so. With no host file, the
+failure row names ordinary keys but only counts credential and host-local ones. A `⚠︎` warning
+also fires when `hosts/<NOMAD_HOST>.json` exists but does not parse, since `nomad pull` would stop on that file. The check reports key names only and never
 leaks values. It skips with a `ℹ︎` when `settings.json` is absent or when
 `shared/settings.base.json` is absent or unparseable; a malformed `settings.json` is skipped
 silently, since doctor's settings load already fails (`✗`, exit 1) on the same file.

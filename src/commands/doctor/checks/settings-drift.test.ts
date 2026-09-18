@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -381,6 +381,71 @@ describe('reportSettingsDriftCheck', () => {
     expect(out).toContain('nomad capture-settings');
     expect(out).not.toContain(warnGlyph);
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('WARNs for a local-only key the written-keys record names, since the next pull deletes it', async () => {
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, 'claude-nomad', 'hosts', 'test-host.json'),
+      JSON.stringify({}) + '\n',
+    );
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'sonnet', theme: 'dark', agentPushNotifEnabled: true }) + '\n',
+    );
+    const cache = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(
+      join(cache, 'settings-written-test-host.json'),
+      JSON.stringify(['model', 'theme']),
+    );
+    const { items } = await runCheck();
+    const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
+    expect(warnRow).toContain('theme');
+    // The unrecorded key blocks the next pull, so the removal waits on it.
+    expect(warnRow).toContain(
+      'a pull removes them once agentPushNotifEnabled is captured or deleted',
+    );
+    expect(warnRow).toContain("run 'nomad capture-settings --host'");
+    // An unrecorded key is still just a promotion candidate, whose capture re-adds theme.
+    const infoRow = items.find((i) => i.includes(infoGlyph) && i.includes('agentPushNotifEnabled'));
+    expect(infoRow).toContain('this also puts back the removed keys above');
+  });
+
+  /** Base `{ model }`, a live file with `extra`, and a record naming `recorded`. */
+  function plantDropped(live: Record<string, unknown>, recorded: string[], hostFile = true): void {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ model: 'sonnet' }));
+    const hostPath = join(repo, 'hosts', 'test-host.json');
+    if (hostFile) writeFileSync(hostPath, '{}');
+    else rmSync(hostPath, { force: true });
+    writeFileSync(join(env.testHome, '.claude', 'settings.json'), JSON.stringify(live));
+    const cache = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(join(cache, 'settings-written-test-host.json'), JSON.stringify(recorded));
+  }
+
+  it('promises the removal on the next pull when nothing else blocks it', async () => {
+    plantDropped({ model: 'sonnet', theme: 'dark' }, ['model', 'theme']);
+    const { items } = await runCheck();
+    const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
+    expect(warnRow).toContain("the next 'nomad pull' removes them");
+    expect(warnRow).toContain('removed from the repo on purpose');
+  });
+
+  it('never names a recorded credential key', async () => {
+    plantDropped({ model: 'sonnet', env: { TOKEN: 'x' } }, ['model', 'env']);
+    const { items } = await runCheck();
+    expect(items.join('\n')).not.toContain('env');
+  });
+
+  it('WARNs about a dropped key even with no host file', async () => {
+    plantDropped({ model: 'sonnet', theme: 'dark' }, ['model', 'theme'], false);
+    const { items } = await runCheck();
+    expect(items.find((i) => i.includes(warnGlyph))).toContain('theme');
   });
 
   it('emits a name-free count row for excluded local-only keys (no capture advice, no secret name)', async () => {

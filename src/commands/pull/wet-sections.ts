@@ -46,7 +46,7 @@ export function buildWetPullSections(
   // now has, so a later run can tell a user delete apart from a never-synced
   // file. Always quiet: the apply call just above already reported this map.
   writeSharedBaseline(map, { quiet: true });
-  const { label, blocked } = regenerateSettings(ts, { prePostHeads });
+  const { label, blocked, removed } = regenerateSettings(ts, { prePostHeads });
   // Non-fatal: sets the exit code but never throws, so the rest still runs.
   if (blocked.length > 0) {
     process.exitCode = EXIT.SETTINGS_BLOCKED;
@@ -62,7 +62,7 @@ export function buildWetPullSections(
   addItem(summary, summaryRow('pull', unmapped, 0, extrasResult.skipped, localOnly));
   return {
     sections: [
-      buildSettingsSection(label, blocked),
+      buildSettingsSection(label, blocked, removed),
       buildSessionsSection(remapResult.pulled, remapResult.unmapped, localOnly),
       buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
       summary,

@@ -292,6 +292,17 @@ describe('previewSettings canonicalization', () => {
     expect(result.notes.at(-1)).toContain('settings.json would be left unchanged');
   });
 
+  it('names a key the write would remove as a note beside the diff', async () => {
+    writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
+    writeFileSync(settingsPath, JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2));
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath, {}, ['statusLine']);
+    expect(result.notes).toContain(
+      'a pull would remove 1 setting (statusLine) from settings.json because the repo no longer carries it.',
+    );
+  });
+
   it('with the ahead key named in written, reports a diff and no refusal', async () => {
     writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
     writeFileSync(settingsPath, JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2));

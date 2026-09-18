@@ -28,12 +28,63 @@ export function blockedSettingsKeys(
   preMerged: Record<string, unknown>,
   written: readonly string[] | null = null,
 ): string[] {
-  const { ahead } = classifySettingsDrift(merged, existing);
+  return splitAheadKeys(merged, existing, preMerged, written).blocked;
+}
+
+/**
+ * Promotable live-only keys a pull deletes because the repo dropped them (the
+ * complement of `blockedSettingsKeys`). Credential keys are left to
+ * `credentialOverwriteCount`.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD.
+ * @param written - Recorded keys from the last successful write, or `null`.
+ * @returns The removed keys, sorted.
+ */
+export function removedSettingsKeys(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+  written: readonly string[] | null,
+): string[] {
+  return splitAheadKeys(merged, existing, preMerged, written).removed;
+}
+
+/**
+ * Split promotable ahead-drift keys into those a pull refuses (`blocked`) and
+ * those it deletes as removed upstream (`removed`).
+ */
+function splitAheadKeys(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+  written: readonly string[] | null,
+): { blocked: string[]; removed: string[] } {
+  const { promotable } = partitionByCaptureExclusion(classifySettingsDrift(merged, existing).ahead);
   const removedUpstream = new Set([
     ...Object.keys(stripGsdHookEntries(preMerged)),
     ...(written ?? []),
   ]);
-  return partitionByCaptureExclusion(ahead.filter((key) => !removedUpstream.has(key))).promotable;
+  return {
+    blocked: promotable.filter((key) => !removedUpstream.has(key)),
+    removed: promotable.filter((key) => removedUpstream.has(key)),
+  };
+}
+
+/**
+ * WARN for a non-empty `removedSettingsKeys` result, naming the keys. With
+ * `ts` it reports a finished pull and names its backup; without, a preview.
+ * @param keys - The removed keys.
+ * @param ts - The pull's backup timestamp, or omitted for a preview.
+ * @returns The one-line message.
+ */
+export function settingsRemovedMessage(keys: string[], ts?: string): string {
+  const { phrase, pronoun } = describeSettings(keys);
+  const because = `because the repo no longer carries ${pronoun}`;
+  return ts === undefined
+    ? `a pull would remove ${phrase} from settings.json ${because}.`
+    : `this pull removed ${phrase} from settings.json ${because}; ` +
+        `the previous file is at ~/.cache/claude-nomad/backup/${ts}/settings.json.`;
 }
 
 /**
