@@ -12,6 +12,7 @@ import {
   warnGlyph,
   yellow,
 } from '../../../render/color.ts';
+import { partitionByCaptureExclusion } from '../../capture-settings/core.ts';
 import { claudeHome, HOST, KNOWN_SETTINGS_KEYS, repoHome } from '../../../core/config.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
 
@@ -52,6 +53,17 @@ export function loadAndReportSettings(section: DoctorSection): Record<string, un
   return settings;
 }
 
+/**
+ * Unbased keys for the no-host-file FAIL: promotable keys by name, credential
+ * and host-local keys by count only.
+ */
+function describeUnbased(drift: string[]): string {
+  const { promotable, excluded } = partitionByCaptureExclusion(drift);
+  const parts = promotable.length > 0 ? [JSON.stringify(promotable)] : [];
+  if (excluded.length > 0) parts.push(`${excluded.length} credential or host-local key(s)`);
+  return parts.join(' plus ');
+}
+
 /** Emits the host-override status: okGlyph when no host file is needed (base-only matches settings), failGlyph on drift without a host file (with candidate list), or okGlyph path when the host file parses. */
 export function reportHostOverrides(
   section: DoctorSection,
@@ -72,7 +84,7 @@ export function reportHostOverrides(
   } else if (drift.length > 0) {
     addItem(
       section,
-      `${red(failGlyph)} no hosts/${HOST}.json AND settings.json has unbased keys ${JSON.stringify(drift)}`,
+      `${red(failGlyph)} no hosts/${HOST}.json AND settings.json has unbased keys ${describeUnbased(drift)}`,
     );
     const hostsDir = join(repo, 'hosts');
     if (existsSync(hostsDir)) {

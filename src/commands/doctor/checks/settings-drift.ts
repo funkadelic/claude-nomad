@@ -209,10 +209,26 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
 }
 
 /**
+ * WARN row for local keys the written-keys record names and the repo dropped.
+ * A pull refuses while any other local-only key (`candidates`) exists, so the
+ * removal is promised only once those are dealt with. The advice keeps them on
+ * this host only, since a plain capture would restore them for every host.
+ */
+function droppedRow(dropped: string[], candidates: string[]): string {
+  const verb = candidates.length === 1 ? 'is' : 'are';
+  const when =
+    candidates.length === 0
+      ? "the next 'nomad pull' removes them"
+      : `a pull removes them once ${candidates.join(', ')} ${verb} captured or deleted`;
+  return `${yellow(warnGlyph)} settings.json has ${dropped.length} key(s) the repo no longer carries: ${dropped.join(', ')} (${when}, as expected if they were removed from the repo on purpose; to keep them on this machine only, run 'nomad capture-settings --host')`;
+}
+
+/**
  * Emit the drift rows for each category. Extracted to keep `reportSettingsDriftCheck`
  * under the cognitive-complexity gate.
  *
- * The extra-keys info row is gated on `hostFileExists`: with no host file,
+ * The extra-keys info rows are gated on `hostFileExists` (the dropped-keys
+ * WARN is not, since it states a removal the FAIL does not): with no host file,
  * `reportHostOverrides` already FAILs on the same unbased keys in the same
  * Settings section, and a softer "promotion candidates" row about identical
  * keys would contradict that verdict. The ok row is not emitted in that case
@@ -254,16 +270,12 @@ function emitDriftRows(
       `${yellow(warnGlyph)} settings.json drift: ${changed.join(', ')} diverged from the base+host merge (run 'nomad diff' to inspect; 'nomad pull' overwrites local with the repo, or edit the base/host file to keep local)`,
     );
   }
-  if (dropped.length > 0 && hostFileExists) {
-    addItem(
-      section,
-      `${yellow(warnGlyph)} settings.json has ${dropped.length} key(s) the repo no longer carries: ${dropped.join(', ')} (the next 'nomad pull' removes them; run 'nomad capture-settings' to keep them)`,
-    );
-  }
+  if (dropped.length > 0) addItem(section, droppedRow(dropped, candidates));
   if (candidates.length > 0 && hostFileExists) {
+    const readds = dropped.length > 0 ? '; this also puts back the removed keys above' : '';
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${candidates.length} local-only key(s) not in base+host merge: ${candidates.join(', ')} (run 'nomad capture-settings' to promote them into the repo)`,
+      `${dim(infoGlyph)} settings.json has ${candidates.length} local-only key(s) not in base+host merge: ${candidates.join(', ')} (run 'nomad capture-settings' to promote them into the repo${readds})`,
     );
   }
   if (excluded.length > 0 && hostFileExists) {
