@@ -238,9 +238,9 @@ machine, with a fingerprint of each value. A setting in that record that the rep
 and that still has the value nomad wrote, is one nomad put there, so the next pull removes it. The
 pull names each setting it removes (so does `nomad pull --dry-run`), and the file from before the
 pull stays in `~/.cache/claude-nomad/backup/`. A setting missing from the record is one you added,
-and one you changed since is yours now, so either is kept and listed as above. The timing no longer
-matters: the removal can arrive with this pull, or have reached your repo earlier through an edit
-you made, a `nomad push`, or a `nomad pull --dry-run`.
+and one you changed since is yours now, so either is kept and listed as above. A removal is handled
+the same whether it arrives with this pull or reached your repo earlier through an edit you made, a
+`nomad push`, or a `nomad pull --dry-run`.
 
 A machine that has not finished a pull yet, or whose cache folder was cleared, has nothing recorded.
 There a removal that reached the repo earlier is still listed as a setting you added. Save it or
