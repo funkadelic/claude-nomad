@@ -190,7 +190,9 @@ export function appendGitleaksIgnore(fingerprint: string, repo: string): void {
   } catch {
     raw = '';
   }
-  const existing = raw.split('\n').filter((l) => l.length > 0);
+  // A hand-edited or Windows-written file leaves a trailing \r on every line,
+  // which would never match the sanitized fingerprint and re-append it each call.
+  const existing = raw.split(/\r?\n/).filter((l) => l.length > 0);
   if (isAlreadyPresent(sanitized, existing)) return;
   const needsLeadingNewline = raw.length > 0 && !raw.endsWith('\n');
   const prefix = needsLeadingNewline ? '\n' : '';

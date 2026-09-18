@@ -167,4 +167,15 @@ describe('appendGitleaksIgnore', () => {
     expect(lines).toEqual(['a:b:1', 'c:d:2']);
     expect(content).toBe('a:b:1\nc:d:2\n');
   });
+
+  it('is a no-op when a CRLF-terminated file already contains the fingerprint', async () => {
+    const { appendGitleaksIgnore: append } = await import('./core.ts');
+    const ignPath = join(env.repoHome, '.gitleaksignore');
+    writeFileSync(ignPath, 'a:b:1\r\nc:d:2\r\n', 'utf8');
+
+    append('a:b:1', env.repoHome);
+    append('a:b:1', env.repoHome);
+
+    expect(readFileSync(ignPath, 'utf8')).toBe('a:b:1\r\nc:d:2\r\n');
+  });
 });
