@@ -329,7 +329,8 @@ describe('cmdEject', () => {
 
   it('ejectChecklist() points at the folder that holds every nomad cache path', () => {
     const printed = dirname(backupBase());
-    expect(ejectChecklist().endsWith(`rm -rf "${printed}"`)).toBe(true);
+    // The checklist prints forward slashes on win32 (see the Git Bash test below).
+    expect(ejectChecklist().endsWith(`rm -rf "${printed.replaceAll(sep, '/')}"`)).toBe(true);
     for (const p of [
       backupBase(),
       crashDir(),
