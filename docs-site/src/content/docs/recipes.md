@@ -271,8 +271,9 @@ nomad eject
 Eject only touches symlinks nomad created: real files and directories are left untouched, and it
 aborts (pointing you at `nomad pull`) if it finds a dangling symlink rather than copying from an
 unknown target. On native Windows the managed names are already real copies (the win32 copy-sync
-modality), so eject has nothing to materialize and goes straight to the checklist. When it finishes it prints a manual-remainder checklist for the steps it cannot do
-for you:
+modality), so eject has nothing to materialize and goes straight to the checklist. It also deletes
+the records nomad kept about this machine, so setting nomad up here again later starts fresh. When
+it finishes it prints a manual-remainder checklist for the steps it cannot do for you:
 
 ```bash
 # 1. Remove the CLI.
@@ -283,6 +284,10 @@ npm uninstall -g claude-nomad
 
 # 3. Optional: delete the local clone of the sync repo once you no longer need it.
 rm -rf ~/claude-nomad
+
+# 4. Optional: delete nomad's cache folder (backups and crash reports) once you no
+#    longer need the backups in it.
+rm -rf ~/.cache/claude-nomad
 ```
 
 Your config, sessions, and settings stay exactly where they are; they are just plain files again

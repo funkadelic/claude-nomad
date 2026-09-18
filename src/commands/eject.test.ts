@@ -11,12 +11,19 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { cmdEject, ejectChecklist, ejectNames, errMessage, previewMaterialize } from './eject.ts';
-import { backupBase, type PathMap } from '../core/config.ts';
+import {
+  backupBase,
+  crashDir,
+  manifestPath,
+  settingsWrittenPath,
+  sharedBaselinePath,
+  type PathMap,
+} from '../core/config.ts';
 import { stubPlatform } from '../test-support/platform.ts';
 
 // Windows chmod only toggles the read-only attribute: a 0o500 dir still
@@ -95,6 +102,7 @@ function allLogs(spy: MockInstance<(msg: string) => void>): string {
 }
 
 describe('cmdEject', () => {
+  const realPlatform = process.platform;
   let logSpy: MockInstance<(msg: string) => void>;
   let errSpy: MockInstance<(msg: string) => void>;
   let exitSpy: MockInstance<(code?: string | number | null) => never>;
@@ -319,8 +327,80 @@ describe('cmdEject', () => {
     expect(ejectChecklist()).toContain('NOMAD_REPO');
   });
 
-  it('ejectChecklist() points at the whole cache dir, not just backup/', () => {
-    expect(ejectChecklist().endsWith(`rm -rf ${dirname(backupBase())}`)).toBe(true);
+  it('ejectChecklist() points at the folder that holds every nomad cache path', () => {
+    const printed = dirname(backupBase());
+    expect(ejectChecklist().endsWith(`rm -rf "${printed}"`)).toBe(true);
+    for (const p of [
+      backupBase(),
+      crashDir(),
+      manifestPath(),
+      sharedBaselinePath(),
+      settingsWrittenPath(),
+    ]) {
+      expect(p.startsWith(printed + sep)).toBe(true);
+    }
+  });
+
+  it('ejectChecklist() prints forward slashes on win32 so Git Bash keeps the path', () => {
+    const originalProfile = process.env.USERPROFILE;
+    process.env.USERPROFILE = String.raw`C:\Users\me`;
+    stubPlatform('win32');
+    try {
+      expect(ejectChecklist()).toContain('rm -rf "C:/Users/me/.cache/claude-nomad"');
+    } finally {
+      stubPlatform(realPlatform);
+      if (originalProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalProfile;
+    }
+  });
+
+  describe('host sync records', () => {
+    /** A cache dir holding the three per-host records plus a backup snapshot. */
+    function makeCache(): { cacheDir: string; records: string[]; backup: string } {
+      const cacheDir = mkdtempSync(join(tmpdir(), 'nomad-eject-cache-'));
+      const records = [settingsWrittenPath(), sharedBaselinePath(), manifestPath()].map((p) =>
+        join(cacheDir, basename(p)),
+      );
+      for (const r of records) writeFileSync(r, '{}');
+      const backup = join(cacheDir, 'backup', '20260101-000000');
+      mkdirSync(backup, { recursive: true });
+      return { cacheDir, records, backup };
+    }
+
+    it('live: removes every record and leaves the backups alone', () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      const { cacheDir, records, backup } = makeCache();
+      cmdEject({}, { claudeHome, repoHome, cacheDir });
+      for (const r of records) expect(existsSync(r)).toBe(false);
+      expect(existsSync(backup)).toBe(true);
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed sync record:'));
+    });
+
+    it('dry run: lists the records and removes none', () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      const { cacheDir, records } = makeCache();
+      cmdEject({ dryRun: true }, { claudeHome, repoHome, cacheDir });
+      for (const r of records) expect(existsSync(r)).toBe(true);
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('would remove sync record:'));
+    });
+
+    it('a record that cannot be removed warns and eject still finishes', () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      const { cacheDir, records } = makeCache();
+      // A directory in the record's place: rmSync without recursive refuses it.
+      rmSync(records[0]);
+      mkdirSync(join(records[0], 'x'), { recursive: true });
+      cmdEject({}, { claudeHome, repoHome, cacheDir });
+      expect(existsSync(records[1])).toBe(false);
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('delete it by hand'));
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Manual steps remaining'));
+    });
+
+    it('without a cacheDir root, touches no cache at all', () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      cmdEject({}, { claudeHome, repoHome });
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('sync record'));
+    });
   });
 
   it('tally: live run logs a materialized/skipped summary before the checklist', () => {
