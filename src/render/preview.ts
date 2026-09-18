@@ -14,6 +14,7 @@ import {
   removedSettingsKeys,
   settingsBlockedMessage,
   settingsRemovedMessage,
+  type WrittenSettings,
 } from '../sync/settings-guard.ts';
 import { preRebaseSettingsMerge } from '../sync/settings-upstream.ts';
 import { readWrittenSettingsKeys } from '../sync/settings-written.ts';
@@ -153,7 +154,7 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * @param hostPath - Path to `hosts/<HOST>.json`.
  * @param settingsPath - Path to the live `~/.claude/settings.json`.
  * @param preMerged - The merge at the pre-pull HEAD (`preRebaseSettingsMerge`).
- * @param written - Recorded keys from the last successful write; see `blockedSettingsKeys`.
+ * @param written - The written-settings record; see `blockedSettingsKeys`.
  * @returns The unified diff (`''` for none) and any notes.
  */
 export function previewSettings(
@@ -161,7 +162,7 @@ export function previewSettings(
   hostPath: string,
   settingsPath: string,
   preMerged: Record<string, unknown> = {},
-  written: readonly string[] | null = null,
+  written: WrittenSettings | null = null,
 ): { diff: string; notes: string[] } {
   const base = readJsonOrNull(basePath);
   if (base === null) {

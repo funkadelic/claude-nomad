@@ -61,7 +61,7 @@ function objectsEqual(a: Record<string, unknown>, b: Record<string, unknown>): b
  * @param b - Second value.
  * @returns True when `a` and `b` are deeply equal.
  */
-function deepEqual(a: unknown, b: unknown): boolean {
+export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null) return false;
   if (Array.isArray(a) && Array.isArray(b)) return arraysEqual(a, b);

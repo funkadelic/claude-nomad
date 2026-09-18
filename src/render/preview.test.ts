@@ -13,6 +13,7 @@ import { join, relative } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { settingValueHash } from '../sync/settings-guard.ts';
 import { plantSharedBaseline } from '../test-support/baseline.ts';
 import { stubPlatform } from '../test-support/platform.ts';
 
@@ -297,7 +298,15 @@ describe('previewSettings canonicalization', () => {
     writeFileSync(settingsPath, JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2));
 
     const { previewSettings } = await import('./preview.ts');
-    const result = previewSettings(basePath, hostPath, settingsPath, {}, ['statusLine']);
+    const result = previewSettings(
+      basePath,
+      hostPath,
+      settingsPath,
+      {},
+      {
+        statusLine: settingValueHash(1),
+      },
+    );
     expect(result.notes).toContain(
       'a pull would remove 1 setting (statusLine) from settings.json because the repo no longer carries it.',
     );
@@ -308,7 +317,15 @@ describe('previewSettings canonicalization', () => {
     writeFileSync(settingsPath, JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2));
 
     const { previewSettings } = await import('./preview.ts');
-    const result = previewSettings(basePath, hostPath, settingsPath, {}, ['statusLine']);
+    const result = previewSettings(
+      basePath,
+      hostPath,
+      settingsPath,
+      {},
+      {
+        statusLine: settingValueHash(1),
+      },
+    );
     expect(result.notes.some((n) => n.includes('would be left unchanged'))).toBe(false);
     expect(result.diff).not.toBe('');
   });
@@ -511,7 +528,7 @@ describe('computePreview orchestration', () => {
     mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
     writeFileSync(
       join(testHome, '.cache', 'claude-nomad', 'settings-written-test-host.json'),
-      JSON.stringify(['statusLine']),
+      JSON.stringify({ kind: 'settings-written/2', keys: { statusLine: settingValueHash(1) } }),
     );
 
     const logs: string[] = [];

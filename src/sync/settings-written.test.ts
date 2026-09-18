@@ -50,57 +50,76 @@ describe('settings-written', () => {
     expect(readWrittenSettingsKeys()).toBeNull();
   });
 
-  it('returns null when the file holds a JSON object rather than an array', async () => {
+  it('returns null for a bare key array, the format an older nomad wrote', async () => {
     mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
-    writeFileSync(recordPath, JSON.stringify({ model: true }));
+    writeFileSync(recordPath, JSON.stringify(['model', 'theme']));
     const { readWrittenSettingsKeys } = await import('./settings-written.ts');
     expect(readWrittenSettingsKeys()).toBeNull();
   });
 
-  it('returns null when the array holds a non-string element', async () => {
+  it('returns null when the kind tag is missing or foreign', async () => {
     mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
-    writeFileSync(recordPath, JSON.stringify(['model', 42]));
     const { readWrittenSettingsKeys } = await import('./settings-written.ts');
+    writeFileSync(recordPath, JSON.stringify({ keys: { model: 'h' } }));
+    expect(readWrittenSettingsKeys()).toBeNull();
+    writeFileSync(recordPath, JSON.stringify({ kind: 'settings-written/1', keys: { model: 'h' } }));
     expect(readWrittenSettingsKeys()).toBeNull();
   });
 
-  it('round-trips: record then read returns the recorded keys', async () => {
+  it('returns null when keys is not an object or holds a non-string hash', async () => {
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    const { readWrittenSettingsKeys, SETTINGS_WRITTEN_KIND } =
+      await import('./settings-written.ts');
+    writeFileSync(recordPath, JSON.stringify({ kind: SETTINGS_WRITTEN_KIND, keys: ['model'] }));
+    expect(readWrittenSettingsKeys()).toBeNull();
+    writeFileSync(recordPath, JSON.stringify({ kind: SETTINGS_WRITTEN_KIND, keys: { model: 42 } }));
+    expect(readWrittenSettingsKeys()).toBeNull();
+  });
+
+  it('round-trips: record then read returns a hash of each written value', async () => {
     const { readWrittenSettingsKeys, recordWrittenSettingsKeys } =
       await import('./settings-written.ts');
+    const { settingValueHash } = await import('./settings-guard.ts');
     recordWrittenSettingsKeys({ model: 'sonnet', theme: 'dark' });
-    expect(readWrittenSettingsKeys()).toEqual(['model', 'theme']);
+    expect(readWrittenSettingsKeys()).toEqual({
+      model: settingValueHash('sonnet'),
+      theme: settingValueHash('dark'),
+    });
   });
 
-  it('records the top-level keys of the written object', async () => {
+  it('stores hashes, never the setting values themselves', async () => {
     const { recordWrittenSettingsKeys } = await import('./settings-written.ts');
-    recordWrittenSettingsKeys({ a: 1, b: 2 });
-    expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(['a', 'b']);
+    recordWrittenSettingsKeys({ env: { TOKEN: 'secret-value' } });
+    expect(readFileSync(recordPath, 'utf8')).not.toContain('secret-value');
   });
 
   it('SAFETY, empty hooks block: recording an object carrying hooks: {} records no hooks key', async () => {
-    const { recordWrittenSettingsKeys } = await import('./settings-written.ts');
+    const { readWrittenSettingsKeys, recordWrittenSettingsKeys } =
+      await import('./settings-written.ts');
     recordWrittenSettingsKeys({ model: 'sonnet', hooks: {} });
-    expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(['model']);
+    expect(Object.keys(readWrittenSettingsKeys() ?? {})).toEqual(['model']);
   });
 
   it('SAFETY, gsd-only hooks block: recording a gsd-owned hooks entry records no hooks key', async () => {
     const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
-    const { recordWrittenSettingsKeys } = await import('./settings-written.ts');
+    const { readWrittenSettingsKeys, recordWrittenSettingsKeys } =
+      await import('./settings-written.ts');
     recordWrittenSettingsKeys({
       model: 'sonnet',
       hooks: { SessionStart: [{ matcher: '', hooks: [gsdHook] }] },
     });
-    expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(['model']);
+    expect(Object.keys(readWrittenSettingsKeys() ?? {})).toEqual(['model']);
   });
 
   it('keeps hooks when the written object carries a real non-gsd hook entry', async () => {
     const userHook = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
-    const { recordWrittenSettingsKeys } = await import('./settings-written.ts');
+    const { readWrittenSettingsKeys, recordWrittenSettingsKeys } =
+      await import('./settings-written.ts');
     recordWrittenSettingsKeys({
       model: 'sonnet',
       hooks: { PreToolUse: [{ matcher: '', hooks: [userHook] }] },
     });
-    expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(['model', 'hooks']);
+    expect(Object.keys(readWrittenSettingsKeys() ?? {})).toEqual(['model', 'hooks']);
   });
 
   it('creates ~/.cache/claude-nomad/ when it does not exist yet', async () => {

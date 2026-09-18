@@ -11,6 +11,7 @@ import {
   removedSettingsKeys,
   settingsRemovedMessage,
   settingsBlockedMessage,
+  type WrittenSettings,
 } from './settings-guard.ts';
 import { preRebaseSettingsMerge } from './settings-upstream.ts';
 import { readWrittenSettingsKeys, recordWrittenSettingsKeys } from './settings-written.ts';
@@ -217,7 +218,7 @@ function readExistingSettings(settingsPath: string): {
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
- * @param written - Recorded keys from the last successful write; see `blockedSettingsKeys`.
+ * @param written - The written-settings record; see `blockedSettingsKeys`.
  * @returns The blocked keys, so the caller can skip the write, and the keys
  *   the write removes (empty when blocked).
  */
@@ -225,7 +226,7 @@ function reportSettingsDrift(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
-  written: readonly string[] | null,
+  written: WrittenSettings | null,
 ): { blocked: string[]; removed: string[] } {
   const blocked = blockedSettingsKeys(merged, existing, preMerged, written);
   if (blocked.length > 0) {

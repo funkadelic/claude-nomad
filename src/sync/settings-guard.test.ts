@@ -7,7 +7,14 @@ import {
   removedSettingsKeys,
   settingsBlockedMessage,
   settingsRemovedMessage,
+  settingValueHash,
+  stillAsWritten,
 } from './settings-guard.ts';
+
+/** A written-settings record holding each value's hash, as a real write records it. */
+function rec(values: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(Object.entries(values).map(([k, v]) => [k, settingValueHash(v)]));
+}
 
 describe('blockedSettingsKeys', () => {
   // `statusLine`, not `hooks`: an empty `hooks: {}` block is stripped away by
@@ -46,27 +53,41 @@ describe('blockedSettingsKeys', () => {
 
   it('does not block a key the record names, even when preMerged is empty (removed upstream)', () => {
     const live = { a: 1, theme: 'dark' };
-    expect(blockedSettingsKeys({ a: 1 }, live, {}, ['theme'])).toEqual([]);
+    expect(blockedSettingsKeys({ a: 1 }, live, {}, rec({ theme: 'dark' }))).toEqual([]);
   });
 
   it('still blocks a key the record does not name (local addition)', () => {
     const live = { a: 1, theme: 'dark' };
-    expect(blockedSettingsKeys({ a: 1 }, live, {}, ['model'])).toEqual(['theme']);
+    expect(blockedSettingsKeys({ a: 1 }, live, {}, rec({ model: 'x' }))).toEqual(['theme']);
   });
 
   it('unions preMerged and the record: a key only preMerged had is still excluded', () => {
     const live = { a: 1, statusLine: 1, theme: 'dark' };
-    expect(blockedSettingsKeys({ a: 1 }, live, { a: 1, statusLine: 1 }, ['theme'])).toEqual([]);
+    expect(
+      blockedSettingsKeys({ a: 1 }, live, { a: 1, statusLine: 1 }, rec({ theme: 'dark' })),
+    ).toEqual([]);
   });
 
-  it('an empty record array blocks exactly as a null record does', () => {
+  it('an empty record blocks exactly as a null record does', () => {
     const live = { a: 1, theme: 'dark' };
-    expect(blockedSettingsKeys({ a: 1 }, live, {}, [])).toEqual(['theme']);
+    expect(blockedSettingsKeys({ a: 1 }, live, {}, {})).toEqual(['theme']);
+  });
+
+  it('blocks a recorded key whose live value changed since the write (local edit)', () => {
+    const live = { a: 1, model: 'opus' };
+    expect(blockedSettingsKeys({ a: 1 }, live, {}, rec({ model: 'sonnet' }))).toEqual(['model']);
+  });
+
+  it('blocks a key the pre-pull merge had when the live value was edited since (same-pull removal)', () => {
+    const live = { a: 1, model: 'opus' };
+    expect(blockedSettingsKeys({ a: 1 }, live, { a: 1, model: 'sonnet' })).toEqual(['model']);
   });
 
   it('keeps a credential key (env) out of the blocked list whether or not the record names it', () => {
-    expect(blockedSettingsKeys({ a: 1 }, { a: 1, env: { K: 'v' } }, {}, [])).toEqual([]);
-    expect(blockedSettingsKeys({ a: 1 }, { a: 1, env: { K: 'v' } }, {}, ['env'])).toEqual([]);
+    expect(blockedSettingsKeys({ a: 1 }, { a: 1, env: { K: 'v' } }, {}, {})).toEqual([]);
+    expect(
+      blockedSettingsKeys({ a: 1 }, { a: 1, env: { K: 'v' } }, {}, rec({ env: { K: 'v' } })),
+    ).toEqual([]);
   });
 });
 
@@ -134,7 +155,7 @@ describe('removedSettingsKeys', () => {
   const live = { a: 1, theme: 'dark', statusLine: 1, env: { K: 'v' } };
 
   it('returns live-only keys the pre-pull merge or the record carried', () => {
-    expect(removedSettingsKeys({ a: 1 }, live, { theme: 'x' }, ['statusLine'])).toEqual([
+    expect(removedSettingsKeys({ a: 1 }, live, { theme: 'dark' }, rec({ statusLine: 1 }))).toEqual([
       'statusLine',
       'theme',
     ]);
@@ -145,7 +166,36 @@ describe('removedSettingsKeys', () => {
   });
 
   it('leaves credential keys to the count-only WARN', () => {
-    expect(removedSettingsKeys({ a: 1 }, live, {}, ['env'])).toEqual([]);
+    expect(removedSettingsKeys({ a: 1 }, live, {}, rec({ env: { K: 'v' } }))).toEqual([]);
+  });
+});
+
+describe('stillAsWritten', () => {
+  it('matches only a recorded key whose live value is unchanged', () => {
+    const written = rec({ model: 'sonnet' });
+    expect(stillAsWritten(written, { model: 'sonnet' }, 'model')).toBe(true);
+    expect(stillAsWritten(written, { model: 'opus' }, 'model')).toBe(false);
+    expect(stillAsWritten(written, { theme: 'dark' }, 'theme')).toBe(false);
+    expect(stillAsWritten(null, { model: 'sonnet' }, 'model')).toBe(false);
+  });
+
+  it('is false, not a throw, for a recorded key the live file lacks', () => {
+    expect(stillAsWritten(rec({ model: 'sonnet' }), {}, 'model')).toBe(false);
+    expect(stillAsWritten({ toString: 'h' }, {}, 'toString')).toBe(false);
+  });
+
+  it('never matches an inherited property name', () => {
+    expect(stillAsWritten({}, { constructor: 1 }, 'constructor')).toBe(false);
+  });
+
+  it('ignores gsd hook entries the live file gained since the write', () => {
+    const userHook = { type: 'command', command: 'node /a/hooks/my-hook.js' };
+    const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+    const hooks = { PreToolUse: [{ matcher: '', hooks: [userHook] }] };
+    const live = {
+      hooks: { ...hooks, SessionStart: [{ matcher: '', hooks: [gsdHook] }] },
+    };
+    expect(stillAsWritten(rec({ hooks }), live, 'hooks')).toBe(true);
   });
 });
 

@@ -570,6 +570,14 @@ describe('regenerateSettings (integration)', () => {
     return join(testHome, '.cache', 'claude-nomad', 'settings-written-test-host.json');
   }
 
+  /** Keys the written-settings record names. */
+  function recordedKeys(): string[] {
+    const parsed = JSON.parse(readFileSync(writtenRecordPath(), 'utf8')) as {
+      keys: Record<string, string>;
+    };
+    return Object.keys(parsed.keys);
+  }
+
   it('never deletes a live non-gsd hook after a write that grafted gsd hooks back in', async () => {
     const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
     const userHook = { type: 'command', command: 'node /a/hooks/my-personal-hook.js' };
@@ -593,7 +601,7 @@ describe('regenerateSettings (integration)', () => {
       readFileSync(join(claudeDir, 'settings.json'), 'utf8'),
     ) as Record<string, unknown>;
     expect(writtenFile).toHaveProperty('hooks');
-    expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model']);
+    expect(recordedKeys()).toEqual(['model']);
 
     const step2Content =
       JSON.stringify({
@@ -628,7 +636,7 @@ describe('regenerateSettings (integration)', () => {
     writeFileSync(join(hostsDir, 'test-host.json'), JSON.stringify({ hooks: {} }) + '\n');
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
-    expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model']);
+    expect(recordedKeys()).toEqual(['model']);
   });
 
   it('a successful regenerate writes the record file with the written top-level keys', async () => {
@@ -638,7 +646,7 @@ describe('regenerateSettings (integration)', () => {
     );
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000');
-    expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model', 'theme']);
+    expect(recordedKeys()).toEqual(['model', 'theme']);
   });
 
   it('the blocked path writes no record', async () => {
@@ -679,7 +687,94 @@ describe('regenerateSettings (integration)', () => {
     );
     const { regenerateSettings } = await import('./links.ts');
     regenerateSettings('20260516-000000', { suppressDriftWarn: true });
-    expect(JSON.parse(readFileSync(writtenRecordPath(), 'utf8'))).toEqual(['model']);
+    expect(recordedKeys()).toEqual(['model']);
+  });
+
+  it('refuses, never deletes, a recorded key whose value was edited locally since the write', async () => {
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', theme: 'dark' }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+    // The user switches models locally, then another host drops `model` from base.
+    const edited = JSON.stringify({ model: 'opus', theme: 'dark' }) + '\n';
+    writeFileSync(join(claudeDir, 'settings.json'), edited);
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ theme: 'dark' }) + '\n');
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    expect(regenerateSettings('20260516-000000').blocked).toEqual(['model']);
+    expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(edited);
+  });
+
+  describe('hooks through a real write and record', () => {
+    const userHook = { type: 'command', command: 'node /a/hooks/my-hook.js' };
+    const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+
+    /** First pull writes base hooks (user entry) while the live file carries a gsd entry beside it. */
+    async function writeHooksThenDropUpstream(): Promise<(ts: string) => { blocked: string[] }> {
+      writeFileSync(
+        join(sharedDir, 'settings.base.json'),
+        JSON.stringify({
+          model: 'sonnet',
+          hooks: { PreToolUse: [{ matcher: '', hooks: [userHook] }] },
+        }) + '\n',
+      );
+      writeFileSync(
+        join(claudeDir, 'settings.json'),
+        JSON.stringify({
+          model: 'sonnet',
+          hooks: { PreToolUse: [{ matcher: '', hooks: [userHook, gsdHook] }] },
+        }) + '\n',
+      );
+      const { regenerateSettings } = await import('./links.ts');
+      regenerateSettings('20260516-000000');
+      writeFileSync(
+        join(sharedDir, 'settings.base.json'),
+        JSON.stringify({ model: 'sonnet' }) + '\n',
+      );
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      return regenerateSettings;
+    }
+
+    it('removes a recorded hooks block the repo dropped, gsd entries notwithstanding', async () => {
+      const regenerate = await writeHooksThenDropUpstream();
+      expect(regenerate('20260516-000000').blocked).toEqual([]);
+      const after = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      expect(JSON.stringify(after.hooks ?? {})).not.toContain('my-hook.js');
+    });
+
+    it('refuses when the user hook was edited after the write', async () => {
+      const regenerate = await writeHooksThenDropUpstream();
+      const live = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as {
+        hooks: { PreToolUse: { hooks: { command: string }[] }[] };
+      };
+      live.hooks.PreToolUse[0].hooks[0].command = 'node /a/hooks/my-hook-v2.js';
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(live) + '\n');
+      expect(regenerate('20260516-000000').blocked).toEqual(['hooks']);
+    });
+  });
+
+  it('a record in the pre-hash bare-array format falls back to blocking', async () => {
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(writtenRecordPath(), JSON.stringify(['model', 'statusLine']));
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet' }) + '\n',
+    );
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({ model: 'sonnet', statusLine: 1 }) + '\n',
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const { regenerateSettings } = await import('./links.ts');
+    expect(regenerateSettings('20260516-000000').blocked).toEqual(['statusLine']);
   });
 
   it('a garbage record file falls back to the pre-record behavior: a local addition is blocked', async () => {

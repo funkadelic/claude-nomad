@@ -4,29 +4,82 @@
  * the same words. No filesystem or `process` access.
  */
 
+import { createHash } from 'node:crypto';
+
 import {
   classifySettingsDrift,
+  deepEqual,
   describeSettings,
+  normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from '../commands/capture-settings/core.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 
+/** Hash of each top-level value the last settings write produced, by key. */
+export type WrittenSettings = Readonly<Record<string, string>>;
+
+/**
+ * sha256 of a settings value's JSON text. Key order counts, so a reordered
+ * object reads as changed, which fails closed (refuse, never delete).
+ * @param value - A top-level settings value.
+ */
+export function settingValueHash(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+/**
+ * Whether `written` records `key` with the value `live` still holds, gsd hook
+ * entries ignored. A live value edited since the write does not match.
+ * @param written - The written-settings record, or `null` for none.
+ * @param live - The parsed live settings.json.
+ * @param key - A top-level key.
+ */
+export function stillAsWritten(
+  written: WrittenSettings | null,
+  live: Record<string, unknown>,
+  key: string,
+): boolean {
+  const stripped = stripGsdHookEntries(live);
+  return (
+    written !== null &&
+    Object.hasOwn(written, key) &&
+    Object.hasOwn(stripped, key) &&
+    written[key] === settingValueHash(stripped[key])
+  );
+}
+
+/**
+ * Whether `preMerged` carried `key` with the value `live` still holds (gsd hook
+ * entries stripped, node launcher paths normalized, as the drift classifier
+ * compares). A live value edited since then does not match.
+ */
+function unchangedSincePreMerge(
+  preMerged: Record<string, unknown>,
+  live: Record<string, unknown>,
+  key: string,
+): boolean {
+  return (
+    Object.hasOwn(preMerged, key) &&
+    deepEqual(normalizeNodePathsDeep(preMerged[key]), normalizeNodePathsDeep(live[key]))
+  );
+}
+
 /**
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
- * named). A key `preMerged` had, or that `written` names, was removed upstream,
- * so it is not blocked.
+ * named). A key `preMerged` or `written` holds with the live value unchanged
+ * was removed upstream, so it is not blocked; an edited value stays blocked.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
- * @param written - Top-level keys the last successful settings write produced
- *   on this host, or `null` for no record; unions with `preMerged`'s keys.
+ * @param written - Value hashes the last successful settings write produced on
+ *   this host, or `null` for no record; see `stillAsWritten`.
  * @returns The blocked keys, sorted.
  */
 export function blockedSettingsKeys(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
-  written: readonly string[] | null = null,
+  written: WrittenSettings | null = null,
 ): string[] {
   return splitAheadKeys(merged, existing, preMerged, written).blocked;
 }
@@ -38,14 +91,14 @@ export function blockedSettingsKeys(
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD.
- * @param written - Recorded keys from the last successful write, or `null`.
+ * @param written - The written-settings record, or `null`.
  * @returns The removed keys, sorted.
  */
 export function removedSettingsKeys(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
-  written: readonly string[] | null,
+  written: WrittenSettings | null,
 ): string[] {
   return splitAheadKeys(merged, existing, preMerged, written).removed;
 }
@@ -58,16 +111,16 @@ function splitAheadKeys(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
-  written: readonly string[] | null,
+  written: WrittenSettings | null,
 ): { blocked: string[]; removed: string[] } {
   const { promotable } = partitionByCaptureExclusion(classifySettingsDrift(merged, existing).ahead);
-  const removedUpstream = new Set([
-    ...Object.keys(stripGsdHookEntries(preMerged)),
-    ...(written ?? []),
-  ]);
+  const pre = stripGsdHookEntries(preMerged);
+  const live = stripGsdHookEntries(existing);
+  const removedUpstream = (key: string): boolean =>
+    unchangedSincePreMerge(pre, live, key) || stillAsWritten(written, existing, key);
   return {
-    blocked: promotable.filter((key) => !removedUpstream.has(key)),
-    removed: promotable.filter((key) => removedUpstream.has(key)),
+    blocked: promotable.filter((key) => !removedUpstream(key)),
+    removed: promotable.filter(removedUpstream),
   };
 }
 
