@@ -7,6 +7,7 @@ import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
 import { baseHasGsdHookEntries } from '../../../sync/hooks-filter.ts';
 import { deepMerge } from '../../../core/utils.json.ts';
+import { stillAsWritten } from '../../../sync/settings-guard.ts';
 import { readWrittenSettingsKeys } from '../../../sync/settings-written.ts';
 
 /**
@@ -201,9 +202,9 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
 
   const { missing, changed, extra } = diffMergedSettings(merged, settings);
   const { promotable, excluded } = partitionByCaptureExclusion(extra);
-  const written = new Set(readWrittenSettingsKeys());
-  const dropped = promotable.filter((key) => written.has(key));
-  const candidates = promotable.filter((key) => !written.has(key));
+  const written = readWrittenSettingsKeys();
+  const dropped = promotable.filter((key) => stillAsWritten(written, settings, key));
+  const candidates = promotable.filter((key) => !stillAsWritten(written, settings, key));
 
   emitDriftRows(section, missing, changed, { candidates, dropped }, excluded, hostExists);
 }

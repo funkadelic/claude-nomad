@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
 
 import { infoGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
+import { settingValueHash } from '../../../sync/settings-guard.ts';
 import { type Env, makeDoctorEnv, restoreEnv } from './test-helpers.ts';
 import { diffMergedSettings } from './settings-drift.ts';
 
@@ -400,7 +401,10 @@ describe('reportSettingsDriftCheck', () => {
     mkdirSync(cache, { recursive: true });
     writeFileSync(
       join(cache, 'settings-written-test-host.json'),
-      JSON.stringify(['model', 'theme']),
+      JSON.stringify({
+        kind: 'settings-written/2',
+        keys: { model: settingValueHash('sonnet'), theme: settingValueHash('dark') },
+      }),
     );
     const { items } = await runCheck();
     const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
@@ -425,7 +429,11 @@ describe('reportSettingsDriftCheck', () => {
     writeFileSync(join(env.testHome, '.claude', 'settings.json'), JSON.stringify(live));
     const cache = join(env.testHome, '.cache', 'claude-nomad');
     mkdirSync(cache, { recursive: true });
-    writeFileSync(join(cache, 'settings-written-test-host.json'), JSON.stringify(recorded));
+    const keys = Object.fromEntries(recorded.map((k) => [k, settingValueHash(live[k])]));
+    writeFileSync(
+      join(cache, 'settings-written-test-host.json'),
+      JSON.stringify({ kind: 'settings-written/2', keys }),
+    );
   }
 
   it('promises the removal on the next pull when nothing else blocks it', async () => {
