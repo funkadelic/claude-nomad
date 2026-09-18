@@ -35,11 +35,12 @@ export { errMessage };
 type EjectRoots = { claudeHome: string; repoHome: string; cacheDir?: string };
 
 /**
- * A path as a double-quoted shell argument, with forward slashes on win32 so
- * Git Bash does not eat the backslashes.
+ * A path as a single-quoted shell argument (so `$`, backticks and `"` stay
+ * literal), with forward slashes on win32 so Git Bash does not eat the backslashes.
  */
 function shellPath(p: string): string {
-  return `"${process.platform === 'win32' ? p.replaceAll('\\', '/') : p}"`;
+  const path = process.platform === 'win32' ? p.replaceAll('\\', '/') : p;
+  return `'${path.replaceAll("'", "'\\''")}'`;
 }
 
 /**

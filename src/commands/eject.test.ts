@@ -330,7 +330,7 @@ describe('cmdEject', () => {
   it('ejectChecklist() points at the folder that holds every nomad cache path', () => {
     const printed = dirname(backupBase());
     // The checklist prints forward slashes on win32 (see the Git Bash test below).
-    expect(ejectChecklist().endsWith(`rm -rf "${printed.replaceAll(sep, '/')}"`)).toBe(true);
+    expect(ejectChecklist().endsWith(`rm -rf '${printed.replaceAll(sep, '/')}'`)).toBe(true);
     for (const p of [
       backupBase(),
       crashDir(),
@@ -347,7 +347,7 @@ describe('cmdEject', () => {
     process.env.USERPROFILE = String.raw`C:\Users\me`;
     stubPlatform('win32');
     try {
-      expect(ejectChecklist()).toContain('rm -rf "C:/Users/me/.cache/claude-nomad"');
+      expect(ejectChecklist()).toContain(`rm -rf 'C:/Users/me/.cache/claude-nomad'`);
     } finally {
       stubPlatform(realPlatform);
       if (originalProfile === undefined) delete process.env.USERPROFILE;
@@ -355,10 +355,27 @@ describe('cmdEject', () => {
     }
   });
 
+  it('ejectChecklist() single-quotes paths so shell syntax in them stays literal', () => {
+    const originalRepo = process.env.NOMAD_REPO;
+    process.env.NOMAD_REPO = '/tmp/a$b`c"d\'e';
+    try {
+      expect(ejectChecklist()).toContain(`rm -rf '/tmp/a$b\`c"d'\\''e'`);
+    } finally {
+      if (originalRepo === undefined) delete process.env.NOMAD_REPO;
+      else process.env.NOMAD_REPO = originalRepo;
+    }
+  });
+
   describe('host sync records', () => {
+    const cacheDirs: string[] = [];
+    afterEach(() => {
+      for (const d of cacheDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+    });
+
     /** A cache dir holding the three per-host records plus a backup snapshot. */
     function makeCache(): { cacheDir: string; records: string[]; backup: string } {
       const cacheDir = mkdtempSync(join(tmpdir(), 'nomad-eject-cache-'));
+      cacheDirs.push(cacheDir);
       const records = [settingsWrittenPath(), sharedBaselinePath(), manifestPath()].map((p) =>
         join(cacheDir, basename(p)),
       );
