@@ -111,7 +111,7 @@ in `~/.cache/claude-nomad/backup/`. A setting missing from the record is one you
 changed since is yours now, so either is kept and listed as above. The timing no longer matters: an
 edit you made to the repo, a `nomad push`, or an earlier `nomad pull --dry-run` all behave the same
 as a removal arriving with the pull. The record is one per machine, never synced, and holds setting
-names and value fingerprints, never the values.
+names and a fingerprint of each value rather than the values themselves.
 
 A machine with no record yet, either before its first successful pull or after the cache folder is
 cleared, keeps the older behavior. A removal already present in the repo is listed as a setting you

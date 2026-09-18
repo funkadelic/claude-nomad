@@ -708,6 +708,58 @@ describe('regenerateSettings (integration)', () => {
     expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(edited);
   });
 
+  describe('hooks through a real write and record', () => {
+    const userHook = { type: 'command', command: 'node /a/hooks/my-hook.js' };
+    const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+
+    /** First pull writes base hooks (user entry) while the live file carries a gsd entry beside it. */
+    async function writeHooksThenDropUpstream(): Promise<(ts: string) => { blocked: string[] }> {
+      writeFileSync(
+        join(sharedDir, 'settings.base.json'),
+        JSON.stringify({
+          model: 'sonnet',
+          hooks: { PreToolUse: [{ matcher: '', hooks: [userHook] }] },
+        }) + '\n',
+      );
+      writeFileSync(
+        join(claudeDir, 'settings.json'),
+        JSON.stringify({
+          model: 'sonnet',
+          hooks: { PreToolUse: [{ matcher: '', hooks: [userHook, gsdHook] }] },
+        }) + '\n',
+      );
+      const { regenerateSettings } = await import('./links.ts');
+      regenerateSettings('20260516-000000');
+      writeFileSync(
+        join(sharedDir, 'settings.base.json'),
+        JSON.stringify({ model: 'sonnet' }) + '\n',
+      );
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      return regenerateSettings;
+    }
+
+    it('removes a recorded hooks block the repo dropped, gsd entries notwithstanding', async () => {
+      const regenerate = await writeHooksThenDropUpstream();
+      expect(regenerate('20260516-000000').blocked).toEqual([]);
+      const after = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      expect(JSON.stringify(after.hooks ?? {})).not.toContain('my-hook.js');
+    });
+
+    it('refuses when the user hook was edited after the write', async () => {
+      const regenerate = await writeHooksThenDropUpstream();
+      const live = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as {
+        hooks: { PreToolUse: { hooks: { command: string }[] }[] };
+      };
+      live.hooks.PreToolUse[0].hooks[0].command = 'node /a/hooks/my-hook-v2.js';
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(live) + '\n');
+      expect(regenerate('20260516-000000').blocked).toEqual(['hooks']);
+    });
+  });
+
   it('a record in the pre-hash bare-array format falls back to blocking', async () => {
     mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
     writeFileSync(writtenRecordPath(), JSON.stringify(['model', 'statusLine']));

@@ -78,6 +78,11 @@ describe('blockedSettingsKeys', () => {
     expect(blockedSettingsKeys({ a: 1 }, live, {}, rec({ model: 'sonnet' }))).toEqual(['model']);
   });
 
+  it('blocks a key the pre-pull merge had when the live value was edited since (same-pull removal)', () => {
+    const live = { a: 1, model: 'opus' };
+    expect(blockedSettingsKeys({ a: 1 }, live, { a: 1, model: 'sonnet' })).toEqual(['model']);
+  });
+
   it('keeps a credential key (env) out of the blocked list whether or not the record names it', () => {
     expect(blockedSettingsKeys({ a: 1 }, { a: 1, env: { K: 'v' } }, {}, {})).toEqual([]);
     expect(
@@ -150,7 +155,7 @@ describe('removedSettingsKeys', () => {
   const live = { a: 1, theme: 'dark', statusLine: 1, env: { K: 'v' } };
 
   it('returns live-only keys the pre-pull merge or the record carried', () => {
-    expect(removedSettingsKeys({ a: 1 }, live, { theme: 'x' }, rec({ statusLine: 1 }))).toEqual([
+    expect(removedSettingsKeys({ a: 1 }, live, { theme: 'dark' }, rec({ statusLine: 1 }))).toEqual([
       'statusLine',
       'theme',
     ]);
@@ -172,6 +177,11 @@ describe('stillAsWritten', () => {
     expect(stillAsWritten(written, { model: 'opus' }, 'model')).toBe(false);
     expect(stillAsWritten(written, { theme: 'dark' }, 'theme')).toBe(false);
     expect(stillAsWritten(null, { model: 'sonnet' }, 'model')).toBe(false);
+  });
+
+  it('is false, not a throw, for a recorded key the live file lacks', () => {
+    expect(stillAsWritten(rec({ model: 'sonnet' }), {}, 'model')).toBe(false);
+    expect(stillAsWritten({ toString: 'h' }, {}, 'toString')).toBe(false);
   });
 
   it('never matches an inherited property name', () => {

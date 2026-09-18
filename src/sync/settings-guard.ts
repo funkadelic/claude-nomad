@@ -8,7 +8,9 @@ import { createHash } from 'node:crypto';
 
 import {
   classifySettingsDrift,
+  deepEqual,
   describeSettings,
+  normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from '../commands/capture-settings/core.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
@@ -37,17 +39,35 @@ export function stillAsWritten(
   live: Record<string, unknown>,
   key: string,
 ): boolean {
+  const stripped = stripGsdHookEntries(live);
   return (
     written !== null &&
     Object.hasOwn(written, key) &&
-    written[key] === settingValueHash(stripGsdHookEntries(live)[key])
+    Object.hasOwn(stripped, key) &&
+    written[key] === settingValueHash(stripped[key])
+  );
+}
+
+/**
+ * Whether `preMerged` carried `key` with the value `live` still holds (gsd hook
+ * entries stripped, node launcher paths normalized, as the drift classifier
+ * compares). A live value edited since then does not match.
+ */
+function unchangedSincePreMerge(
+  preMerged: Record<string, unknown>,
+  live: Record<string, unknown>,
+  key: string,
+): boolean {
+  return (
+    Object.hasOwn(preMerged, key) &&
+    deepEqual(normalizeNodePathsDeep(preMerged[key]), normalizeNodePathsDeep(live[key]))
   );
 }
 
 /**
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
- * named). A key `preMerged` had, or that `written` records with the live value
- * unchanged, was removed upstream, so it is not blocked.
+ * named). A key `preMerged` or `written` holds with the live value unchanged
+ * was removed upstream, so it is not blocked; an edited value stays blocked.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
@@ -94,9 +114,10 @@ function splitAheadKeys(
   written: WrittenSettings | null,
 ): { blocked: string[]; removed: string[] } {
   const { promotable } = partitionByCaptureExclusion(classifySettingsDrift(merged, existing).ahead);
-  const inPreMerged = new Set(Object.keys(stripGsdHookEntries(preMerged)));
+  const pre = stripGsdHookEntries(preMerged);
+  const live = stripGsdHookEntries(existing);
   const removedUpstream = (key: string): boolean =>
-    inPreMerged.has(key) || stillAsWritten(written, existing, key);
+    unchangedSincePreMerge(pre, live, key) || stillAsWritten(written, existing, key);
   return {
     blocked: promotable.filter((key) => !removedUpstream(key)),
     removed: promotable.filter(removedUpstream),
