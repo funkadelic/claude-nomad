@@ -110,6 +110,24 @@ describe('settings-written', () => {
     expect(existsSync(recordPath)).toBe(true);
   });
 
+  it('SAFETY, failed write: drops the previous record rather than leaving it stale', async () => {
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(recordPath, JSON.stringify(['model', 'theme']));
+    vi.doMock('../core/utils.fs.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof utilsFsModule>();
+      return {
+        ...actual,
+        writeJsonAtomic: () => {
+          throw new Error('ENOSPC: no space left on device');
+        },
+      };
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { recordWrittenSettingsKeys } = await import('./settings-written.ts');
+    recordWrittenSettingsKeys({ model: 'sonnet' });
+    expect(existsSync(recordPath)).toBe(false);
+  });
+
   it('warns and does not throw when the atomic write fails', async () => {
     vi.doMock('../core/utils.fs.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsFsModule>();
