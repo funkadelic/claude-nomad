@@ -1,11 +1,14 @@
-import { existsSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, realpathSync, rmSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 
 import {
   allSharedLinks,
   backupBase,
   claudeHome,
+  manifestPath,
   repoHome,
+  settingsWrittenPath,
+  sharedBaselinePath,
   sharedDirEntries,
   type PathMap,
 } from '../core/config.ts';
@@ -14,7 +17,7 @@ import {
   validateSharedDirEntry,
   type SharedDirRejectionReason,
 } from '../core/config.sharedDirs.guard.ts';
-import { fail, item, log } from '../core/utils.ts';
+import { fail, item, log, warn } from '../core/utils.ts';
 import { readPathMap } from '../core/utils.json.ts';
 import {
   classifyName,
@@ -28,21 +31,64 @@ import {
 
 export { errMessage };
 
+/** Roots `cmdEject` acts on; `cacheDir` absent means no host records to forget. */
+type EjectRoots = { claudeHome: string; repoHome: string; cacheDir?: string };
+
+/** Closes a single-quoted shell string, emits a literal `'`, and reopens it. */
+const ESCAPED_QUOTE = String.raw`'\''`;
+
+/**
+ * A path as a single-quoted shell argument (so `$`, backticks and `"` stay
+ * literal), with forward slashes on win32 so Git Bash does not eat the backslashes.
+ */
+function shellPath(p: string): string {
+  const path = process.platform === 'win32' ? p.replaceAll('\\', '/') : p;
+  return `'${path.replaceAll("'", ESCAPED_QUOTE)}'`;
+}
+
 /**
  * Build the manual-remainder checklist using call-time path values.
  * Exported so tests can assert on the exact wording.
  *
- * @returns The checklist string with current repoHome()/backupBase() values.
+ * @returns The checklist string with current repoHome() and cache-dir values.
  */
 export function ejectChecklist(): string {
   return [
     'Manual steps remaining to finish leaving claude-nomad on this host:',
     `  1. Uninstall the CLI: npm uninstall -g claude-nomad`,
     `  2. Remove NOMAD_HOST and NOMAD_REPO from your shell rc (~/.zshrc or ~/.bashrc)`,
-    `  3. Optionally delete the local sync checkout: rm -rf ${repoHome()}`,
+    `  3. Optionally delete the local sync checkout: rm -rf ${shellPath(repoHome())}`,
     `  4. Optionally delete the private sync repo on GitHub`,
-    `  5. Optionally delete the backup cache: rm -rf ${backupBase()}`,
+    `  5. Optionally delete nomad's cache folder, which holds backups and crash reports, once you`,
+    `     no longer need the backups in it: rm -rf ${shellPath(dirname(backupBase()))}`,
   ].join('\n');
+}
+
+/**
+ * Remove this host's sync records (settings written-keys, shared-links
+ * baseline, push manifest) from `cacheDir`, so a later setup on this host
+ * starts fresh instead of trusting them; the settings record can authorize a
+ * pull to delete settings. A removal failure warns and carries on.
+ *
+ * @param cacheDir The nomad cache folder, or `undefined` to do nothing.
+ * @param dryRun When true, only list what would be removed.
+ */
+function forgetHostRecords(cacheDir: string | undefined, dryRun: boolean): void {
+  if (cacheDir === undefined) return;
+  for (const record of [settingsWrittenPath(), sharedBaselinePath(), manifestPath()]) {
+    const p = join(cacheDir, basename(record));
+    if (dryRun) {
+      if (existsSync(p)) item(`would remove sync record: ${p}`);
+      continue;
+    }
+    try {
+      rmSync(p);
+      item(`removed sync record: ${p}`);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      warn(`could not remove ${p}: ${errMessage(err)}; delete it by hand`);
+    }
+  }
 }
 
 /**
@@ -69,12 +115,14 @@ function readMapIfPresent(repoHome: string): PathMap {
  * @param classifications Map from name to its NameClass.
  * @param claudeHome Absolute path to the claude config directory.
  * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
+ * @param cacheDir The nomad cache folder, or `undefined` (see {@link forgetHostRecords}).
  */
 function previewDryRun(
   names: string[],
   classifications: Map<string, NameClass>,
   claudeHome: string,
   sharedRoot: string,
+  cacheDir: string | undefined,
 ): void {
   for (const name of names) {
     const cls = classifications.get(name);
@@ -87,6 +135,7 @@ function previewDryRun(
       previewMaterialize(name, linkPath, sharedRoot);
     }
   }
+  forgetHostRecords(cacheDir, true);
   log(ejectChecklist());
 }
 
@@ -133,12 +182,14 @@ export function previewMaterialize(name: string, linkPath: string, sharedRoot: s
  * @param classifications Map from name to its NameClass.
  * @param claudeHome Absolute path to the claude config directory.
  * @param sharedRoot Realpath of the repo's `shared/` directory (containment root).
+ * @param cacheDir The nomad cache folder, or `undefined` (see {@link forgetHostRecords}).
  */
 function runLiveEject(
   names: string[],
   classifications: Map<string, NameClass>,
   claudeHome: string,
   sharedRoot: string,
+  cacheDir: string | undefined,
 ): void {
   const done: string[] = [];
   let skipped = 0;
@@ -158,6 +209,7 @@ function runLiveEject(
     }
   }
   log(`materialized ${done.length}, skipped ${skipped}`);
+  forgetHostRecords(cacheDir, false);
   log(ejectChecklist());
 }
 
@@ -232,8 +284,8 @@ export function ejectNames(map: PathMap): string[] {
  *
  * @returns The production roots object, both paths resolved at call time.
  */
-function defaultEjectRoots(): { claudeHome: string; repoHome: string } {
-  return { claudeHome: claudeHome(), repoHome: repoHome() };
+function defaultEjectRoots(): EjectRoots {
+  return { claudeHome: claudeHome(), repoHome: repoHome(), cacheDir: dirname(backupBase()) };
 }
 
 /**
@@ -257,6 +309,8 @@ function defaultEjectRoots(): { claudeHome: string; repoHome: string } {
  * under us) aborts with exit 1 and a FATAL message naming the failed entry, the
  * names already materialized, and a do-not-delete-the-repo-yet hint.
  *
+ * Then removes this host's sync records ({@link forgetHostRecords}).
+ *
  * `dryRun: true` previews actions and prints the checklist without writing.
  *
  * @param opts.dryRun When true, log planned actions and return without mutation.
@@ -264,10 +318,10 @@ function defaultEjectRoots(): { claudeHome: string; repoHome: string } {
  */
 export function cmdEject(
   opts: { dryRun?: boolean } = {},
-  roots: { claudeHome: string; repoHome: string } = defaultEjectRoots(),
+  roots: EjectRoots = defaultEjectRoots(),
 ): void {
   const dryRun = opts.dryRun === true;
-  const { claudeHome, repoHome } = roots;
+  const { claudeHome, repoHome, cacheDir } = roots;
 
   const map = readMapIfPresent(repoHome);
   const names = ejectNames(map);
@@ -323,7 +377,7 @@ export function cmdEject(
   const sharedRoot = resolveSharedRoot(repoHome);
 
   if (dryRun) {
-    previewDryRun(names, classifications, claudeHome, sharedRoot);
+    previewDryRun(names, classifications, claudeHome, sharedRoot, cacheDir);
     return;
   }
 
@@ -331,7 +385,7 @@ export function cmdEject(
   // materializeOneOrDie), so any throw here is a clean fatal: report it and
   // exit 1, matching the dangling-abort exit semantics above.
   try {
-    runLiveEject(names, classifications, claudeHome, sharedRoot);
+    runLiveEject(names, classifications, claudeHome, sharedRoot, cacheDir);
   } catch (err) {
     fail(errMessage(err));
     process.exit(1);

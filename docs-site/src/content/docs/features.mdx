@@ -127,6 +127,6 @@ are real files that keep working untouched. To walk away, run `nomad eject`: it 
 managed symlink with a real dereferenced copy in one step, so your setup keeps working after you
 delete the `~/claude-nomad/` checkout and uninstall the CLI. (On native Windows, where synced
 names are already real copies, `adopt` copies back a real copy and `eject` has almost nothing to
-materialize.) After ejecting, it prints a checklist
-of the remaining manual steps (uninstall, remove the env vars, optionally delete the repo and
-backup cache). See [Commands](/claude-nomad/commands/) for the full flag reference.
+materialize.) It also deletes the records nomad keeps about this machine, then prints a
+checklist of the remaining manual steps (uninstall, remove the env vars, optionally delete the
+repo and nomad's cache folder). See [Commands](/claude-nomad/commands/) for the full flag reference.
