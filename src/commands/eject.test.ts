@@ -399,7 +399,7 @@ describe('cmdEject', () => {
       const { cacheDir, records } = makeCache();
       rmSync(records[0]);
       cmdEject({}, { claudeHome, repoHome, cacheDir });
-      expect(existsSync(records[1])).toBe(false);
+      for (const r of records.slice(1)) expect(existsSync(r)).toBe(false);
       expect(errSpy).not.toHaveBeenCalled();
       expect(logSpy).not.toHaveBeenCalledWith(
         expect.stringContaining(`removed sync record: ${records[0]}`),
