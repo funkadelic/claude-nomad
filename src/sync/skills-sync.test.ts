@@ -204,6 +204,21 @@ describe('copySkillsPush', () => {
     expect(existsSync(join(dst, 'synced'))).toBe(false);
   });
 
+  it('excludes the root .trash/ and .staging/ folders and still copies nested ones', () => {
+    for (const dir of ['.trash', '.staging']) {
+      mkdirSync(join(src, dir, 'old'), { recursive: true });
+      writeFileSync(join(src, dir, 'old', 'SKILL.md'), '# old\n');
+      mkdirSync(join(src, 'my-skill', dir), { recursive: true });
+      writeFileSync(join(src, 'my-skill', dir, 'x.md'), '# nested\n');
+    }
+
+    copySkillsPush(src, dst);
+
+    expect(readdirSync(dst)).toEqual(['my-skill']);
+    expect(existsSync(join(dst, 'my-skill', '.trash', 'x.md'))).toBe(true);
+    expect(existsSync(join(dst, 'my-skill', '.staging', 'x.md'))).toBe(true);
+  });
+
   it('still copies a synced/ folder nested inside a user skill (root-only exclusion)', () => {
     mkdirSync(join(src, 'my-skill', 'synced'), { recursive: true });
     writeFileSync(join(src, 'my-skill', 'synced', 'x.md'), '# nested\n');
@@ -346,6 +361,23 @@ describe('copySkillsPull', () => {
     expect(readFileSync(join(dst, 'synced', 'mine', 'manifest.json'), 'utf8')).toBe('mine\n');
     expect(existsSync(join(dst, 'synced', '.bucket-org_acct'))).toBe(true);
     expect(existsSync(join(dst, 'graphify'))).toBe(true);
+  });
+
+  it('never prunes or overlays the local root .trash/ and .staging/ folders', () => {
+    for (const dir of ['.trash', '.staging']) {
+      mkdirSync(join(dst, dir, 'mine'), { recursive: true });
+      writeFileSync(join(dst, dir, 'mine', 'SKILL.md'), 'mine\n');
+      mkdirSync(join(src, dir, 'mine'), { recursive: true });
+      writeFileSync(join(src, dir, 'mine', 'SKILL.md'), 'theirs\n');
+      writeFileSync(join(src, dir, 'repo-only.md'), 'repo\n');
+    }
+
+    copySkillsPull(src, dst, () => false);
+
+    for (const dir of ['.trash', '.staging']) {
+      expect(readFileSync(join(dst, dir, 'mine', 'SKILL.md'), 'utf8')).toBe('mine\n');
+      expect(existsSync(join(dst, dir, 'repo-only.md'))).toBe(false);
+    }
   });
 
   it('never overlays repo root synced/ content into the local root synced/', () => {
