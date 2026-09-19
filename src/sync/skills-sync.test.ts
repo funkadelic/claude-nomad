@@ -14,7 +14,13 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { copySkillsPull, copySkillsPush, isGsdOwned, isSkillExcluded } from './skills-sync.ts';
+import {
+  copySkillsPull,
+  copySkillsPush,
+  isGsdOwned,
+  isRootSkillExcluded,
+  isSkillExcluded,
+} from './skills-sync.ts';
 
 /**
  * Run a git command with an explicit cwd; throws on non-zero exit.
@@ -77,6 +83,32 @@ describe('isSkillExcluded', () => {
 
   it('does not exclude a user skill name', () => {
     expect(isSkillExcluded('graphify')).toBe(false);
+  });
+});
+
+describe('isRootSkillExcluded', () => {
+  it('excludes synced (root-level, exact match)', () => {
+    expect(isRootSkillExcluded('synced')).toBe(true);
+  });
+
+  it('excludes Synced (case-insensitive)', () => {
+    expect(isRootSkillExcluded('Synced')).toBe(true);
+  });
+
+  it('excludes a gsd-prefixed name (inherits isSkillExcluded)', () => {
+    expect(isRootSkillExcluded('gsd-foo')).toBe(true);
+  });
+
+  it('excludes settings.local.json (inherits isSkillExcluded)', () => {
+    expect(isRootSkillExcluded('settings.local.json')).toBe(true);
+  });
+
+  it('does not exclude graphify', () => {
+    expect(isRootSkillExcluded('graphify')).toBe(false);
+  });
+
+  it('does not exclude synced-notes', () => {
+    expect(isRootSkillExcluded('synced-notes')).toBe(false);
   });
 });
 
@@ -148,6 +180,31 @@ describe('copySkillsPush', () => {
 
     expect(existsSync(join(dst, 'graphify', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(dst, 'graphify', 'settings.local.json'))).toBe(false);
+  });
+
+  it('excludes the root synced/ folder and removes a stale repo copy', () => {
+    mkdirSync(join(src, 'graphify'), { recursive: true });
+    writeFileSync(join(src, 'graphify', 'SKILL.md'), '# graphify\n');
+    mkdirSync(join(src, 'synced', 'org_acct', 'docx'), { recursive: true });
+    writeFileSync(join(src, 'synced', '.bucket-org_acct'), '');
+    writeFileSync(join(src, 'synced', 'org_acct', 'manifest.json'), '{}\n');
+    writeFileSync(join(src, 'synced', 'org_acct', 'docx', 'SKILL.md'), '# docx\n');
+    mkdirSync(join(dst, 'synced', 'old'), { recursive: true });
+    writeFileSync(join(dst, 'synced', 'old', 'manifest.json'), '{}\n');
+
+    copySkillsPush(src, dst);
+
+    expect(readdirSync(dst).sort()).toEqual(['graphify']);
+    expect(existsSync(join(dst, 'synced'))).toBe(false);
+  });
+
+  it('still copies a synced/ folder nested inside a user skill (root-only exclusion)', () => {
+    mkdirSync(join(src, 'my-skill', 'synced'), { recursive: true });
+    writeFileSync(join(src, 'my-skill', 'synced', 'x.md'), '# nested\n');
+
+    copySkillsPush(src, dst);
+
+    expect(existsSync(join(dst, 'my-skill', 'synced', 'x.md'))).toBe(true);
   });
 });
 
@@ -590,5 +647,16 @@ describe('syncSkillsPush', () => {
     expect(existsSync(join(sharedSkills, 'graphify', 'SKILL.md'))).toBe(true);
     // The symlink is left in place for the next pull to migrate.
     expect(lstatSync(localSkills).isSymbolicLink()).toBe(true);
+  });
+
+  it('never mirrors a local skills/synced/ folder into shared/skills on push', async () => {
+    mkdirSync(join(localSkills, 'synced', 'org_acct'), { recursive: true });
+    writeFileSync(join(localSkills, 'synced', 'org_acct', 'manifest.json'), '{}\n');
+    mkdirSync(join(localSkills, 'graphify'), { recursive: true });
+    writeFileSync(join(localSkills, 'graphify', 'SKILL.md'), '# graphify\n');
+    const { syncSkillsPush } = await import('./skills-sync.ts');
+    syncSkillsPush();
+    expect(existsSync(join(sharedSkills, 'synced'))).toBe(false);
+    expect(existsSync(join(sharedSkills, 'graphify'))).toBe(true);
   });
 });

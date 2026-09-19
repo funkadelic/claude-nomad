@@ -55,6 +55,19 @@ export function isSkillExcluded(name: string): boolean {
   return isGsdOwned(name) || isDeniedName(ALWAYS_NEVER_SYNC, name);
 }
 
+/** Top-level skills/ folder name Claude Code manages itself; never nomad's to sync. */
+const ROOT_EXCLUDED_SKILLS_DIR = 'synced';
+
+/**
+ * `isSkillExcluded` plus Claude Code's app-managed root `synced/` folder
+ * (case-insensitive); a nested `synced/` inside a user skill still syncs.
+ *
+ * @param name - Basename of a top-level `skills/` entry to test.
+ */
+export function isRootSkillExcluded(name: string): boolean {
+  return isSkillExcluded(name) || name.toLowerCase() === ROOT_EXCLUDED_SKILLS_DIR;
+}
+
 /**
  * Push-side filtered mirror for `skills/`. Copies all non-gsd skills from
  * `src` into `dst`, mirroring the repo side. Pre-existing gsd-owned entries in
@@ -73,7 +86,10 @@ export function isSkillExcluded(name: string): boolean {
  * `ALWAYS_NEVER_SYNC` denylist. `copyExtrasFiltered`'s `cpSync` filter tests
  * every entry's basename at every depth, so seeding the set with the denylist
  * names blocks a host-config file nested inside a user skill, not just
- * a top-level one.
+ * a top-level one. `isRootSkillExcluded` is also passed as the root-only
+ * exclusion, so Claude Code's root `synced/` folder is left out of the
+ * mirror (dropping a stale `shared/skills/synced/`) while a nested `synced/`
+ * still copies.
  *
  * Precondition: `src` MUST be a real directory, not a symlink. `readdirSync`
  * and the underlying `cpSync` follow a symlinked `src` root and would silently
@@ -92,7 +108,7 @@ export function copySkillsPush(src: string, dst: string): void {
     ...srcNames.filter((n) => isGsdOwned(n)),
     ...ALWAYS_NEVER_SYNC,
   ]);
-  copyExtrasFiltered(src, dst, blockSet);
+  copyExtrasFiltered(src, dst, blockSet, isRootSkillExcluded);
 }
 
 /**

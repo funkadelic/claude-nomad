@@ -31,7 +31,7 @@ import { type ManifestDiff } from './manifest.ts';
 import { copyDirJsonlOnly, copyFileAtomic } from '../../sync/remap.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './leak-verdict.ts';
 import { scanStagedTree } from './gitleaks.ts';
-import { copySkillsPush, isSkillExcluded } from '../../sync/skills-sync.ts';
+import { copySkillsPush, isRootSkillExcluded } from '../../sync/skills-sync.ts';
 import { nowTimestamp } from '../../core/utils.fs.ts';
 import { encodePath } from '../../core/utils.json.ts';
 
@@ -154,10 +154,10 @@ function stageExtras(tmpRoot: string, map: PathMap): number {
  * throwaway `tmpRoot`, never `REPO_HOME/shared`.
  *
  * The returned count is the number of top-level user-skill names that will be
- * copied (`isSkillExcluded` false), used only for the nothing-to-scan gate. It
- * is a lower bound on real coverage, never a false zero: any name it counts is
- * definitely copied by `copySkillsPush`, whose block set is a subset of the
- * exclusion `isSkillExcluded` applies.
+ * copied (`isRootSkillExcluded` false), used only for the nothing-to-scan
+ * gate. It is a lower bound on real coverage, never a false zero: any name it
+ * counts is definitely copied by `copySkillsPush`, whose block set is a
+ * subset of the exclusion `isRootSkillExcluded` applies.
  *
  * @param tmpRoot - Root of the throwaway staging tree.
  * @returns Number of top-level user skills staged.
@@ -170,7 +170,9 @@ function stageSkills(tmpRoot: string): number {
   // that a real push would still cover. Transient (one `nomad pull` migrates the
   // link) and no new leak (that content was scanned when first pushed).
   if (stat === undefined || stat.isSymbolicLink()) return 0;
-  const names = readdirSync(localSkills, { encoding: 'utf8' }).filter((n) => !isSkillExcluded(n));
+  const names = readdirSync(localSkills, { encoding: 'utf8' }).filter(
+    (n) => !isRootSkillExcluded(n),
+  );
   if (names.length === 0) return 0;
   copySkillsPush(localSkills, join(tmpRoot, 'shared', 'skills'));
   return names.length;

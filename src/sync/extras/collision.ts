@@ -1,5 +1,5 @@
 import { cpSync, existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { NomadFatal } from '../../core/utils.ts';
 
@@ -11,6 +11,15 @@ import { NomadFatal } from '../../core/utils.ts';
  */
 function quoted(p: string): string {
   return `"${p}"`;
+}
+
+/** A direct child of src that the root-only predicate rejects; deeper entries never match. */
+export function isRootExcludedEntry(
+  src: string,
+  entry: string,
+  isRootExcluded?: (name: string) => boolean,
+): boolean {
+  return dirname(entry) === src && isRootExcluded?.(basename(entry)) === true;
 }
 
 /**
