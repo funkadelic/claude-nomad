@@ -31,8 +31,8 @@ function stripSideIndicator(line: string): string {
  * path is stripped first; only the top-level component (immediately under
  * the skills directory) is tested. Checking every component would cause a
  * false positive when HOME or NOMAD_REPO contains a `gsd-`-prefixed segment.
- * A root-level denied name being filtered too is intended: push never
- * carries one, so it can never legitimately diverge.
+ * Root-level denied names are filtered too, on purpose: push never carries
+ * one, so it cannot diverge.
  *
  * @param line - A labelled diff line from `listDivergingFiles`.
  * @param localBase - The absolute path of the local skills directory.
