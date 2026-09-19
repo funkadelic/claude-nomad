@@ -253,6 +253,7 @@ describe('reportSkillsDivergence (real git)', () => {
     const out = sec.items.join('\n');
     expect(out).toContain(okGlyph);
     expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('still warns for a synced/ folder nested inside a local-only user skill', async () => {
