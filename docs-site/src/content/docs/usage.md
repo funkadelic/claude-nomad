@@ -207,8 +207,8 @@ checked (those paths are legitimately absent on this machine), and `TBD` placeho
 Finally, `~/.claude/skills/` gets the same divergence check as per-project extras: if a synced skill
 file has been hand-edited after the last pull and differs from the shared copy, `nomad doctor` lists
 the differing files before a pull would silently overwrite them. `gsd-*` skills and Claude Code's
-own account-skills folders (`skills/synced/`, `.trash`, `.staging`) are excluded from this check,
-the same as they are excluded from the skills copy-sync.
+own account-skills folders (`skills/synced/`, `skills/.trash/`, `skills/.staging/`) are excluded
+from this check, the same as they are excluded from the skills copy-sync.
 
 `nomad pull --dry-run` keeps its own readable preview format (a unified diff of the
 `settings.json` changes plus the transcripts a real pull would overwrite) rather than the grouped

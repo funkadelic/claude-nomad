@@ -33,11 +33,11 @@ session history survives different file paths and your secrets never ride along.
   `CLAUDE.md` live in one place and follow you everywhere. `hooks/` and `agents/` are installed
   per-host by `@opengsd/gsd-core` via npm and are not synced (syncing them caused version-skew
   churn). Skills sync as a filtered copy: your own skills travel, while `gsd-*` skills and Claude
-  Code's own account-skills folders (`skills/synced/`, `.trash`, `.staging`) stay behind (see
-  `SHARED_LINKS` in `src/core/config.ts` and `src/sync/skills-sync.ts`). Claude Code keeps its copy
-  of the skills enabled on your claude.ai account there. Settings merge a shared base with a
-  per-host override, so one machine can run a different model or MCP URL without forking the rest.
-  GSD-owned hook entries (scripts whose basename starts with `gsd-`) are filtered out of the
+  Code's own account-skills folders (`skills/synced/`, `skills/.trash/`, `skills/.staging/`) stay
+  behind (see `SHARED_LINKS` in `src/core/config.ts` and `src/sync/skills-sync.ts`). Claude Code
+  keeps its copy of the skills enabled on your claude.ai account there. Settings merge a shared base
+  with a per-host override, so one machine can run a different model or MCP URL without forking the
+  rest. GSD-owned hook entries (scripts whose basename starts with `gsd-`) are filtered out of the
   generated `~/.claude/settings.json` during pull and stripped from `shared/settings.base.json` on
   the next push; GSD reinstalls the correct per-host hook set itself. A non-gsd hook you add to your
   live settings syncs normally via `nomad capture-settings`.
