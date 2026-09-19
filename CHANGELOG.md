@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.69.2](https://github.com/funkadelic/claude-nomad/compare/v0.69.1...v0.69.2) (2026-09-19)
+
+
+### What's new
+
+**On native Windows (PowerShell, cmd, or Git Bash).** WSL2 behaves like Linux, so these do not apply to it.
+
+* `nomad allow`, and choosing Allow when `nomad push` finds a possible secret, no longer add a duplicate line to a `.gitleaksignore` saved with Windows line endings.
+* The cleanup commands `nomad eject` prints now use forward slashes, so you can paste them into Git Bash as they are.
+
+**On every platform**
+
+* `nomad pull` no longer overwrites a setting you changed on this machine but haven't saved to your sync repo. It stops, names each one, and tells you to save it with `nomad capture-settings` or delete it. `nomad sync` and `nomad pull --dry-run` flag the same settings.
+* When a setting is removed from your sync repo, whether you removed it or another machine did, a pull removes it here too, but only if you haven't edited it on this machine. The pull names each setting it removes, `nomad doctor` warns about them beforehand, and the settings file from before the pull is kept in `~/.cache/claude-nomad/backup/`.
+* Settings that can hold a secret, such as `env` or `apiKeyHelper`, are never printed, so a pull can't list them. When it replaces some that your sync repo doesn't track, it now tells you how many. Keep values like these in `~/.claude/settings.local.json`, which nomad never touches.
+* `nomad eject` now also deletes the records nomad keeps about this machine, so setting nomad up here again starts fresh.
+
+
+### Fixed
+
+* **eject:** forget this machine's sync records ([#615](https://github.com/funkadelic/claude-nomad/issues/615)) ([899abd8](https://github.com/funkadelic/claude-nomad/commit/899abd82b2ffd1acd3f6faf36d8e1d26402eb6c7))
+* **pull:** keep a setting you changed when the repo drops it ([#614](https://github.com/funkadelic/claude-nomad/issues/614)) ([f60cc98](https://github.com/funkadelic/claude-nomad/commit/f60cc98989296938f560db58cd05950280f335c7))
+* **pull:** name the settings a pull removes ([#613](https://github.com/funkadelic/claude-nomad/issues/613)) ([8266fc9](https://github.com/funkadelic/claude-nomad/commit/8266fc90a19e3119782354751c8e1ee9c225e6b2))
+* **pull:** stop overwriting settings you have not saved to the repo ([#606](https://github.com/funkadelic/claude-nomad/issues/606)) ([160abba](https://github.com/funkadelic/claude-nomad/commit/160abbaa10766786b58f3a73906fd2feb6c6e097))
+* **pull:** stop refusing a setting you removed from the repo ([#612](https://github.com/funkadelic/claude-nomad/issues/612)) ([d7d620c](https://github.com/funkadelic/claude-nomad/commit/d7d620cf25534aa0d4d65afe0fcbd834d35b7c50))
+* **pull:** warn before replacing a credential setting not in the repo ([#610](https://github.com/funkadelic/claude-nomad/issues/610)) ([db739f5](https://github.com/funkadelic/claude-nomad/commit/db739f510ac7a8fde6c7139f0ea00a22cf3c4aec))
+* **redact:** stop adding duplicate lines to a Windows-style .gitleaksignore ([#609](https://github.com/funkadelic/claude-nomad/issues/609)) ([07152de](https://github.com/funkadelic/claude-nomad/commit/07152de8c26b31ee2ce93a45b1c5ef948e83b558))
+* **redact:** stop re-appending a fingerprint to a CRLF .gitleaksignore ([07152de](https://github.com/funkadelic/claude-nomad/commit/07152de8c26b31ee2ce93a45b1c5ef948e83b558))
+
+
+### Changed
+
+* split four oversized source files ([#608](https://github.com/funkadelic/claude-nomad/issues/608)) ([8a08ba7](https://github.com/funkadelic/claude-nomad/commit/8a08ba7d27cfb0dab9a7d9c89b69872c13d200c9))
+
+
+### Dependencies
+
+* bump devalue from 5.8.1 to 5.9.2 in /docs-site ([#611](https://github.com/funkadelic/claude-nomad/issues/611)) ([ad47cbc](https://github.com/funkadelic/claude-nomad/commit/ad47cbcf98ee7cf85628e741b834487ce806cf37))
+
 ## [0.69.1](https://github.com/funkadelic/claude-nomad/compare/v0.69.0...v0.69.1) (2026-09-15)
 
 
