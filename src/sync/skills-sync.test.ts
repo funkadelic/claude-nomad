@@ -92,6 +92,11 @@ describe('isRootSkillExcluded', () => {
     expect(isRootSkillExcluded('synced')).toBe(true);
   });
 
+  it('excludes Claude Code .trash and .staging (root-level)', () => {
+    expect(isRootSkillExcluded('.trash')).toBe(true);
+    expect(isRootSkillExcluded('.staging')).toBe(true);
+  });
+
   it('excludes Synced (case-insensitive)', () => {
     expect(isRootSkillExcluded('Synced')).toBe(true);
   });

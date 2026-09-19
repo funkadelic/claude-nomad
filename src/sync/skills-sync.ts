@@ -55,17 +55,17 @@ export function isSkillExcluded(name: string): boolean {
   return isGsdOwned(name) || isDeniedName(ALWAYS_NEVER_SYNC, name);
 }
 
-/** Top-level skills/ folder name Claude Code manages itself; never nomad's to sync. */
-const ROOT_EXCLUDED_SKILLS_DIR = 'synced';
+/** Top-level skills/ folders Claude Code manages itself (account skills sync); never nomad's to sync. */
+const ROOT_EXCLUDED_SKILLS_DIRS = new Set(['synced', '.trash', '.staging']);
 
 /**
- * `isSkillExcluded` plus Claude Code's app-managed root `synced/` folder
- * (case-insensitive); a nested `synced/` inside a user skill still syncs.
+ * `isSkillExcluded` plus Claude Code's app-managed root `synced/`, `.trash/`
+ * and `.staging/` folders (case-insensitive); a nested one inside a user skill still syncs.
  *
  * @param name - Basename of a top-level `skills/` entry to test.
  */
 export function isRootSkillExcluded(name: string): boolean {
-  return isSkillExcluded(name) || name.toLowerCase() === ROOT_EXCLUDED_SKILLS_DIR;
+  return isSkillExcluded(name) || ROOT_EXCLUDED_SKILLS_DIRS.has(name.toLowerCase());
 }
 
 /**

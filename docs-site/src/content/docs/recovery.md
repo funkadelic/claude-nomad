@@ -324,10 +324,10 @@ step; it warns only (`⚠︎`) and never fails the doctor run.
 ## Recovery flow: a secret in a synced skill
 
 Your own skills under `~/.claude/skills/` are copy-synced to the sync repo (only `gsd-`prefixed
-skills and Claude Code's own `skills/synced/` folder are excluded). Skill content is executable
-(`SKILL.md`, helper scripts in `references/` or `scripts/`, dotfiles), so it is a plausible place
-for a pasted API key or token to end up. A gitleaks finding in a skill file, like a memory note,
-has no session id, so it gets the same treatment:
+skills and Claude Code's own `skills/synced/`, `.trash` and `.staging` folders are excluded). Skill
+content is executable (`SKILL.md`, helper scripts in `references/` or `scripts/`, dotfiles), so it
+is a plausible place for a pasted API key or token to end up. A gitleaks finding in a skill file,
+like a memory note, has no session id, so it gets the same treatment:
 
 - `nomad drop-session` and `nomad redact <session-id>` do not touch skill files. In the push-time
   menu, choosing Drop on a skill finding is refused with a note to use Redact or Skip instead.
