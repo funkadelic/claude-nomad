@@ -227,6 +227,49 @@ describe('reportSkillsDivergence (real git)', () => {
     }
   });
 
+  it('emits okGlyph when only the root synced/ folder is local-only', async () => {
+    mkdirSync(join(localSkills, 'synced', 'org_acct'), { recursive: true });
+    mkdirSync(sharedSkills, { recursive: true });
+    writeFileSync(join(localSkills, 'synced', '.bucket-org_acct'), '');
+    writeFileSync(join(localSkills, 'synced', 'org_acct', 'manifest.json'), '{}\n');
+    const { section: makeSection } = await import('../format.ts');
+    const { reportSkillsDivergence } = await import('./skills.ts');
+    const sec = makeSection('Skills');
+    reportSkillsDivergence(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain(okGlyph);
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it('emits okGlyph when only a stale root synced/ folder is repo-only', async () => {
+    mkdirSync(join(sharedSkills, 'synced', 'org_acct'), { recursive: true });
+    mkdirSync(localSkills, { recursive: true });
+    writeFileSync(join(sharedSkills, 'synced', 'org_acct', 'manifest.json'), '{}\n');
+    const { section: makeSection } = await import('../format.ts');
+    const { reportSkillsDivergence } = await import('./skills.ts');
+    const sec = makeSection('Skills');
+    reportSkillsDivergence(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain(okGlyph);
+    expect(out).not.toContain(warnGlyph);
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it('still warns for a synced/ folder nested inside a local-only user skill', async () => {
+    mkdirSync(join(localSkills, 'my-skill', 'synced'), { recursive: true });
+    mkdirSync(sharedSkills, { recursive: true });
+    writeFileSync(join(localSkills, 'my-skill', 'synced', 'x.md'), '# nested\n');
+    const { section: makeSection } = await import('../format.ts');
+    const { reportSkillsDivergence } = await import('./skills.ts');
+    const sec = makeSection('Skills');
+    reportSkillsDivergence(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain(warnGlyph);
+    expect(out).toContain('my-skill/synced/x.md');
+    expect(process.exitCode).not.toBe(1);
+  });
+
   it('does not set process.exitCode when a non-gsd skill diverges', async () => {
     mkdirSync(join(sharedSkills, 'my-skill'), { recursive: true });
     mkdirSync(join(localSkills, 'my-skill'), { recursive: true });

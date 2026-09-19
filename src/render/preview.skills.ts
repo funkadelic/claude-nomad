@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { claudeHome, repoHome } from '../core/config.ts';
 import { addItem, section, type DoctorSection } from './output-tree.ts';
-import { isSkillExcluded } from '../sync/skills-sync.ts';
+import { isRootSkillExcluded } from '../sync/skills-sync.ts';
 
 /**
  * Build the read-only `Skills` preview section shared by `pull --dry-run`,
@@ -16,12 +16,12 @@ import { isSkillExcluded } from '../sync/skills-sync.ts';
  * no synced skills renders no `Skills` header at all (matching the existing
  * Extras section's no-`shared/extras/` behavior).
  *
- * Otherwise lists one glyph-free row per non-`gsd-*`/non-denied entry in
- * `shared/skills/` (what a wet pull would overlay), then, only when non-zero,
- * a single row naming how many local-only skills (present under
- * `~/.claude/skills/`, not `gsd-*`/denied, and absent from the shared
- * listing) would be retained. Wording deliberately mirrors the existing
- * Sessions local-only row so the two surfaces read the same.
+ * Otherwise lists one glyph-free row per non-`gsd-*`/non-denied/non-`synced/`
+ * entry in `shared/skills/` (what a wet pull would overlay), then, only when
+ * non-zero, a single row naming how many local-only skills (present under
+ * `~/.claude/skills/`, not `gsd-*`/denied/`synced/`, and absent from the
+ * shared listing) would be retained. Wording deliberately mirrors the
+ * existing Sessions local-only row so the two surfaces read the same.
  *
  * This section is filesystem-only and deliberately does NOT forecast an
  * upstream skill deletion (a root entry tracked at the host's last sync but
@@ -45,14 +45,14 @@ export function buildSkillsPreviewSection(): DoctorSection {
   // the same repo differently on different hosts. The locale is pinned because
   // the default is the host's, which would reintroduce the variance.
   const sharedNames = readdirSync(sharedSkills, { encoding: 'utf8' })
-    .filter((name) => !isSkillExcluded(name))
+    .filter((name) => !isRootSkillExcluded(name))
     .sort((a, b) => a.localeCompare(b, 'en'));
   for (const name of sharedNames) addItem(s, name);
 
   const localSkills = join(claudeHome(), 'skills');
   const localOnly = existsSync(localSkills)
     ? readdirSync(localSkills, { encoding: 'utf8' }).filter(
-        (name) => !isSkillExcluded(name) && !sharedNames.includes(name),
+        (name) => !isRootSkillExcluded(name) && !sharedNames.includes(name),
       ).length
     : 0;
   if (localOnly > 0) {

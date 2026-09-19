@@ -421,8 +421,9 @@ stay in place as inert history. You do not need to delete them from the repo. No
 them on push or pull.
 
 **Skills** are handled differently: your own skills (any `~/.claude/skills/` entry that does not
-start with `gsd-`) still sync, but as a filtered copy rather than a symlink. The `gsd-*` skills are
-excluded from both push and pull; gsd reinstalls them per host via npm.
+start with `gsd-` and is not Claude Code's own `synced/` folder) still sync, but as a filtered
+copy rather than a symlink. The `gsd-*` skills are excluded from both push and pull; gsd
+reinstalls them per host via npm.
 
 ## I upgraded nomad and now nomad doctor shows a migration hint for hooks or agents
 

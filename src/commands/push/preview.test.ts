@@ -341,6 +341,19 @@ describe('previewPushLeaks: skills staging', () => {
       expect(verdict.verdictRow).toMatch(/nothing to scan/);
     },
   );
+
+  it('does not stage the root skills/synced/ folder (nothing to scan)', async () => {
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return { ...actual, scanStagedTree: scanMock };
+    });
+    plantSkill(env, 'synced');
+    const { previewPushLeaks } = await import('./preview.ts');
+    const verdict = previewPushLeaks({ projects: {} });
+    expect(scanMock).not.toHaveBeenCalled();
+    expect(verdict.verdictRow).toMatch(/nothing to scan/);
+  });
 });
 
 describe('previewPushLeaks: scan crash (null findings)', () => {

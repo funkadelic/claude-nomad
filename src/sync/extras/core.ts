@@ -11,7 +11,7 @@ import {
   SUPPORTED_EXTRAS,
   type PathMap,
 } from '../../core/config.ts';
-import { cpSyncGuarded, stripCollidingDstSymlinks } from './collision.ts';
+import { cpSyncGuarded, isRootExcludedEntry, stripCollidingDstSymlinks } from './collision.ts';
 import { assertSafeLocalRoot, assertSafeLogical } from './guards.ts';
 import { log } from '../../core/utils.ts';
 import { readPathMap } from '../../core/utils.json.ts';
@@ -292,14 +292,24 @@ export function extrasDenySet(dirname: string): Set<string> {
  * @param src - Source directory to copy from.
  * @param dst - Destination path (wiped then rebuilt, filtered).
  * @param blockSet - Basenames to exclude from the copy (see `extrasDenySet`).
+ * @param isRootExcluded - Optional root-only predicate; a matching top-level
+ *   entry is not copied, and since dst is wiped first a stale dst copy disappears.
  */
-export function copyExtrasFiltered(src: string, dst: string, blockSet: Set<string>): void {
+export function copyExtrasFiltered(
+  src: string,
+  dst: string,
+  blockSet: Set<string>,
+  isRootExcluded?: (name: string) => boolean,
+): void {
   rmSync(dst, { recursive: true, force: true });
   cpSync(src, dst, {
     recursive: true,
     force: true,
     verbatimSymlinks: true,
-    filter: (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
+    filter: (srcEntry) =>
+      srcEntry === src ||
+      (!isDeniedName(blockSet, basename(srcEntry)) &&
+        !isRootExcludedEntry(src, srcEntry, isRootExcluded)),
   });
 }
 
