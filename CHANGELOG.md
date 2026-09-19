@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.69.3](https://github.com/funkadelic/claude-nomad/compare/v0.69.2...v0.69.3) (2026-09-19)
+
+
+### What's new
+
+A quick follow-up to 0.69.2 for a recent change in Claude Code.
+
+* Claude Code 2.1.275 and later copy the skills enabled on your claude.ai account into `~/.claude/skills/synced/`, and can also create `skills/.trash/` and `skills/.staging/` next to it. nomad now leaves all three folders alone: `nomad push` no longer copies them into your sync repo and removes any copy an earlier push left there, `nomad pull` never touches them, and `nomad doctor` stops listing their files as out of sync.
+* To stop Claude Code syncing those skills at all, set `"syncClaudeAiSkills": false` in `~/.claude/settings.json` (on a synced machine, put it in your base or host settings file in the sync repo instead).
+
+
+### Fixed
+
+* **skills:** also skip Claude Code's skills .trash and .staging folders ([#618](https://github.com/funkadelic/claude-nomad/issues/618)) ([fbb9eb1](https://github.com/funkadelic/claude-nomad/commit/fbb9eb173842598f6aaf1be387bc73fffc1cb43f))
+* **skills:** stop syncing Claude Code's skills/synced folder ([#616](https://github.com/funkadelic/claude-nomad/issues/616)) ([59618dc](https://github.com/funkadelic/claude-nomad/commit/59618dcc25333b4bed2a7a1da73167d1be5dd660))
+
 ## [0.69.2](https://github.com/funkadelic/claude-nomad/compare/v0.69.1...v0.69.2) (2026-09-19)
 
 
