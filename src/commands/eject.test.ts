@@ -394,12 +394,26 @@ describe('cmdEject', () => {
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed sync record:'));
     });
 
+    it('live: a record that is already gone is skipped quietly', () => {
+      const { claudeHome, repoHome } = makeTempRoots();
+      const { cacheDir, records } = makeCache();
+      rmSync(records[0]);
+      cmdEject({}, { claudeHome, repoHome, cacheDir });
+      expect(existsSync(records[1])).toBe(false);
+      expect(errSpy).not.toHaveBeenCalled();
+      expect(logSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining(`removed sync record: ${records[0]}`),
+      );
+    });
+
     it('dry run: lists the records and removes none', () => {
       const { claudeHome, repoHome } = makeTempRoots();
       const { cacheDir, records } = makeCache();
+      rmSync(records[0]);
       cmdEject({ dryRun: true }, { claudeHome, repoHome, cacheDir });
-      for (const r of records) expect(existsSync(r)).toBe(true);
+      for (const r of records.slice(1)) expect(existsSync(r)).toBe(true);
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('would remove sync record:'));
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining(records[0]));
     });
 
     it('a record that cannot be removed warns and eject still finishes', () => {

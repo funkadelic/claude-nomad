@@ -77,15 +77,15 @@ function forgetHostRecords(cacheDir: string | undefined, dryRun: boolean): void 
   if (cacheDir === undefined) return;
   for (const record of [settingsWrittenPath(), sharedBaselinePath(), manifestPath()]) {
     const p = join(cacheDir, basename(record));
-    if (!existsSync(p)) continue;
     if (dryRun) {
-      item(`would remove sync record: ${p}`);
+      if (existsSync(p)) item(`would remove sync record: ${p}`);
       continue;
     }
     try {
-      rmSync(p, { force: true });
+      rmSync(p);
       item(`removed sync record: ${p}`);
     } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
       warn(`could not remove ${p}: ${errMessage(err)}; delete it by hand`);
     }
   }
