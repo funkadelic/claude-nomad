@@ -34,13 +34,16 @@ export { errMessage };
 /** Roots `cmdEject` acts on; `cacheDir` absent means no host records to forget. */
 type EjectRoots = { claudeHome: string; repoHome: string; cacheDir?: string };
 
+/** Closes a single-quoted shell string, emits a literal `'`, and reopens it. */
+const ESCAPED_QUOTE = String.raw`'\''`;
+
 /**
  * A path as a single-quoted shell argument (so `$`, backticks and `"` stay
  * literal), with forward slashes on win32 so Git Bash does not eat the backslashes.
  */
 function shellPath(p: string): string {
   const path = process.platform === 'win32' ? p.replaceAll('\\', '/') : p;
-  return `'${path.replaceAll("'", "'\\''")}'`;
+  return `'${path.replaceAll("'", ESCAPED_QUOTE)}'`;
 }
 
 /**
