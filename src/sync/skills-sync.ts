@@ -142,6 +142,10 @@ export function copySkillsPush(src: string, dst: string): void {
  * every existing direct caller of this function compiles and behaves
  * unchanged.
  *
+ * Also passes `isRootSkillExcluded` as the root-only exclusion, so Claude
+ * Code's root `synced/` folder is never pruned, overwritten, or overlaid
+ * from the repo.
+ *
  * @param src - Source skills directory (`shared/skills/` on pull).
  * @param dst - Destination skills directory (`~/.claude/skills/` on pull).
  * @param isRootPreserved - Optional root-depth-only preserve predicate.
@@ -151,7 +155,7 @@ export function copySkillsPull(
   dst: string,
   isRootPreserved?: (name: string) => boolean,
 ): void {
-  copyExtrasFilteredPreservingBy(src, dst, isSkillExcluded, isRootPreserved);
+  copyExtrasFilteredPreservingBy(src, dst, isSkillExcluded, isRootPreserved, isRootSkillExcluded);
 }
 
 /**

@@ -95,6 +95,17 @@ describe('buildSkillsPreviewSection', () => {
     expect(section.items).toEqual(['alpha-skill', 'mid-skill', 'zeta-skill']);
   });
 
+  it('excludes the root synced/ folder from both the shared listing and the local-only count', async () => {
+    mkdirSync(join(sharedSkills, 'synced'), { recursive: true });
+    mkdirSync(join(sharedSkills, 'graphify'), { recursive: true });
+    mkdirSync(join(localSkills, 'synced'), { recursive: true });
+
+    const { buildSkillsPreviewSection } = await import('./preview.skills.ts');
+    const section = buildSkillsPreviewSection();
+
+    expect(section.items).toEqual(['graphify']);
+  });
+
   it('performs no filesystem mutation', async () => {
     mkdirSync(join(sharedSkills, 'team-skill'), { recursive: true });
     mkdirSync(join(localSkills, 'my-unpushed-skill'), { recursive: true });

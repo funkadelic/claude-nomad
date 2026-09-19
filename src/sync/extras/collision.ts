@@ -45,15 +45,18 @@ export function isRootExcludedEntry(
  * @param src - Source directory (repo side on pull).
  * @param dst - Destination directory (host side on pull).
  * @param isExcluded - Returns `true` for a basename the copy filter skips.
+ * @param isRootExcluded - Optional root-depth-only predicate; a matching
+ *   name is skipped at this call depth only (not forwarded to recursion).
  */
 export function stripCollidingDstSymlinks(
   src: string,
   dst: string,
   isExcluded: (name: string) => boolean,
+  isRootExcluded?: (name: string) => boolean,
 ): void {
   if (!existsSync(dst)) return;
   for (const name of readdirSync(src)) {
-    if (isExcluded(name)) continue;
+    if (isExcluded(name) || isRootExcluded?.(name) === true) continue;
     const dstPath = join(dst, name);
     const dstStat = lstatSync(dstPath, { throwIfNoEntry: false });
     if (dstStat === undefined) continue;
@@ -196,12 +199,16 @@ function prunePreservingBy(
  *   pull retain a never-pushed top-level skill directory while still honouring
  *   a genuine upstream deletion of a tracked one. `undefined` (the default)
  *   leaves every current caller's behavior byte-identical.
+ * @param isRootExcluded - Optional root-depth-only predicate; a matching
+ *   top-level entry is left fully untouched in dst (never pruned, symlink
+ *   stripped, or copied from src).
  */
 export function copyExtrasFilteredPreservingBy(
   src: string,
   dst: string,
   isPreserved: (name: string) => boolean,
   isRootPreserved?: (name: string) => boolean,
+  isRootExcluded?: (name: string) => boolean,
 ): void {
   const dstStat = lstatSync(dst, { throwIfNoEntry: false });
   if (dstStat !== undefined) {
@@ -214,16 +221,23 @@ export function copyExtrasFilteredPreservingBy(
             `directory; run nomad pull --force-remote to recover`,
         );
       }
-      prunePreservingBy(src, dst, isPreserved, isRootPreserved);
+      prunePreservingBy(
+        src,
+        dst,
+        isPreserved,
+        (name) => isRootExcluded?.(name) === true || isRootPreserved?.(name) === true,
+      );
     } else {
       rmSync(dst, { recursive: true, force: true });
     }
   }
-  stripCollidingDstSymlinks(src, dst, isPreserved);
+  stripCollidingDstSymlinks(src, dst, isPreserved, isRootExcluded);
   cpSync(src, dst, {
     recursive: true,
     force: true,
     verbatimSymlinks: true,
-    filter: (srcEntry) => srcEntry === src || !isPreserved(basename(srcEntry)),
+    filter: (srcEntry) =>
+      srcEntry === src ||
+      (!isPreserved(basename(srcEntry)) && !isRootExcludedEntry(src, srcEntry, isRootExcluded)),
   });
 }

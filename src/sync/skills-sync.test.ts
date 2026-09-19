@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -326,6 +327,62 @@ describe('copySkillsPull', () => {
     expect(existsSync(join(dst, 'stale-skill'))).toBe(false);
     expect(existsSync(join(dst, 'team-skill'))).toBe(true);
   });
+
+  it('never prunes the local root synced/ folder, even with a non-retaining isRootPreserved', () => {
+    mkdirSync(join(dst, 'synced', 'mine'), { recursive: true });
+    writeFileSync(join(dst, 'synced', '.bucket-org_acct'), '');
+    writeFileSync(join(dst, 'synced', 'mine', 'manifest.json'), 'mine\n');
+    mkdirSync(join(src, 'graphify'), { recursive: true });
+    writeFileSync(join(src, 'graphify', 'SKILL.md'), '# graphify\n');
+
+    copySkillsPull(src, dst, () => false);
+
+    expect(readdirSync(join(dst, 'synced', 'mine'))).toEqual(['manifest.json']);
+    expect(readFileSync(join(dst, 'synced', 'mine', 'manifest.json'), 'utf8')).toBe('mine\n');
+    expect(existsSync(join(dst, 'synced', '.bucket-org_acct'))).toBe(true);
+    expect(existsSync(join(dst, 'graphify'))).toBe(true);
+  });
+
+  it('never overlays repo root synced/ content into the local root synced/', () => {
+    mkdirSync(join(src, 'synced', 'mine'), { recursive: true });
+    writeFileSync(join(src, 'synced', 'mine', 'manifest.json'), 'theirs\n');
+    mkdirSync(join(src, 'synced', 'other'), { recursive: true });
+    writeFileSync(join(src, 'synced', 'other', 'manifest.json'), 'other\n');
+    mkdirSync(join(dst, 'synced', 'mine'), { recursive: true });
+    writeFileSync(join(dst, 'synced', 'mine', 'manifest.json'), 'mine\n');
+    writeFileSync(join(dst, 'synced', 'mine', 'extra.md'), 'extra\n');
+
+    copySkillsPull(src, dst, () => false);
+
+    expect(readFileSync(join(dst, 'synced', 'mine', 'manifest.json'), 'utf8')).toBe('mine\n');
+    expect(existsSync(join(dst, 'synced', 'mine', 'extra.md'))).toBe(true);
+    expect(existsSync(join(dst, 'synced', 'other'))).toBe(false);
+  });
+
+  it('still overlays a synced/ folder nested inside a user skill (root-only exclusion)', () => {
+    mkdirSync(join(src, 'my-skill', 'synced'), { recursive: true });
+    writeFileSync(join(src, 'my-skill', 'synced', 'x.md'), '# nested\n');
+
+    copySkillsPull(src, dst);
+
+    expect(existsSync(join(dst, 'my-skill', 'synced', 'x.md'))).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'does not strip a symlink at the local root synced/ (root strip skipped)',
+    () => {
+      const target = join(tmp, 'symlink-target.json');
+      writeFileSync(target, 'target\n');
+      mkdirSync(join(dst, 'synced'), { recursive: true });
+      symlinkSync(target, join(dst, 'synced', 'manifest.json'));
+      mkdirSync(join(src, 'synced'), { recursive: true });
+      writeFileSync(join(src, 'synced', 'manifest.json'), 'repo\n');
+
+      copySkillsPull(src, dst);
+
+      expect(lstatSync(join(dst, 'synced', 'manifest.json')).isSymbolicLink()).toBe(true);
+    },
+  );
 });
 
 describe('syncSkillsPull', () => {
@@ -528,6 +585,27 @@ describe('syncSkillsPull', () => {
 
     expect(existsSync(join(localSkills, 'my-unpushed-skill'))).toBe(true);
     expect(existsSync(join(localSkills, 'team-skill'))).toBe(true);
+  });
+
+  it('leaves the local root synced/ untouched even when the repo tracks synced/ at the pre-rebase HEAD', async () => {
+    git(['init', '-q', '-b', 'main'], repoUnderHome);
+    git(['config', 'user.email', 'test@example.invalid'], repoUnderHome);
+    git(['config', 'user.name', 'test'], repoUnderHome);
+    mkdirSync(join(sharedSkills, 'synced', 'other'), { recursive: true });
+    writeFileSync(join(sharedSkills, 'synced', 'other', 'manifest.json'), 'other\n');
+    git(['add', '.'], repoUnderHome);
+    git(['commit', '-q', '-m', 'add synced/other'], repoUnderHome);
+    const pre = gitOut(['rev-parse', 'HEAD'], repoUnderHome);
+    const post = pre;
+
+    mkdirSync(join(localSkills, 'synced', 'mine'), { recursive: true });
+    writeFileSync(join(localSkills, 'synced', 'mine', 'manifest.json'), 'mine\n');
+
+    const { syncSkillsPull } = await import('./skills-sync.ts');
+    syncSkillsPull('20260918-synced-pre-head', { pre, post });
+
+    expect(existsSync(join(localSkills, 'synced', 'mine', 'manifest.json'))).toBe(true);
+    expect(existsSync(join(localSkills, 'synced', 'other'))).toBe(false);
   });
 
   it('composite (nomad sync order): a retained never-pushed skill reaches shared/skills on the follow-on push', async () => {
