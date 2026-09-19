@@ -242,6 +242,19 @@ describe('reportSkillsDivergence (real git)', () => {
     expect(process.exitCode).not.toBe(1);
   });
 
+  it('emits okGlyph when only a stale root synced/ folder is repo-only', async () => {
+    mkdirSync(join(sharedSkills, 'synced', 'org_acct'), { recursive: true });
+    mkdirSync(localSkills, { recursive: true });
+    writeFileSync(join(sharedSkills, 'synced', 'org_acct', 'manifest.json'), '{}\n');
+    const { section: makeSection } = await import('../format.ts');
+    const { reportSkillsDivergence } = await import('./skills.ts');
+    const sec = makeSection('Skills');
+    reportSkillsDivergence(sec);
+    const out = sec.items.join('\n');
+    expect(out).toContain(okGlyph);
+    expect(out).not.toContain(warnGlyph);
+  });
+
   it('still warns for a synced/ folder nested inside a local-only user skill', async () => {
     mkdirSync(join(localSkills, 'my-skill', 'synced'), { recursive: true });
     mkdirSync(sharedSkills, { recursive: true });
