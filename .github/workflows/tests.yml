@@ -285,7 +285,7 @@ jobs:
         if: >-
           ${{ !cancelled() && steps.gate.outputs.skip != 'true'
           && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           report_type: test_results
           files: ${{ env.JUNIT_REPORT }}
@@ -321,7 +321,7 @@ jobs:
           ${{ steps.gate.outputs.skip != 'true'
           && matrix.os == 'ubuntu-latest' && matrix.node-version == '24'
           && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending') }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./coverage/lcov.info
           flags: unittests
