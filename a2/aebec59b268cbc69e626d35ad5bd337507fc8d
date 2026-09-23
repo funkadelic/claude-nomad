@@ -1,0 +1,64 @@
+src/sync/links.win32.ts
+  s_1633402227907b::t_7edfe1a4a10af0 120
+  s_1633402227907b::t_94d0a6fada383e 10
+src/sync/links.mirror.ts
+  s_1633402227907b::t_94d0a6fada383e 16
+  s_1633402227907b::t_7edfe1a4a10af0 59
+  s_1633402227907b::t_3168bb081ae0a3 24
+src/core/config.test.ts
+  s_1633402227907b::t_d1d86a11952c24 5,388-393
+  s_1633402227907b::t_f99be59822be0f 394-395
+src/integration/commands.lock.test.ts
+  s_1633402227907b::t_f0c659bfa55202 128
+src/commands/pull/win32.test.ts
+  s_1633402227907b::t_f0c659bfa55202 111,1183
+src/commands/doctor/checks/hooks.preserve-symlinks.ts
+  s_1633402227907b::t_371ed4cc58df2c 89-92,184,210
+  s_1633402227907b::t_b645cf5676af5d 7-14
+src/sync/links.deletions.ts
+  s_1633402227907b::t_7edfe1a4a10af0 163,227
+  s_1633402227907b::t_94d0a6fada383e 28
+src/commands/pull/pull.test.ts
+  s_1633402227907b::t_f0c659bfa55202 36-37
+src/sync/links.baseline.ts
+  s_1633402227907b::t_94d0a6fada383e 30
+  s_1633402227907b::t_7edfe1a4a10af0 87
+src/commands/doctor/checks/git-state.ts
+  s_1633402227907b::t_f0c659bfa55202 260
+src/commands/pull/win32.ts
+  s_1633402227907b::t_60eb0feaa031a7 292
+  s_1633402227907b::t_b645cf5676af5d 12-18
+  s_1633402227907b::t_f0c659bfa55202 26,191,250,277,282,433
+  s_1633402227907b::t_371ed4cc58df2c 406
+  s_1633402227907b::t_a9449e31dee5a1 293
+src/sync/links.ts
+  s_1633402227907b::t_b645cf5676af5d 4-11
+  s_1633402227907b::t_7edfe1a4a10af0 96
+src/sync/links.mirror.test.ts
+  s_1633402227907b::t_f0c659bfa55202 1287,1369,1398-1399,1419-1420,1435-1436,1467-1468,1485-1486,1504-1505,1528-1529,1551-1552,1570-1571,1599,1601,1642-1643,1682-1683,1717-1718,1761-1762,1784-1785,1814-1815,1850-1851,1867-1868,1890-1891,1919,1943-1944,1972-1973,1995-1996,2019,2021,2033,2035,2048-2049,2070-2071,2105-2106,2133
+  s_1633402227907b::t_6ca9a48123aad1 17
+  s_1633402227907b::t_371ed4cc58df2c 850-851
+  s_1633402227907b::t_b645cf5676af5d 1371,1920,2135
+src/core/config.ts
+  s_1633402227907b::t_06c2cd1a775232 237-245,247,288,299
+  s_1633402227907b::t_b645cf5676af5d 246,283
+src/sync/links.mirror.gate.ts
+  s_1633402227907b::t_b645cf5676af5d 110
+  s_1633402227907b::t_77e2ee9ae60799 2,16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2aebec59b268cbc69e626d35ad5bd337507fc8d",
+  "prompts": {},
+  "sessions": {
+    "s_1633402227907b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1f579d4-90d7-4ac8-b83f-8a030e36807a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
