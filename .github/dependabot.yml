@@ -12,6 +12,11 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     open-pull-requests-limit: 5
+    # Hold new releases a few days so a hijacked publish is pulled before we
+    # adopt it. Security updates bypass this.
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
     groups:
       # core and vitest-runner pin each other with an exact peer dep
       # (`peer @stryker-mutator/core@"<version>"`), so a major split across two
@@ -33,9 +38,6 @@ updates:
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
-      prod-dependencies:
-        dependency-type: production
-        update-types: [patch]
     commit-message:
       # No `include: scope` -- the prefix already encodes dep-type, and
       # `include: scope` would produce redundant titles like
@@ -64,6 +66,9 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     open-pull-requests-limit: 3
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
     groups:
       # This set peer-locks itself across the prod/dev boundary:
       # starlight-links-validator peers both @astrojs/starlight (">=0.42.0")
@@ -80,9 +85,6 @@ updates:
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
-      prod-dependencies:
-        dependency-type: production
-        update-types: [patch]
     commit-message:
       prefix: deps
       prefix-development: deps-dev
@@ -100,6 +102,9 @@ updates:
       time: '06:00'
       timezone: Etc/UTC
     open-pull-requests-limit: 3
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
     groups:
       actions:
         patterns:
