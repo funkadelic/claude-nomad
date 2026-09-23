@@ -16,7 +16,7 @@ updates:
       # core and vitest-runner pin each other with an exact peer dep
       # (`peer @stryker-mutator/core@"<version>"`), so a major split across two
       # PRs leaves BOTH unable to `npm ci` and neither can ever go green. Same
-      # reason as the codeql-action group below. Listed first because the first
+      # reason codeql-action is grouped below. Listed first because the first
       # matching group wins, and carries no update-types filter so majors group
       # too, unlike dev-dependencies.
       stryker:
@@ -88,9 +88,10 @@ updates:
       prefix-development: deps-dev
 
   # github-actions: third-party action major bumps land here. No
-  # dev/prod distinction; everything is `deps`. codeql-action's init and
-  # analyze sub-actions must run the same version (analysis fails on a
-  # config version mismatch), so they are grouped into a single PR.
+  # dev/prod distinction; everything is `deps`. One catch-all group so all
+  # action bumps arrive as a single PR. It also keeps codeql-action's init
+  # and analyze sub-actions on the same version (analysis fails on a
+  # config version mismatch).
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -100,8 +101,8 @@ updates:
       timezone: Etc/UTC
     open-pull-requests-limit: 3
     groups:
-      codeql-action:
+      actions:
         patterns:
-          - github/codeql-action*
+          - '*'
     commit-message:
       prefix: deps
