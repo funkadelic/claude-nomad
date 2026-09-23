@@ -104,7 +104,6 @@ updates:
     open-pull-requests-limit: 3
     cooldown:
       default-days: 5
-      semver-major-days: 14
     groups:
       actions:
         patterns:
