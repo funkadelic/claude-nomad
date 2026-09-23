@@ -48,6 +48,26 @@ describe('parseGitHubRemote', () => {
     expect(parseGitHubRemote('')).toBeNull();
   });
 
+  it.each([
+    'https://attacker.invalid/github.com/alice/mirror',
+    'https://evil.example/github.com/o/r.git',
+    'https://github.com.evil.example/o/r',
+    'https://github.com@evil.example/o/r',
+    'https://notgithub.com/o/r',
+  ])('returns null when github.com is not the host: %s', (url) => {
+    expect(parseGitHubRemote(url)).toBeNull();
+  });
+
+  it.each([
+    'ssh://git@github.com/owner/repo.git',
+    'ssh://git@github.com:22/owner/repo.git',
+    'https://user:token@github.com/owner/repo.git',
+    'git://github.com/owner/repo',
+    'https://GitHub.com/owner/repo',
+  ])('parses a GitHub remote with scheme, userinfo or port: %s', (url) => {
+    expect(parseGitHubRemote(url)).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
   it('trims whitespace before matching', () => {
     expect(parseGitHubRemote('  https://github.com/owner/repo.git  ')).toEqual({
       owner: 'owner',

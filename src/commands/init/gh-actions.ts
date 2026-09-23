@@ -28,11 +28,15 @@ const GH_TIMEOUT_MS = 5_000;
  * Parse a git remote URL into `{ owner, repo }` when it points at GitHub.
  * Returns `null` for any non-GitHub URL (other forge, local path, malformed)
  * so the caller silently skips rather than failing init. Strips a trailing
- * `.git` if present.
+ * `.git` if present. The host must be exactly `github.com` (optional scheme,
+ * userinfo and port), so `github.com` appearing later in the path does not match.
  */
 export function parseGitHubRemote(remoteUrl: string): GhRepoRef | null {
   const normalized = remoteUrl.trim().replace(/\/$/, '');
-  const m = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(normalized);
+  const m =
+    /^(?:(?:https?|ssh|git):\/\/)?(?:[^@/]+@)?github\.com(?::\d+)?[:/]([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(
+      normalized,
+    );
   if (m === null) return null;
   return { owner: m[1], repo: m[2] };
 }
