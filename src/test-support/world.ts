@@ -112,11 +112,13 @@ export function makeWorld(tmp: string): {
  *
  * @param host - Host whose env is forwarded to the subprocess.
  * @param args - nomad subcommand and flags (e.g. `['push']`, `['init', '--snapshot']`).
+ * @param nodeArgs - Extra Node flags placed before the entry (e.g. an `--import` preload).
  * @returns `{ status, stdout, stderr }` from the subprocess.
  */
 export function runNomad(
   host: Host,
   args: string[],
+  nodeArgs: string[] = [],
 ): { status: number; stdout: string; stderr: string } {
   const entry = fileURLToPath(new URL('../../.test-bundle/nomad.test.mjs', import.meta.url));
   /* c8 ignore start */
@@ -129,7 +131,7 @@ export function runNomad(
   /* c8 ignore stop */
   const result = spawnSync(
     process.execPath,
-    ['--disable-warning=ExperimentalWarning', entry, ...args],
+    ['--disable-warning=ExperimentalWarning', ...nodeArgs, entry, ...args],
     { encoding: 'utf8', env: host.env },
   );
   // A null status means the child never exited normally (signal-killed or it

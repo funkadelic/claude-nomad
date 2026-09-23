@@ -1,8 +1,7 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -157,8 +156,9 @@ describe('nomad crash handler (subprocess, real dev entry)', () => {
           join(home, '.cache', 'claude-nomad', 'crash', files[0]),
           'utf8',
         );
+        expect(contents).not.toContain('value-based scan unavailable');
         expect(contents).not.toContain(stripeFixture);
-        expect(contents).toContain('[REDACTED:');
+        expect(contents).toContain('[REDACTED:stripe-access-token]');
       } finally {
         rmSync(home, { recursive: true, force: true });
       }
@@ -190,28 +190,26 @@ describe('nomad crash handler (subprocess, real dev entry)', () => {
   });
 });
 
-describe('nomad home-directory preflight (subprocess, real dev entry)', () => {
+describe('nomad home-directory preflight (subprocess, compiled bundle)', () => {
   it('exits GENERIC_FAILURE before dispatch when no home directory resolves', () => {
-    // HOME/USERPROFILE empty plus a preloaded os.homedir stub makes home()
-    // resolve to '' inside the real bundle, so a dropped requireHome() call in
-    // nomad.ts would let `--version` succeed instead.
-    const entry = fileURLToPath(new URL('../.test-bundle/nomad.test.mjs', import.meta.url));
+    // Empty HOME alone empties home() on POSIX; the os.homedir stub covers
+    // win32. A dropped requireHome() call in nomad.ts would let --version pass.
+    const home = mkdtempSync(join(tmpdir(), 'nomad-no-home-'));
+    const host = makeMinimalHost(home, join(home, 'unused-repo'), { HOME: '', USERPROFILE: '' });
     const stub =
       "import os from 'node:os'; import { syncBuiltinESMExports } from 'node:module';" +
       " os.homedir = () => ''; syncBuiltinESMExports();";
-    const result = spawnSync(
-      process.execPath,
-      [
-        '--disable-warning=ExperimentalWarning',
-        '--import',
-        `data:text/javascript,${encodeURIComponent(stub)}`,
-        entry,
-        '--version',
-      ],
-      { encoding: 'utf8', env: { ...process.env, HOME: '', USERPROFILE: '' } },
-    );
-    expect(result.status).toBe(EXIT.GENERIC_FAILURE);
-    expect(result.stderr).toContain('could not determine home directory');
-    expect(result.stdout).toBe('');
+    try {
+      const result = runNomad(
+        host,
+        ['--version'],
+        ['--import', `data:text/javascript,${encodeURIComponent(stub)}`],
+      );
+      expect(result.status).toBe(EXIT.GENERIC_FAILURE);
+      expect(result.stderr).toContain('could not determine home directory');
+      expect(result.stdout).toBe('');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

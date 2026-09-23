@@ -9,8 +9,8 @@
  */
 
 import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -135,13 +135,12 @@ describe('resolveWorkerPath', () => {
     expect(result).toMatch(/spinner\.worker\.ts$/);
   });
 
-  it('resolves to a worker file that exists beside spinner.ts when no deps are injected', () => {
+  it('resolves to the source worker file on disk when no deps are injected', () => {
     // Real filesystem: a half-moved worker would otherwise pass every gate and
     // silently kill the spinner animation.
     const result = resolveWorkerPath();
-    expect(result).toMatch(/\.(mjs|ts)$/);
+    expect(result).toMatch(/spinner\.worker\.ts$/);
     expect(existsSync(result)).toBe(true);
-    expect(dirname(result)).toBe(dirname(fileURLToPath(new URL('./spinner.ts', import.meta.url))));
   });
 });
 
