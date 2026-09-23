@@ -9,7 +9,7 @@
  * check cannot answer that question (both cases look identical in git), which is
  * why the record is host-local rather than derived from the repo.
  *
- * Storage reuses `commands/push/manifest.ts` wholesale (the same `Manifest` shape,
+ * Storage reuses `sync/manifest.ts` wholesale (the same `Manifest` shape,
  * tolerant read, and atomic write) rather than growing a second manifest
  * implementation. Two consequences are deliberate and documented at their
  * definitions below: a producer tag in `scannerVersion` guards against reading
@@ -35,7 +35,7 @@ import {
   writeManifest,
   type Manifest,
   type ManifestEntry,
-} from '../commands/push/manifest.ts';
+} from './manifest.ts';
 import { warn } from '../core/utils.ts';
 
 /**

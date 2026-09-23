@@ -5,7 +5,7 @@ import { assertSafeLogical } from '../core/config.sharedDirs.guard.ts';
 import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras/core.ts';
 import { assertSafeLocalRoot } from './extras/guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
-import { type ManifestDiff } from '../commands/push/manifest.ts';
+import { type ManifestDiff } from './manifest.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
 import { encodePath, readPathMap } from '../core/utils.json.ts';

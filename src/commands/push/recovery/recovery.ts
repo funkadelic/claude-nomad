@@ -41,6 +41,7 @@ import { scanFile } from '../gitleaks.scan.ts';
 import { buildSessionAwareFatal, partitionFindings } from '../gitleaks.ts';
 import type { LeakVerdict } from '../leak-verdict.ts';
 import { NomadFatal, gitOrFatal, log } from '../../../core/utils.ts';
+import { isTTY } from '../../../core/tty.ts';
 
 export type { FindingAction };
 
@@ -69,21 +70,6 @@ export type RecoveryDeps = {
   /** Injectable legend printer for tests (default: `printRecoveryLegend`). */
   printLegend?: () => void;
 };
-
-/**
- * True when both stdin and stdout are interactive TTYs. Accepts injectable
- * stream objects so tests can drive the branch without a real TTY.
- *
- * @param stdin Readable with optional `isTTY` flag (default: `process.stdin`).
- * @param stdout Writable with optional `isTTY` flag (default: `process.stdout`).
- * @returns True iff both streams report `isTTY === true`.
- */
-export function isTTY(
-  stdin: { isTTY?: boolean } = process.stdin,
-  stdout: { isTTY?: boolean } = process.stdout,
-): boolean {
-  return stdin.isTTY === true && stdout.isTTY === true;
-}
 
 /**
  * True when any value in the actions map is `'skip'`, meaning at least one
