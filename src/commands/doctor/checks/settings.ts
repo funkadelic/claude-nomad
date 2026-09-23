@@ -12,7 +12,7 @@ import {
   warnGlyph,
   yellow,
 } from '../../../render/color.ts';
-import { partitionByCaptureExclusion } from '../../capture-settings/core.ts';
+import { partitionByCaptureExclusion } from '../../../sync/settings-drift.ts';
 import { claudeHome, HOST, KNOWN_SETTINGS_KEYS, repoHome } from '../../../core/config.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
 

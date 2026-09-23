@@ -10,8 +10,8 @@
  * - `CAPTURE_EXCLUDED_KEYS`: sensitive keys never eligible for capture.
  */
 
-import { isProtoPollutionKey } from '../../core/utils.json.ts';
-import { stripGsdHookEntries } from '../../sync/hooks-filter.ts';
+import { isProtoPollutionKey } from '../core/utils.json.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
 
 // ---------------------------------------------------------------------------
 // Deep-equality helpers (dep-free). This module owns the single drift

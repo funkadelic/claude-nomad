@@ -2,7 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
-import { classifySettingsDrift, partitionByCaptureExclusion } from '../../capture-settings/core.ts';
+import {
+  classifySettingsDrift,
+  partitionByCaptureExclusion,
+} from '../../../sync/settings-drift.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
 import { baseHasGsdHookEntries } from '../../../sync/hooks-filter.ts';

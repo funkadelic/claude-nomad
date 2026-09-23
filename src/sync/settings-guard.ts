@@ -12,7 +12,7 @@ import {
   describeSettings,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
-} from '../commands/capture-settings/core.ts';
+} from './settings-drift.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 
 /** Hash of each top-level value the last settings write produced, by key. */

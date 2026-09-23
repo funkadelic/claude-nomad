@@ -9,7 +9,7 @@ import {
   type PathMap,
   type ValidatedSharedNames,
 } from '../core/config.ts';
-import { classifySettingsDrift, describeSettings } from '../commands/capture-settings/core.ts';
+import { classifySettingsDrift, describeSettings } from './settings-drift.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import {
   blockedSettingsKeys,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { KNOWN_SETTINGS_KEYS } from '../../core/config.ts';
+import { KNOWN_SETTINGS_KEYS } from '../core/config.ts';
 import {
   buildCaptureSubset,
   CAPTURE_EXCLUDED_KEYS,
@@ -8,9 +8,9 @@ import {
   describeSettings,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
-} from './core.ts';
-import { stripGsdHookEntries } from '../../sync/hooks-filter.ts';
-import { deepMerge } from '../../core/utils.json.ts';
+} from './settings-drift.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
+import { deepMerge } from '../core/utils.json.ts';
 
 /**
  * Behavior tests for the pure direction-aware settings drift core.
