@@ -1,0 +1,23 @@
+src/nomad.crash.test.ts
+  s_1633402227907b::t_66bfabf99277e8 1,159,161,193,195-198,202-213
+src/render/spinner.test.ts
+  s_1633402227907b::t_66bfabf99277e8 12-13,138,142
+src/test-support/world.ts
+  s_1633402227907b::t_66bfabf99277e8 115,121,134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20bef5612223815673d3f54c2d1d5c8f2afbc0f2",
+  "prompts": {},
+  "sessions": {
+    "s_1633402227907b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1f579d4-90d7-4ac8-b83f-8a030e36807a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
