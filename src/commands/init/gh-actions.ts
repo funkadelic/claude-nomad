@@ -24,15 +24,48 @@ export type GhUnavailableReason = 'gh-not-installed' | 'gh-not-authed' | 'gh-pro
  */
 const GH_TIMEOUT_MS = 5_000;
 
+/** Hosts that serve GitHub repositories over git (web, and SSH over port 443). */
+const GITHUB_HOSTS = new Set(['github.com', 'www.github.com', 'ssh.github.com']);
+
+/** URL schemes git accepts for a remote, as `URL.protocol` reports them. */
+const GIT_SCHEMES = new Set(['https:', 'http:', 'ssh:', 'git:', 'git+ssh:', 'ssh+git:']);
+
+/** `owner/repo` path in GitHub's allowed characters, optional `.git` and trailing slash. */
+const OWNER_REPO = /^\/?([a-z0-9-]+)\/([\w.-]+?)(?:\.git)?\/?$/i;
+
+/** scp-style remote, `[user@]host:path`, split at the first colon as git does. */
+const SCP_REMOTE = /^(?:[\w.-]+@)?([^:/@\\]+):(.+)$/;
+
+/**
+ * Split a remote into host and repo path. URL forms go through the WHATWG
+ * parser, so `#`, `?` and `\\` tricks resolve to the host git would contact.
+ */
+function splitRemote(remote: string): { host: string; path: string } | null {
+  if (!remote.includes('://')) {
+    const m = SCP_REMOTE.exec(remote);
+    return m === null ? null : { host: m[1], path: m[2] };
+  }
+  let url: URL;
+  try {
+    url = new URL(remote);
+  } catch {
+    return null;
+  }
+  if (!GIT_SCHEMES.has(url.protocol) || url.search !== '' || url.hash !== '') return null;
+  return { host: url.hostname, path: url.pathname };
+}
+
 /**
  * Parse a git remote URL into `{ owner, repo }` when it points at GitHub.
  * Returns `null` for any non-GitHub URL (other forge, local path, malformed)
  * so the caller silently skips rather than failing init. Strips a trailing
- * `.git` if present.
+ * `.git` if present. Only the real host counts, so `github.com` appearing in
+ * the path, query, fragment or userinfo does not match.
  */
 export function parseGitHubRemote(remoteUrl: string): GhRepoRef | null {
-  const normalized = remoteUrl.trim().replace(/\/$/, '');
-  const m = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(normalized);
+  const parts = splitRemote(remoteUrl.trim());
+  if (parts === null || !GITHUB_HOSTS.has(parts.host.toLowerCase())) return null;
+  const m = OWNER_REPO.exec(parts.path);
   if (m === null) return null;
   return { owner: m[1], repo: m[2] };
 }

@@ -48,6 +48,68 @@ describe('parseGitHubRemote', () => {
     expect(parseGitHubRemote('')).toBeNull();
   });
 
+  it.each([
+    'https://attacker.invalid/github.com/alice/mirror',
+    'https://evil.example/github.com/o/r.git',
+    'https://github.com.evil.example/o/r',
+    'https://github.com@evil.example/o/r',
+    'https://notgithub.com/o/r',
+    'https://evil.example#@github.com/o/r',
+    'https://evil.example?@github.com/o/r',
+    'https://evil.example\\@github.com/o/r',
+    'evil.example:x@github.com:o/r',
+    'github.com/o/r',
+    'file://github.com/o/r',
+  ])('returns null when github.com is not the host: %s', (url) => {
+    expect(parseGitHubRemote(url)).toBeNull();
+  });
+
+  it.each([
+    'ssh://git@github.com/owner/repo.git',
+    'ssh://git@github.com:22/owner/repo.git',
+    'https://user:token@github.com/owner/repo.git',
+    'git://github.com/owner/repo',
+    'https://GitHub.com/owner/repo',
+    'git+ssh://git@github.com/owner/repo.git',
+    'ssh+git://git@github.com/owner/repo.git',
+    'https://www.github.com/owner/repo',
+    'ssh://git@ssh.github.com:443/owner/repo.git',
+    'https://github.com:443/owner/repo',
+    'https://github.com/owner/repo.GIT',
+    'github.com:owner/repo.git',
+  ])('parses a GitHub remote with scheme, userinfo or port: %s', (url) => {
+    expect(parseGitHubRemote(url)).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  it.each([
+    'https://github.com/../r',
+    'https://github.com/o/r?x=1',
+    'https://github.com/o/r#frag',
+    'https://github.com/o',
+    'https://github.com/o/r/extra',
+    'git@github.com:o b/r',
+  ])('returns null for a GitHub URL without a plain owner/repo path: %s', (url) => {
+    expect(parseGitHubRemote(url)).toBeNull();
+  });
+
+  it('parses an scp remote with a numeric owner', () => {
+    expect(parseGitHubRemote('git@github.com:123/repo.git')).toEqual({
+      owner: '123',
+      repo: 'repo',
+    });
+  });
+
+  it('parses a remote with a trailing slash and trailing whitespace', () => {
+    expect(parseGitHubRemote('https://github.com/owner/repo/  ')).toEqual({
+      owner: 'owner',
+      repo: 'repo',
+    });
+  });
+
+  it('returns null for a URL the WHATWG parser rejects', () => {
+    expect(parseGitHubRemote('https://[bad/owner/repo')).toBeNull();
+  });
+
   it('trims whitespace before matching', () => {
     expect(parseGitHubRemote('  https://github.com/owner/repo.git  ')).toEqual({
       owner: 'owner',
