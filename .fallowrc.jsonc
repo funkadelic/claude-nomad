@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
-  "entry": ["src/nomad.ts"],
+  "entry": ["src/nomad.ts", "src/render/spinner.worker.ts"],
   // The Astro docs site is a self-contained sub-project (its own
   // package.json, config, and content); exclude it from all analysis.
   "ignorePatterns": ["docs-site/**"],

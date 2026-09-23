@@ -25,6 +25,23 @@ const hasGit = ((): boolean => {
   }
 })();
 
+/** Returns `true` when the `gitleaks` binary is present on PATH. */
+const hasGitleaks = ((): boolean => {
+  try {
+    execFileSync('gitleaks', ['version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * Assemble a Stripe-live-key-shaped value from fragments so no contiguous
+ * secret literal sits in source-controlled bytes. Stripe keys are outside the
+ * structural scrub's token families, so only the gitleaks pass can redact one.
+ */
+const stripeFixture = ['sk', '_live_', '4eC39HqLyjWDarjtT1zdp7dc'].join('');
+
 /**
  * Build a minimal `Host`-shaped env for `runNomad`, mirroring the fixture in
  * `src/nomad.exit-codes.test.ts`. `NOMAD_TEST_FORCE_CRASH` /
@@ -123,6 +140,31 @@ describe('nomad crash handler (subprocess, real dev entry)', () => {
     }
   });
 
+  describe.skipIf(!hasGitleaks)('value-based redaction (real gitleaks)', () => {
+    it('redacts a secret the structural scrub does not know from the written report', () => {
+      const home = mkdtempSync(join(tmpdir(), 'nomad-crash-redact-'));
+      const host = makeMinimalHost(home, join(home, 'unused-repo'), {
+        NOMAD_TEST_FORCE_CRASH: '1',
+      });
+      try {
+        const result = runNomad(host, ['--version', stripeFixture]);
+        expect(result.status).toBe(EXIT.GENERIC_FAILURE);
+
+        const files = listCrashDir(home);
+        expect(files).toHaveLength(1);
+        const contents = readFileSync(
+          join(home, '.cache', 'claude-nomad', 'crash', files[0]),
+          'utf8',
+        );
+        expect(contents).not.toContain('value-based scan unavailable');
+        expect(contents).not.toContain(stripeFixture);
+        expect(contents).toContain('[REDACTED:stripe-access-token]');
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe.skipIf(!hasGit)('NomadFatal exemption (real git fixture)', () => {
     it('a real NomadFatal keeps its own exit code, prints no crash banner, and writes no crash file', () => {
       const tmp = mkdtempSync(join(tmpdir(), 'nomad-crash-fatal-'));
@@ -145,5 +187,29 @@ describe('nomad crash handler (subprocess, real dev entry)', () => {
         rmSync(tmp, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe('nomad home-directory preflight (subprocess, compiled bundle)', () => {
+  it('exits GENERIC_FAILURE before dispatch when no home directory resolves', () => {
+    // Empty HOME alone empties home() on POSIX; the os.homedir stub covers
+    // win32. A dropped requireHome() call in nomad.ts would let --version pass.
+    const home = mkdtempSync(join(tmpdir(), 'nomad-no-home-'));
+    const host = makeMinimalHost(home, join(home, 'unused-repo'), { HOME: '', USERPROFILE: '' });
+    const stub =
+      "import os from 'node:os'; import { syncBuiltinESMExports } from 'node:module';" +
+      " os.homedir = () => ''; syncBuiltinESMExports();";
+    try {
+      const result = runNomad(
+        host,
+        ['--version'],
+        ['--import', `data:text/javascript,${encodeURIComponent(stub)}`],
+      );
+      expect(result.status).toBe(EXIT.GENERIC_FAILURE);
+      expect(result.stderr).toContain('could not determine home directory');
+      expect(result.stdout).toBe('');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

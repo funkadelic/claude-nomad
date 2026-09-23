@@ -8,6 +8,7 @@
  * candidates (mjs present = published, mjs absent = dev ts).
  */
 
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -134,11 +135,12 @@ describe('resolveWorkerPath', () => {
     expect(result).toMatch(/spinner\.worker\.ts$/);
   });
 
-  it('uses real existsSync and import.meta.url when no deps injected (covers ?? defaults)', () => {
-    // The result is either the .mjs or the .ts sibling depending on build state.
-    // We only verify it returns a string ending in a known extension.
+  it('resolves to the source worker file on disk when no deps are injected', () => {
+    // Real filesystem: a half-moved worker would otherwise pass every gate and
+    // silently kill the spinner animation.
     const result = resolveWorkerPath();
-    expect(result).toMatch(/\.(mjs|ts)$/);
+    expect(result).toMatch(/spinner\.worker\.ts$/);
+    expect(existsSync(result)).toBe(true);
   });
 });
 
