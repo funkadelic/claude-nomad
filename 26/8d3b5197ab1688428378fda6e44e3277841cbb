@@ -1,0 +1,23 @@
+src/sync/manifest.ts
+  s_1633402227907b::t_a86348782bc430 2-5,27-28,128-129,266-267
+src/core/tty.test.ts
+  s_1633402227907b::t_a86348782bc430 1-21
+src/commands/push/manifest.ts
+  s_1633402227907b::t_a86348782bc430 4-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "268d3b5197ab1688428378fda6e44e3277841cbb",
+  "prompts": {},
+  "sessions": {
+    "s_1633402227907b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1f579d4-90d7-4ac8-b83f-8a030e36807a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
