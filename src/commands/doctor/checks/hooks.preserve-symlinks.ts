@@ -4,7 +4,14 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { relativeRequireTargetsBroken } from './hooks.preserve-symlinks.probe.ts';
-import { allSharedLinks, claudeHome, home, repoHome, type PathMap } from '../../../core/config.ts';
+import {
+  allSharedLinks,
+  claudeHome,
+  home,
+  repoHome,
+  type PathMap,
+  type ValidatedSharedNames,
+} from '../../../core/config.ts';
 
 /**
  * WARN-only `nomad doctor` reporter that catches the symlink-broken-relative-require
@@ -79,7 +86,10 @@ function readPathMapSafe(): PathMap {
  * @param sharedLinkNames - Names from `allSharedLinks(map)`.
  * @returns True when the script resolves under a nomad-managed symlink.
  */
-function resolvesUnderSymlinkedShared(scriptPath: string, sharedLinkNames: string[]): boolean {
+function resolvesUnderSymlinkedShared(
+  scriptPath: string,
+  sharedLinkNames: ValidatedSharedNames,
+): boolean {
   // Compare with forward slashes normalized on both sides: claudeHome() joins
   // with the native separator (backslash on win32), but scriptPath keeps its
   // literal forward slashes after expandHome splices in the (backslash-style)
@@ -171,7 +181,7 @@ function* commandsFromOneGroup(group: unknown): Iterable<string> {
  * @param sharedLinkNames - Names from `allSharedLinks(map)`.
  * @returns The script path when flagged, or null when not flagged.
  */
-function flaggedScript(command: string, sharedLinkNames: string[]): string | null {
+function flaggedScript(command: string, sharedLinkNames: ValidatedSharedNames): string | null {
   const tokens = commandTokens(command);
   const nodeIdx = tokens.indexOf('node');
   if (nodeIdx < 0) return null;
@@ -197,7 +207,7 @@ function checkEventForPreserveSymlinks(
   section: DoctorSection,
   event: string,
   groups: unknown[],
-  sharedLinkNames: string[],
+  sharedLinkNames: ValidatedSharedNames,
 ): boolean {
   let anyWarn = false;
   for (const group of groups) {

@@ -7,7 +7,7 @@
 import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ALWAYS_NEVER_SYNC, isDeniedName } from '../core/config.ts';
+import { ALWAYS_NEVER_SYNC, isDeniedName, type ValidatedSharedNames } from '../core/config.ts';
 import { copyExtrasFilteredPreservingBy } from './extras/core.ts';
 import { log, warn, NomadFatal } from '../core/utils.ts';
 import { backupBeforeWrite } from '../core/utils.fs.ts';
@@ -117,7 +117,7 @@ function applyOneSharedLinkWin32(target: string, linkPath: string, ts: string): 
  * counterpart; a pre-existing entry is snapshotted first, so it stays recoverable.
  */
 export function applySharedLinksWin32(
-  linkNames: readonly string[],
+  linkNames: ValidatedSharedNames,
   claude: string,
   repo: string,
   ts: string,

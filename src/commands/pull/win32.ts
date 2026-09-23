@@ -9,7 +9,13 @@ import { join } from 'node:path';
 
 import { yellow, warnGlyph } from '../../render/color.ts';
 import { parsePorcelainZ } from './recovery.git.ts';
-import { allSharedLinks, backupBase, deniedSegmentFor, type PathMap } from '../../core/config.ts';
+import {
+  allSharedLinks,
+  backupBase,
+  deniedSegmentFor,
+  type PathMap,
+  type ValidatedSharedNames,
+} from '../../core/config.ts';
 import { gitProbe } from '../../core/git-probe.ts';
 import {
   applySharedLinkDeletions,
@@ -17,7 +23,7 @@ import {
   type SharedLinkDeletion,
 } from '../../sync/links.deletions.ts';
 import {
-  revertDeniedMirrorPaths,
+  gateDeniedMirrorPaths,
   stageLocalSharedEdits,
   type MirrorPreviewEvent,
 } from '../../sync/links.mirror.ts';
@@ -182,7 +188,7 @@ function newlyUntracked(before: Set<string> | null, after: Set<string> | null): 
  * Repo-relative paths git reports as IGNORED under `shared/`, or an empty list
  * when the probe could not answer.
  *
- * A deliberately separate probe from the one {@link revertDeniedUnderShared}
+ * A deliberately separate probe from the one {@link gateDeniedUnderShared}
  * acts on, and the separation is the point. `--ignored` makes git recurse into
  * every ignored subtree under `shared/` and emit a record per file, where
  * without it git prunes at the directory and never descends, so this is the
@@ -241,7 +247,7 @@ function reportIgnoredDenied(repo: string): void {
  * Run the denylist backstop over the repo working tree's `shared/` subtree.
  *
  * The sweep treats its halves differently, and
- * {@link revertDeniedMirrorPaths} owns the reasoning for the first two: an
+ * {@link gateDeniedMirrorPaths} owns the reasoning for the first two: an
  * untracked hit is snapshotted and then removed, while a tracked hit is
  * reported and left exactly as it was found. So a hit is always a WARN, and
  * only sometimes a write. {@link reportIgnoredDenied} adds a third, also
@@ -268,12 +274,12 @@ function reportIgnoredDenied(repo: string): void {
  * @param ts - Backup timestamp, resolved once by `runPullCore`. Reaches only
  *   the untracked half, which is the only half that writes anything.
  */
-function revertDeniedUnderShared(repo: string, ts: string): void {
+function gateDeniedUnderShared(repo: string, ts: string): void {
   const out = gitProbe(
     ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', 'shared/'],
     repo,
   );
-  if (out !== null) revertDeniedMirrorPaths(repo, parsePorcelainZ(out), ts);
+  if (out !== null) gateDeniedMirrorPaths(repo, parsePorcelainZ(out), ts);
   reportIgnoredDenied(repo);
 }
 
@@ -283,8 +289,8 @@ function revertDeniedUnderShared(repo: string, ts: string): void {
  * into the same section because they are the two halves of one pre-rebase
  * reconcile (see {@link reconcileSharedLinksBeforePull}).
  *
- * Module-private on purpose, following the precedent `DeniedRevertStatus`
- * sets in `src/sync/links.mirror.revert.ts`: it is only ever named positionally
+ * Module-private on purpose, following the precedent `DeniedGateStatus`
+ * sets in `src/sync/links.mirror.gate.ts`: it is only ever named positionally
  * in signatures declared in this same file, and exporting it would read as an
  * unused export to the dead-code analysis.
  */
@@ -397,7 +403,7 @@ export function reconcileSharedLinksBeforePull(
   }
   const before = untrackedUnderShared(repo);
   const events: MirrorSectionEvent[] = [];
-  let linkNames: string[] = [];
+  let linkNames: ValidatedSharedNames = [];
   let namesDerived = false;
   let derivedSharedDirs: unknown;
   try {
@@ -424,7 +430,7 @@ export function reconcileSharedLinksBeforePull(
   // written, so the gate has to see the tree as it actually stands. Before the
   // "after" snapshot, so a path it removed is not then reported as one this run
   // created.
-  revertDeniedUnderShared(repo, ts);
+  gateDeniedUnderShared(repo, ts);
   return {
     mirrored: newlyUntracked(before, untrackedUnderShared(repo)),
     events,

@@ -234,6 +234,17 @@ export const GSD_PREFIX = 'gsd-';
  */
 export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
 
+declare const validatedSharedNames: unique symbol;
+
+/**
+ * Shared-link names that passed `validateSharedDirEntry`. Only `allSharedLinks`
+ * produces the branded form, so a list read straight from `map.sharedDirs`
+ * cannot reach a filesystem join without a compile error. The empty list
+ * carries no name and is accepted as is.
+ */
+export type ValidatedSharedNames =
+  (readonly string[] & { readonly [validatedSharedNames]: true }) | readonly [];
+
 /**
  * Returns the union of `SHARED_LINKS` and any validated entries from
  * `map.sharedDirs`. Entries that fail the `validateSharedDirEntry` guard (not
@@ -269,12 +280,12 @@ export const GSD_DROPPED_NAMES = ['hooks', 'agents'] as const;
  * @param opts - `quiet` suppresses the per-entry and non-array WARNs.
  * @returns Array of link names to symlink under `~/.claude/`.
  */
-export function allSharedLinks(map: PathMap, opts: { quiet?: boolean } = {}): string[] {
+export function allSharedLinks(map: PathMap, opts: { quiet?: boolean } = {}): ValidatedSharedNames {
   const emit = opts.quiet === true ? () => undefined : warn;
   const raw = map.sharedDirs;
   if (raw !== undefined && !Array.isArray(raw)) {
     emit('sharedDirs in path-map.json is not an array; ignoring the whole field');
-    return [...SHARED_LINKS];
+    return [...SHARED_LINKS] as unknown as ValidatedSharedNames;
   }
   const extras: string[] = [];
   for (const entry of raw ?? []) {
@@ -285,7 +296,7 @@ export function allSharedLinks(map: PathMap, opts: { quiet?: boolean } = {}): st
       emit(`sharedDirs entry ${JSON.stringify(entry)} rejected: ${rejection.message}; skipping`);
     }
   }
-  return [...SHARED_LINKS, ...extras];
+  return [...SHARED_LINKS, ...extras] as unknown as ValidatedSharedNames;
 }
 
 /**

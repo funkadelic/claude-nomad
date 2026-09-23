@@ -1,7 +1,14 @@
 import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { allSharedLinks, claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
+import {
+  allSharedLinks,
+  claudeHome,
+  repoHome,
+  HOST,
+  type PathMap,
+  type ValidatedSharedNames,
+} from '../core/config.ts';
 import { classifySettingsDrift, describeSettings } from '../commands/capture-settings/core.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import {
@@ -86,7 +93,7 @@ function isAlreadySymlink(linkPath: string): boolean {
  * auto-move (dry-run) or perform it (wet).
  */
 function runAutoMovePasses(
-  linkNames: readonly string[],
+  linkNames: ValidatedSharedNames,
   claude: string,
   repo: string,
   ts: string,

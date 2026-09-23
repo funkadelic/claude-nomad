@@ -14,6 +14,7 @@ import {
 import type * as fsModule from 'node:fs';
 import type * as gitProbeModule from '../core/git-probe.ts';
 import type * as utilsFsModule from '../core/utils.fs.ts';
+import type { ValidatedSharedNames } from '../core/config.ts';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -846,7 +847,8 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     // The map's own (invalid) sharedDirs entry is never consulted: only the
     // caller-supplied linkNames list drives which names get mirrored.
     stageLocalSharedEdits({ projects: {}, sharedDirs: ['../escape'] }, TS, {
-      linkNames: ['gsd'],
+      // Forged on purpose: production code can only get this type from allSharedLinks.
+      linkNames: ['gsd'] as unknown as ValidatedSharedNames,
     });
     expect(errSpy).not.toHaveBeenCalled();
     // CLAUDE.md is a normal SHARED_LINKS static entry but is NOT in the
@@ -1282,7 +1284,7 @@ describe('copy-time denylist (ALWAYS_NEVER_SYNC, the credential and host-config 
  * Every case asserts the call returns normally. Nothing in this path may fail
  * a pull.
  */
-describe('revertDeniedMirrorPaths', () => {
+describe('gateDeniedMirrorPaths', () => {
   let testHome: string;
   let repo: string;
   let originalHome: string | undefined;
@@ -1364,13 +1366,9 @@ describe('revertDeniedMirrorPaths', () => {
       };
     });
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
     expect(() =>
-      revertDeniedMirrorPaths(
-        repo,
-        { tracked: [], untracked: ['shared/commands/credentials'] },
-        TS,
-      ),
+      gateDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS),
     ).not.toThrow();
 
     expect(warnings()).toContain('could not remove');
@@ -1397,8 +1395,8 @@ describe('revertDeniedMirrorPaths', () => {
       return { ...actual, rmSync: () => undefined };
     });
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       { tracked: [], untracked: ['shared/commands/settings.local.json'] },
       TS,
@@ -1418,8 +1416,8 @@ describe('revertDeniedMirrorPaths', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(existsSync(dir)).toBe(false);
     expect(warnings()).toContain('removed shared/commands/credentials');
@@ -1434,8 +1432,8 @@ describe('revertDeniedMirrorPaths', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'notes.md'), 'token=abc\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(existsSync(dir)).toBe(false);
     const snapshot = backupOf(join('shared', 'commands', 'credentials', 'notes.md'));
@@ -1466,8 +1464,8 @@ describe('revertDeniedMirrorPaths', () => {
       };
     });
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(readFileSync(join(dir, 'notes.md'), 'utf8')).toBe('token=abc\n');
     expect(warnings()).toContain('could not snapshot');
@@ -1484,8 +1482,8 @@ describe('revertDeniedMirrorPaths', () => {
     // the write this reads as a clean removal of a denylisted file that is in
     // fact still wherever it was: worse than the silence the gate exists to
     // remove.
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(warnings()).toContain('nothing was removed for shared/commands/credentials');
     expect(warnings()).not.toContain('removed shared/commands/credentials');
@@ -1503,8 +1501,8 @@ describe('revertDeniedMirrorPaths', () => {
     mkdirSync(dirname(link), { recursive: true });
     symlinkSync(join(repo, 'shared', 'commands', 'gone-target'), link);
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(lstatSync(link, { throwIfNoEntry: false })).toBeUndefined();
     expect(warnings()).toContain('removed shared/commands/credentials');
@@ -1527,8 +1525,8 @@ describe('revertDeniedMirrorPaths', () => {
       chmodSync(parent, 0o000);
 
       try {
-        const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-        revertDeniedMirrorPaths(
+        const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+        gateDeniedMirrorPaths(
           repo,
           { tracked: [], untracked: ['shared/commands/credentials'] },
           TS,
@@ -1550,8 +1548,8 @@ describe('revertDeniedMirrorPaths', () => {
     const abs = join(repo, 'shared', 'commands', 'settings.local.json');
     writeFileSync(abs, '{"apiKey":"x"}\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       { tracked: [], untracked: ['shared/commands/settings.local.json'] },
       TS,
@@ -1569,8 +1567,8 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# deploy\n');
     writeFileSync(join(repo, 'shared', 'commands', 'new.md'), '# new\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       { tracked: ['shared/commands/deploy.md'], untracked: ['shared/commands/new.md'] },
       TS,
@@ -1598,9 +1596,9 @@ describe('revertDeniedMirrorPaths', () => {
       g(['add', 'shared/commands/credentials/notes.md'], repo);
       const before = stagedIndex();
 
-      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+      const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
       expect(() =>
-        revertDeniedMirrorPaths(
+        gateDeniedMirrorPaths(
           repo,
           { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
           TS,
@@ -1641,8 +1639,8 @@ describe('revertDeniedMirrorPaths', () => {
       const before = stagedIndex();
       expect(before).toContain('settings.local.json');
 
-      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-      revertDeniedMirrorPaths(
+      const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+      gateDeniedMirrorPaths(
         repo,
         { tracked: ['shared/commands/settings.local.json'], untracked: [] },
         TS,
@@ -1681,8 +1679,8 @@ describe('revertDeniedMirrorPaths', () => {
           cwd: repo,
         }).toString(),
       );
-      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-      revertDeniedMirrorPaths(repo, status, TS);
+      const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+      gateDeniedMirrorPaths(repo, status, TS);
 
       expect(stagedIndex()).toBe(before);
       expect(existsSync(join(repo, 'shared', 'commands', 'credentials', 'outside.md'))).toBe(true);
@@ -1716,8 +1714,8 @@ describe('revertDeniedMirrorPaths', () => {
       const before = stagedIndex();
 
       const { parsePorcelainZ } = await import('../commands/pull/recovery.git.ts');
-      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-      revertDeniedMirrorPaths(repo, parsePorcelainZ(raw), TS);
+      const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+      gateDeniedMirrorPaths(repo, parsePorcelainZ(raw), TS);
 
       expect(stagedIndex()).toBe(before);
       expect(readFileSync(join(repo, 'shared', 'commands', 'foo.md'), 'utf8')).toBe(
@@ -1760,8 +1758,8 @@ describe('revertDeniedMirrorPaths', () => {
     expect(status.tracked.filter((p) => p === 'shared/commands/credentials/src.md')).toHaveLength(
       2,
     );
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, status, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, status, TS);
 
     expect(stagedIndex()).toBe(before);
     const lines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
@@ -1783,8 +1781,8 @@ describe('revertDeniedMirrorPaths', () => {
     const abs = join(repo, 'shared', 'commands', 'credentials', 'notes.md');
     writeFileSync(abs, 'token=abc\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       {
         tracked: ['shared/commands/credentials/notes.md'],
@@ -1813,8 +1811,8 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(abs, 'token=abc\n');
     const before = stagedIndex();
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
       TS,
@@ -1849,8 +1847,8 @@ describe('revertDeniedMirrorPaths', () => {
     writeFileSync(abs, 'token=abc\n');
     const before = stagedIndex();
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
 
     expect(stagedIndex()).toBe(before);
     expect(warnings()).toContain(`git checkout HEAD -- "${rel}"`);
@@ -1866,8 +1864,8 @@ describe('revertDeniedMirrorPaths', () => {
     g(['add', '--', rel], repo);
     const before = stagedIndex();
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
 
     expect(stagedIndex()).toBe(before);
     expect(warnings()).toContain(`git rm --cached -- "${rel}"`);
@@ -1889,8 +1887,8 @@ describe('revertDeniedMirrorPaths', () => {
     mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(repo, rel), 'token=abc\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [rel], untracked: [] }, TS);
 
     expect(warnings()).toContain(`git status -- "${rel}"`);
   });
@@ -1918,12 +1916,8 @@ describe('revertDeniedMirrorPaths', () => {
       writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'notes.md'), 'token=abc\n');
       const before = stagedIndex();
 
-      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-      revertDeniedMirrorPaths(
-        repo,
-        { tracked: ['shared/commands/credentials'], untracked: [] },
-        TS,
-      );
+      const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+      gateDeniedMirrorPaths(repo, { tracked: ['shared/commands/credentials'], untracked: [] }, TS);
 
       expect(stagedIndex()).toBe(before);
       expect(warnings()).toContain(
@@ -1946,8 +1940,8 @@ describe('revertDeniedMirrorPaths', () => {
       rmSync(abs);
       const before = stagedIndex();
 
-      const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-      revertDeniedMirrorPaths(
+      const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+      gateDeniedMirrorPaths(
         repo,
         { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
         TS,
@@ -1975,8 +1969,8 @@ describe('revertDeniedMirrorPaths', () => {
       gitProbe: () => null,
     }));
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
       TS,
@@ -1998,8 +1992,8 @@ describe('revertDeniedMirrorPaths', () => {
     mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
     writeFileSync(join(repo, 'shared', 'commands', 'credentials', 'notes.md'), 'token=abc\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
       TS,
@@ -2022,9 +2016,9 @@ describe('revertDeniedMirrorPaths', () => {
     const abs = join(dir, 'notes.md');
     writeFileSync(abs, 'token=abc\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
     expect(() =>
-      revertDeniedMirrorPaths(
+      gateDeniedMirrorPaths(
         repo,
         { tracked: [], untracked: ['shared/my-tools/sessions/notes.md'] },
         TS,
@@ -2036,9 +2030,9 @@ describe('revertDeniedMirrorPaths', () => {
     expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup', TS))).toBe(false);
   });
 
-  // These two are win32-only in production (`revertDeniedUnderShared`, the
+  // These two are win32-only in production (`gateDeniedUnderShared`, the
   // only caller, is reached from `src/commands/pull/win32.ts`), but
-  // `revertDeniedMirrorPaths` itself is platform-independent, so neither test
+  // `gateDeniedMirrorPaths` itself is platform-independent, so neither test
   // needs a platform stub.
 
   it('leaves a projects logical named after a denylist token completely alone', async () => {
@@ -2051,8 +2045,8 @@ describe('revertDeniedMirrorPaths', () => {
     const abs = join(dir, 'x.jsonl');
     writeFileSync(abs, '{"type":"summary"}\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       { tracked: [], untracked: ['shared/projects/sessions/x.jsonl'] },
       TS,
@@ -2073,8 +2067,8 @@ describe('revertDeniedMirrorPaths', () => {
     const abs = join(dir, 'settings.local.json');
     writeFileSync(abs, '{"apiKey":"x"}\n');
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(
       repo,
       { tracked: [], untracked: ['shared/extras/myproj/settings.local.json'] },
       TS,
@@ -2108,8 +2102,8 @@ describe('revertDeniedMirrorPaths', () => {
       };
     });
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
-    revertDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+    gateDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS);
 
     expect(readFileSync(join(dir, 'notes.md'), 'utf8')).toBe('token=abc\n');
     expect(warnings()).toContain('could not snapshot');
@@ -2136,13 +2130,9 @@ describe('revertDeniedMirrorPaths', () => {
       };
     });
 
-    const { revertDeniedMirrorPaths } = await import('./links.mirror.ts');
+    const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
     expect(() =>
-      revertDeniedMirrorPaths(
-        repo,
-        { tracked: [], untracked: ['shared/commands/credentials'] },
-        TS,
-      ),
+      gateDeniedMirrorPaths(repo, { tracked: [], untracked: ['shared/commands/credentials'] }, TS),
     ).not.toThrow();
 
     expect(warnings()).toContain('could not remove');

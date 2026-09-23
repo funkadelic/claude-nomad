@@ -257,7 +257,7 @@ function renderable(text: string): string {
 /**
  * WARNs (non-blocking) for every denylisted path git TRACKS under `shared/`.
  *
- * The blind spot the pull-side backstop cannot cover. `revertDeniedMirrorPaths`
+ * The blind spot the pull-side backstop cannot cover. `gateDeniedMirrorPaths`
  * (`src/sync/links.mirror.ts`) reads `git status`, which reports changes rather than
  * contents, so a denied path that is committed and clean produces no record at
  * all. That backstop is also win32-only, while the condition it would miss is a
