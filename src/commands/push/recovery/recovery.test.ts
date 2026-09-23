@@ -24,36 +24,6 @@ import type { Finding } from '../gitleaks.scan.ts';
 import type { LeakVerdict } from '../leak-verdict.ts';
 
 // ---------------------------------------------------------------------------
-// isTTY seam
-// ---------------------------------------------------------------------------
-
-describe('isTTY (pure seam)', () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  it('returns false when stdin.isTTY is undefined', async () => {
-    const { isTTY } = await import('./recovery.ts');
-    expect(isTTY({ isTTY: undefined }, { isTTY: true })).toBe(false);
-  });
-
-  it('returns false when stdout.isTTY is undefined', async () => {
-    const { isTTY } = await import('./recovery.ts');
-    expect(isTTY({ isTTY: true }, { isTTY: undefined })).toBe(false);
-  });
-
-  it('returns false when both are undefined', async () => {
-    const { isTTY } = await import('./recovery.ts');
-    expect(isTTY({ isTTY: undefined }, { isTTY: undefined })).toBe(false);
-  });
-
-  it('returns true when both stdin and stdout report isTTY === true', async () => {
-    const { isTTY } = await import('./recovery.ts');
-    expect(isTTY({ isTTY: true }, { isTTY: true })).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // hasUnresolved seam
 // ---------------------------------------------------------------------------
 

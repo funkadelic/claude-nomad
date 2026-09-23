@@ -1,8 +1,8 @@
 /**
- * Source-side push manifest: change detection and manifest persistence for incremental push scanning. Records per-file `{size, mtime,
- * hash}` plus scanner version and config identity to determine which source
- * files changed since the last successful push, avoiding a full re-copy and
- * re-scan on every push.
+ * Host-local manifest store behind the incremental push scan and the
+ * shared-links baseline. Records per-file `{size, mtime, hash}` plus a
+ * producer version and config identity, so a caller can tell which files
+ * changed since the manifest was last written.
  *
  * Pure functions (`isChanged`, `diffManifest`, `shouldFullRescan`) use
  * injected `{size, mtime}` and lazy hash thunks so every branch reaches 100%
@@ -24,7 +24,8 @@ import { writeJsonAtomic } from '../core/utils.fs.ts';
 export type ManifestEntry = { size: number; mtime: number; hash: string };
 
 /**
- * The push manifest persisted to `~/.cache/claude-nomad/push-manifest-<HOST>.json`.
+ * A manifest as persisted under `~/.cache/claude-nomad/` (the push manifest,
+ * `push-manifest-<HOST>.json`, and the shared-links baseline share this shape).
  * `schema` is the literal `1` (no enum, erasableSyntaxOnly). `files` is keyed
  * by absolute source path so detection is source-side and host-local.
  */
@@ -124,8 +125,8 @@ export function diffManifest(
  * `configHash` parameter; a change to any of them forces one full rescan.
  *
  * @param old - Previous manifest, or `null` on cold start.
- * @param scannerVersion - Current scanner version string from `probeGitleaks()`.
- * @param configHash - Current config identity from `computeConfigHash()`.
+ * @param scannerVersion - Current producer version (the gitleaks version for push).
+ * @param configHash - Current config identity (the gitleaks config hash for push).
  * @param forceFlag - `true` when `--full-scan` was passed explicitly.
  * @returns `true` when a full rescan is required.
  */
@@ -262,8 +263,8 @@ export function writeManifest(path: string, manifest: Manifest): void {
  * Construct a new `Manifest` from the given fields. `schema` is always `1`.
  *
  * @param files - Map from absolute source path to `ManifestEntry`.
- * @param scannerVersion - Scanner version string from `probeGitleaks()`.
- * @param configHash - Config identity string from `computeConfigHash()`.
+ * @param scannerVersion - Producer version (the gitleaks version for push).
+ * @param configHash - Config identity (the gitleaks config hash for push).
  * @returns A new `Manifest` ready to pass to `writeManifest`.
  */
 export function buildManifest(

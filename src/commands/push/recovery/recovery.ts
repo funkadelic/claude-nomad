@@ -43,8 +43,6 @@ import type { LeakVerdict } from '../leak-verdict.ts';
 import { NomadFatal, gitOrFatal, log } from '../../../core/utils.ts';
 import { isTTY } from '../../../core/tty.ts';
 
-export { isTTY };
-
 export type { FindingAction };
 
 /**

@@ -1,7 +1,8 @@
 /**
  * Push-side manifest surface: the gitleaks config identity that invalidates
  * the manifest, plus a re-export of the shared store in `sync/manifest.ts` so
- * push modules and their module mocks keep one import path.
+ * push modules and their module mocks keep one import path. Mocking this
+ * module does not reach sync-side callers such as the shared-links baseline.
  */
 
 import { createHash } from 'node:crypto';
