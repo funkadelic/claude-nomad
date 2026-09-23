@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -24,6 +25,23 @@ const hasGit = ((): boolean => {
     return false;
   }
 })();
+
+/** Returns `true` when the `gitleaks` binary is present on PATH. */
+const hasGitleaks = ((): boolean => {
+  try {
+    execFileSync('gitleaks', ['version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * Assemble a Stripe-live-key-shaped value from fragments so no contiguous
+ * secret literal sits in source-controlled bytes. Stripe keys are outside the
+ * structural scrub's token families, so only the gitleaks pass can redact one.
+ */
+const stripeFixture = ['sk', '_live_', '4eC39HqLyjWDarjtT1zdp7dc'].join('');
 
 /**
  * Build a minimal `Host`-shaped env for `runNomad`, mirroring the fixture in
@@ -123,6 +141,30 @@ describe('nomad crash handler (subprocess, real dev entry)', () => {
     }
   });
 
+  describe.skipIf(!hasGitleaks)('value-based redaction (real gitleaks)', () => {
+    it('redacts a secret the structural scrub does not know from the written report', () => {
+      const home = mkdtempSync(join(tmpdir(), 'nomad-crash-redact-'));
+      const host = makeMinimalHost(home, join(home, 'unused-repo'), {
+        NOMAD_TEST_FORCE_CRASH: '1',
+      });
+      try {
+        const result = runNomad(host, ['--version', stripeFixture]);
+        expect(result.status).toBe(EXIT.GENERIC_FAILURE);
+
+        const files = listCrashDir(home);
+        expect(files).toHaveLength(1);
+        const contents = readFileSync(
+          join(home, '.cache', 'claude-nomad', 'crash', files[0]),
+          'utf8',
+        );
+        expect(contents).not.toContain(stripeFixture);
+        expect(contents).toContain('[REDACTED:');
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe.skipIf(!hasGit)('NomadFatal exemption (real git fixture)', () => {
     it('a real NomadFatal keeps its own exit code, prints no crash banner, and writes no crash file', () => {
       const tmp = mkdtempSync(join(tmpdir(), 'nomad-crash-fatal-'));
@@ -145,5 +187,31 @@ describe('nomad crash handler (subprocess, real dev entry)', () => {
         rmSync(tmp, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe('nomad home-directory preflight (subprocess, real dev entry)', () => {
+  it('exits GENERIC_FAILURE before dispatch when no home directory resolves', () => {
+    // HOME/USERPROFILE empty plus a preloaded os.homedir stub makes home()
+    // resolve to '' inside the real bundle, so a dropped requireHome() call in
+    // nomad.ts would let `--version` succeed instead.
+    const entry = fileURLToPath(new URL('../.test-bundle/nomad.test.mjs', import.meta.url));
+    const stub =
+      "import os from 'node:os'; import { syncBuiltinESMExports } from 'node:module';" +
+      " os.homedir = () => ''; syncBuiltinESMExports();";
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--disable-warning=ExperimentalWarning',
+        '--import',
+        `data:text/javascript,${encodeURIComponent(stub)}`,
+        entry,
+        '--version',
+      ],
+      { encoding: 'utf8', env: { ...process.env, HOME: '', USERPROFILE: '' } },
+    );
+    expect(result.status).toBe(EXIT.GENERIC_FAILURE);
+    expect(result.stderr).toContain('could not determine home directory');
+    expect(result.stdout).toBe('');
   });
 });
