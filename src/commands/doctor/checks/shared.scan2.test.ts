@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
+import type * as gitleaksModule from '../../push/gitleaks.ts';
 
 import { failGlyph, okGlyph } from '../../../render/color.ts';
 import {
@@ -500,6 +501,38 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     expect(
       section.items.filter((r) => r.includes('false positive? add a pattern to .gitleaks.toml')),
     ).toHaveLength(1);
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe('scanAndReport (mocked findings)', () => {
+  let snapshot: EnvSnapshot;
+  let testHome: string;
+
+  beforeEach(() => {
+    snapshot = saveEnv();
+  });
+
+  afterEach(() => {
+    vi.doUnmock('../../push/gitleaks.ts');
+    restoreEnv(snapshot, testHome);
+  });
+
+  it('falls back to the logical name in the scrub path when staging did not record its encoding', async () => {
+    testHome = makeEnv().testHome;
+    vi.doMock('../../push/gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof gitleaksModule>()),
+      scanStagedTree: vi.fn(() => [
+        { RuleID: 'generic-api-key', File: 'shared/projects/proj/sid-a.jsonl' },
+      ]),
+    }));
+    const { scanAndReport } = await import('./shared.scan.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+
+    scanAndReport(section, join(testHome, 'unused-tree'), 1, new Map());
+
+    const scrub = join(testHome, '.claude', 'projects', 'proj', 'sid-a.jsonl');
+    expect(section.items.join('\n')).toContain(`then scrub ${scrub}`);
     expect(process.exitCode).toBe(1);
   });
 });

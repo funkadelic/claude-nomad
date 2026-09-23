@@ -61,7 +61,6 @@ function resolveLiveTranscript(id: string, matches: string[]): string | null {
       // backslash on win32); SHARED_PROJECT_LOGICAL is a forward-slash
       // literal, so normalize before matching.
       const logical = SHARED_PROJECT_LOGICAL.exec(rel.replaceAll('\\', '/'))?.[1];
-      /* c8 ignore next -- defensive: every collectMatches path is rooted at shared/projects/<logical>/ */
       if (logical === undefined) continue;
       const abs = projects[logical]?.[HOST];
       // A 'TBD' host placeholder needs no special case: encodePath('TBD') yields

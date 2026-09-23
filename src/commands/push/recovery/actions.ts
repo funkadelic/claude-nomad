@@ -104,10 +104,8 @@ function makeDefaultReadLine(repo: string): (file: string, line: number) => stri
         lines = readFileSync(target, 'utf8').split(/\r?\n/);
         cache.set(target, lines);
       }
-      const idx = line - 1; // convert 1-indexed to 0-indexed
-      if (idx < 0 || idx >= lines.length) return null;
-      /* c8 ignore next */
-      return lines[idx] ?? null;
+      // 1-indexed; an out-of-range line (including 0 or negative) reads undefined.
+      return lines[line - 1] ?? null;
     } catch {
       return null;
     }
