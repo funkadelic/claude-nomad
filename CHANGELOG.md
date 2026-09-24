@@ -8,7 +8,7 @@
 * `nomad pull` no longer overwrites a hook you added on this machine when your sync repo already has hooks. It stops, names the hook, and leaves `~/.claude/settings.json` as it is. Run `nomad capture-settings` to save the hook to your repo, or add `--host` to keep it on this machine only.
 * When another machine removes a hook from your repo, `nomad pull` now names it as it deletes it, and your settings from before the pull stay in `~/.cache/claude-nomad/backup/`.
 * `nomad init` and `nomad doctor` no longer treat a remote on another host as a GitHub repo just because its address mentions github.com.
-* On Windows, `nomad pull` now warns when a file nomad never syncs is tracked in your sync repo and has turned into a broken link.
+* On native Windows (PowerShell, cmd, or Git Bash; WSL2 behaves like Linux and is not affected), `nomad pull` now warns when a file nomad never syncs is tracked in your sync repo and has turned into a broken link.
 
 
 ### Fixed
