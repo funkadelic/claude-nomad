@@ -3,6 +3,14 @@
 ## [0.69.4](https://github.com/funkadelic/claude-nomad/compare/v0.69.3...v0.69.4) (2026-09-24)
 
 
+### What's new
+
+* `nomad pull` no longer overwrites a hook you added on this machine when your sync repo already has hooks. It stops, names the hook, and leaves `~/.claude/settings.json` as it is. Run `nomad capture-settings` to save the hook to your repo, or add `--host` to keep it on this machine only.
+* When another machine removes a hook from your repo, `nomad pull` now names it as it deletes it, and your settings from before the pull stay in `~/.cache/claude-nomad/backup/`.
+* `nomad init` and `nomad doctor` no longer treat a remote on another host as a GitHub repo just because its address mentions github.com.
+* On Windows, `nomad pull` now warns when a file nomad never syncs is tracked in your sync repo and has turned into a broken link.
+
+
 ### Fixed
 
 * **init:** only treat a remote as GitHub when github.com is its host ([#631](https://github.com/funkadelic/claude-nomad/issues/631)) ([ed0301a](https://github.com/funkadelic/claude-nomad/commit/ed0301ac2c63426d0bf954cfa58cdb7049d100b4))
