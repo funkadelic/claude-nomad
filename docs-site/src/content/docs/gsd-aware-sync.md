@@ -83,6 +83,9 @@ Nomad treats a hook entry as gsd-owned when its command runs a script whose base
 - **Your own hooks still sync.** A hook entry you write yourself (whose script basename does not
   start with `gsd-`) is ordinary ahead-only state: run `nomad capture-settings` to promote it into
   `shared/settings.base.json`, and it then travels on every subsequent pull like any other setting.
+  When the repo already has hooks, `nomad pull` refuses to overwrite the new one until you save it;
+  see [pull](/claude-nomad/commands/#pull) and
+  [capture-settings](/claude-nomad/commands/#capture-settings).
 - **In `nomad diff` and `--dry-run`:** the preview applies the same filter to both sides before
   comparing, so GSD's per-session hook self-heal never shows up as a phantom `hooks` removal. What
   the preview shows is what a real pull would actually write.
