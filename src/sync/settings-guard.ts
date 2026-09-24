@@ -95,7 +95,10 @@ export function blockedHookEntries(
   );
 }
 
-/** Sorted, de-duplicated labels of `blockedHookEntries`. */
+/**
+ * Sorted labels of `blockedHookEntries`, one per distinct hook (by id, not by
+ * label, so two hooks sharing a label still count as two).
+ */
 function blockedHookLabels(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
@@ -103,10 +106,9 @@ function blockedHookLabels(
   written: WrittenSettings | null,
   writtenHookIds: ReadonlySet<string>,
 ): string[] {
-  const labels = blockedHookEntries(merged, existing, preMerged, written, writtenHookIds).map(
-    hookEntryLabel,
-  );
-  return [...new Set(labels)].sort((a, b) => a.localeCompare(b, 'en'));
+  const entries = blockedHookEntries(merged, existing, preMerged, written, writtenHookIds);
+  const unique = new Map(entries.map((e) => [e.id, e]));
+  return [...unique.values()].map(hookEntryLabel).sort((a, b) => a.localeCompare(b, 'en'));
 }
 
 /**

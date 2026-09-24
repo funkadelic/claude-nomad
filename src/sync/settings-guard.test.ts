@@ -270,7 +270,7 @@ describe('blockedSettingsKeys hook entries', () => {
     expect(blockedSettingsKeys(mergedWithS, live, {})).toEqual(['PreToolUse hook']);
   });
 
-  it('deduplicates two live-only entries under the same event with unreadable commands', () => {
+  it('counts two distinct hooks that share a label, and a repeated hook once', () => {
     const longA = { type: 'command', command: 'a'.repeat(61) };
     const longB = { type: 'command', command: 'b'.repeat(61) };
     const live = {
@@ -279,10 +279,13 @@ describe('blockedSettingsKeys hook entries', () => {
           { matcher: '', hooks: [S] },
           { matcher: 'x', hooks: [longA] },
           { matcher: 'y', hooks: [longB] },
+          { matcher: 'y', hooks: [longB] },
         ],
       },
     };
-    expect(blockedSettingsKeys(mergedWithS, live, {})).toEqual(['Stop hook']);
+    const blocked = blockedSettingsKeys(mergedWithS, live, {});
+    expect(blocked).toEqual(['Stop hook', 'Stop hook']);
+    expect(settingsBlockedMessage(blocked, 'left unchanged')).toContain('2 settings');
   });
 
   it('names both ways out for a hook-entry refusal', () => {
