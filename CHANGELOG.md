@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.69.4](https://github.com/funkadelic/claude-nomad/compare/v0.69.3...v0.69.4) (2026-09-24)
+
+
+### What's new
+
+* `nomad pull` no longer overwrites a hook you added on this machine when your sync repo already has hooks. It stops, names the hook, and leaves `~/.claude/settings.json` as it is. Run `nomad capture-settings` to save the hook to your repo, or add `--host` to keep it on this machine only.
+* When another machine removes a hook from your repo, `nomad pull` now names it as it deletes it, and your settings from before the pull stay in `~/.cache/claude-nomad/backup/`.
+* `nomad init` and `nomad doctor` no longer treat a remote on another host as a GitHub repo just because its address mentions github.com.
+* On native Windows (PowerShell, cmd, or Git Bash; WSL2 behaves like Linux and is not affected), `nomad pull` now warns when a file nomad never syncs is tracked in your sync repo and has turned into a broken link.
+
+
+### Fixed
+
+* **init:** only treat a remote as GitHub when github.com is its host ([#631](https://github.com/funkadelic/claude-nomad/issues/631)) ([ed0301a](https://github.com/funkadelic/claude-nomad/commit/ed0301ac2c63426d0bf954cfa58cdb7049d100b4))
+* **pull:** stop overwriting a hook you added locally ([#638](https://github.com/funkadelic/claude-nomad/issues/638)) ([59ea891](https://github.com/funkadelic/claude-nomad/commit/59ea89103376c402604cda3efc0c5e1e844ea5cd))
+* **pull:** warn on Windows when a never-sync file in the repo becomes a broken link ([#635](https://github.com/funkadelic/claude-nomad/issues/635)) ([312d6b9](https://github.com/funkadelic/claude-nomad/commit/312d6b945cafd0d4ba6e1c509f0bf251c50c2692))
+
+
+### Changed
+
+* **dependabot:** group action bumps and add a release cooldown ([#627](https://github.com/funkadelic/claude-nomad/issues/627)) ([eefdf06](https://github.com/funkadelic/claude-nomad/commit/eefdf0641cd14ad7339ecfeb4b270a78b25b08df))
+* move the TTY check and the manifest store out of the push command ([#633](https://github.com/funkadelic/claude-nomad/issues/633)) ([50584df](https://github.com/funkadelic/claude-nomad/commit/50584df68f609dd84c295f21cea22dbe56b157a5))
+* publish a test-count badge from main ([#637](https://github.com/funkadelic/claude-nomad/issues/637)) ([7cd6f1d](https://github.com/funkadelic/claude-nomad/commit/7cd6f1d7750a4c2fb3e080feb87aaede939b7c1c))
+* **sync:** move settings drift helpers into sync ([#634](https://github.com/funkadelic/claude-nomad/issues/634)) ([3462c6f](https://github.com/funkadelic/claude-nomad/commit/3462c6f4e3b919b8dd7ec6225ae1ac62f87a901b))
+
+
+### Testing
+
+* cover the defensive fault-handling branches ([#636](https://github.com/funkadelic/claude-nomad/issues/636)) ([b187ef5](https://github.com/funkadelic/claude-nomad/commit/b187ef5763e8ce2e97f6cae1c35cd526699cea0f))
+* pin the home preflight, crash redaction and spinner worker path ([#632](https://github.com/funkadelic/claude-nomad/issues/632)) ([6ad01cd](https://github.com/funkadelic/claude-nomad/commit/6ad01cdf3260a2867a3b2b690a81142d0398bcb0))
+
+
+### Dependencies
+
+* bump @astrojs/starlight from 0.42.0 to 0.42.1 in /docs-site in the prod-dependencies group across 1 directory ([#626](https://github.com/funkadelic/claude-nomad/issues/626)) ([6f8a2dc](https://github.com/funkadelic/claude-nomad/commit/6f8a2dcc0d189c6358b6def2b5ba0b61e0bbbcc2))
+* bump astro from 7.3.2 to 7.3.3 in /docs-site in the astro group ([#624](https://github.com/funkadelic/claude-nomad/issues/624)) ([ff34642](https://github.com/funkadelic/claude-nomad/commit/ff3464207ee8686728bccfa8684f520a91a028ba))
+* bump starlight-llms-txt from 0.11.0 to 0.12.0 in /docs-site in the dev-dependencies group across 1 directory ([#625](https://github.com/funkadelic/claude-nomad/issues/625)) ([ca728a4](https://github.com/funkadelic/claude-nomad/commit/ca728a42fdcce079656a1fcc8da29609cfa70909))
+* bump the actions group across 1 directory with 4 updates ([#630](https://github.com/funkadelic/claude-nomad/issues/630)) ([8b10d51](https://github.com/funkadelic/claude-nomad/commit/8b10d5150b205348604a3fbcd785bb6da8f3ef7b))
+* bump the dev-dependencies group across 1 directory with 5 updates ([#629](https://github.com/funkadelic/claude-nomad/issues/629)) ([dd8aa58](https://github.com/funkadelic/claude-nomad/commit/dd8aa58dd08de0e0a0106ea0e147809ac6d02d5a))
+
 ## [0.69.3](https://github.com/funkadelic/claude-nomad/compare/v0.69.2...v0.69.3) (2026-09-19)
 
 
