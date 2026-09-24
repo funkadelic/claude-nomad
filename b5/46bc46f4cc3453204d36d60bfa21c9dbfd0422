@@ -1,0 +1,39 @@
+src/sync/hooks-entries.ts
+  s_a3180df4c49995::t_1392ceeb93b419 148-149,211,251
+src/sync/settings-written.test.ts
+  s_a3180df4c49995::t_e6534d61851a20 125-157
+src/sync/hooks-entries.test.ts
+  s_a3180df4c49995::t_4905c4be7f0a09 10-19
+  s_a3180df4c49995::t_b11cb4059dad12 140,151,168,178,194,207-210,217,233,245-248,258,274,289
+src/sync/links.ts
+  s_a3180df4c49995::t_1392ceeb93b419 24-28,234,243,245,343
+src/render/preview.ts
+  s_a3180df4c49995::t_1392ceeb93b419 20,160,169,195,465
+src/commands/capture-settings/capture-settings.test.ts
+  s_a3180df4c49995::t_e6534d61851a20 569-598
+src/sync/settings-guard.test.ts
+  s_a3180df4c49995::t_635d3958dde1d5 235-250
+  s_a3180df4c49995::t_873ab6fca610e0 13
+src/sync/settings-written.ts
+  s_a3180df4c49995::t_1392ceeb93b419 15,30,32,34,40,42,49-65,69-70,86-87
+src/commands/capture-settings/capture-settings.ts
+  s_a3180df4c49995::t_1392ceeb93b419 9-10,103-111
+src/sync/settings-guard.ts
+  s_a3180df4c49995::t_1392ceeb93b419 17-22,74-82,84,89-90,93-108,123,132,136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b546bc46f4cc3453204d36d60bfa21c9dbfd0422",
+  "prompts": {},
+  "sessions": {
+    "s_a3180df4c49995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae1bd937-37e9-4d72-a379-628eedf6d211",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
