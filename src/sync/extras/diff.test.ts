@@ -215,4 +215,31 @@ describe('divergenceCheckExtras git-diff failure modes (listDivergingFiles)', ()
     expect(warned).toContain('git: unexpected boom');
     vi.doUnmock('node:child_process');
   });
+
+  it('listDivergingFiles WARNs with the thrown value when git throws a non-Error', async () => {
+    // A thrown non-Error has no message, so the WARN falls back to String(err).
+    const sharedExtras = join(repoUnderHome, 'shared', 'extras');
+    mkdirSync(join(sharedExtras, 'foo', '.planning'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.planning', 'STATE.md'), '# shared\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.planning'] },
+      }) + '\n',
+    );
+    vi.doMock('node:child_process', () => ({
+      execFileSync: vi.fn(() => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw 'plain string failure';
+      }),
+    }));
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { divergenceCheckExtras } = await import('./extras.ts');
+    divergenceCheckExtras('20260923-non-error-ts');
+    const warned = warnSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(warned).toContain('divergence check failed');
+    expect(warned).toContain('plain string failure');
+    vi.doUnmock('node:child_process');
+  });
 });

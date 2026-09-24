@@ -26,7 +26,6 @@ import { type Finding, partitionFindings, scanStagedTree } from '../../push/gitl
  * when the association is missing (defensive; the temp-tree build guarantees a hit).
  */
 function scrubPath(logical: string, sid: string, logicalToEncoded: Map<string, string>): string {
-  /* c8 ignore next -- the `?? logical` fallback is defensive; the temp-tree build keys every staged logical */
   const encoded = logicalToEncoded.get(logical) ?? logical;
   return join(claudeHome(), 'projects', encoded, `${sid}.jsonl`);
 }
@@ -68,26 +67,22 @@ function reportOtherFindings(section: DoctorSection, other: Finding[]): void {
  * Emits a leading blank, a bold `Remediation` header, one rotate-and-scrub
  * line per session (using `logicalBySession` to build the scrub path), and
  * exactly ONE false-positive hint after the loop (deduped, not once per session).
- * The hint guard omits a rotate row rather than print a wrong path if the
- * invariant ever breaks; the false-positive line is always appended.
  */
 function reportRemediation(
   section: DoctorSection,
-  bySession: Map<string, Map<string, number>>,
   logicalBySession: Map<string, string>,
   logicalToEncoded: Map<string, string>,
 ): void {
   addItem(section, '');
   addItem(section, bold('Remediation'));
-  for (const [sid] of bySession) {
-    const logical = logicalBySession.get(sid);
-    /* c8 ignore next -- false branch is defensive; every bySession sid is keyed in logicalBySession */
-    if (logical !== undefined) {
-      const rotateLine = dim(
-        `- rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
-      );
-      addItem(section, `  ${rotateLine}`);
-    }
+  // Holds the same sessions in the same order as bySession. Both regexes match
+  // the same paths (pinned by a test), and dedupe keys include File, so dedupe
+  // never drops a sid's first finding.
+  for (const [sid, logical] of logicalBySession) {
+    const rotateLine = dim(
+      `- rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
+    );
+    addItem(section, `  ${rotateLine}`);
   }
   addItem(section, `  ${dim('- false positive? add a pattern to .gitleaks.toml')}`);
 }
@@ -98,7 +93,7 @@ function reportRemediation(
  * the exported `SESSION_PATH` shape; the `<logical>` group lets the scrub-path
  * hint reuse this single authoritative parse.
  */
-const SESSION_PATH_LOGICAL = /^shared\/projects\/([^/]+)\/([^/]+)\.jsonl$/;
+export const SESSION_PATH_LOGICAL = /^shared\/projects\/([^/]+)\/([^/]+)\.jsonl$/;
 
 /**
  * Emit the single canonical clean row reporting the scanned-project count
@@ -121,8 +116,7 @@ function buildLogicalBySession(findings: Finding[]): Map<string, string> {
   for (const f of findings) {
     const m = SESSION_PATH_LOGICAL.exec(f.File);
     if (m?.[2] !== undefined && !logicalBySession.has(m[2])) {
-      /* c8 ignore next -- `?? ''` is defensive; group 1 is always captured when the match succeeds */
-      logicalBySession.set(m[2], m[1] ?? '');
+      logicalBySession.set(m[2], String(m[1]));
     }
   }
   return logicalBySession;
@@ -198,7 +192,7 @@ export function scanAndReport(
   if (other.length > 0) reportOtherFindings(section, other);
   if (bySession.size > 0) reportSessionFindings(section, bySession);
   if (bySession.size > 0) {
-    reportRemediation(section, bySession, buildLogicalBySession(findings), logicalToEncoded);
+    reportRemediation(section, buildLogicalBySession(findings), logicalToEncoded);
   }
   emitDescriptionLegend(section, findings);
 }
