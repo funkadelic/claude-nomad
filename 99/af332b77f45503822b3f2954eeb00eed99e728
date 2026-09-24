@@ -1,0 +1,19 @@
+src/commands/doctor/checks/shared.scan.ts
+  s_aa500d3ae953c7::t_5dd0ed261103de 78-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99af332b77f45503822b3f2954eeb00eed99e728",
+  "prompts": {},
+  "sessions": {
+    "s_aa500d3ae953c7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "de8da189-8ed0-41d8-8b31-7af26c1e2e02",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
