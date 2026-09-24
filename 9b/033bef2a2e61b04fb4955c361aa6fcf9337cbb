@@ -1,0 +1,33 @@
+src/commands/capture-settings/capture-settings.ts
+  s_1633402227907b::t_34bb13c6766302 6
+src/commands/doctor/checks/settings-drift.ts
+  s_1633402227907b::t_b7d90fa82dd000 8,45
+src/commands/doctor/checks/settings.ts
+  s_1633402227907b::t_59557ff271038d 15
+src/commands/push/settings.ts
+  s_1633402227907b::t_806c66ec0d3870 9
+src/sync/links.ts
+  s_1633402227907b::t_71a9a5c883a69b 5
+src/sync/settings-classify.test.ts
+  s_1633402227907b::t_b70d582916f6d4 11
+src/sync/settings-classify.ts
+  s_1633402227907b::t_afe1251fcf2a63 2-4
+src/sync/settings-guard.ts
+  s_1633402227907b::t_7821a2f2642145 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b033bef2a2e61b04fb4955c361aa6fcf9337cbb",
+  "prompts": {},
+  "sessions": {
+    "s_1633402227907b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1f579d4-90d7-4ac8-b83f-8a030e36807a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
