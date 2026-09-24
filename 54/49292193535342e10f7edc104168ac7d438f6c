@@ -1,0 +1,21 @@
+src/sync/settings-guard.test.ts
+  s_a3180df4c49995::t_cb18cce3919206 273,282,286-288
+src/sync/settings-guard.ts
+  s_a3180df4c49995::t_cb18cce3919206 98-101,109-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5449292193535342e10f7edc104168ac7d438f6c",
+  "prompts": {},
+  "sessions": {
+    "s_a3180df4c49995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae1bd937-37e9-4d72-a379-628eedf6d211",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
