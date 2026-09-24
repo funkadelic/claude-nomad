@@ -330,9 +330,9 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       # The README test-count badge reads its number from a gist, so a new count
-      # costs no commit. Only a push to main on this one leg publishes, so the
-      # other legs and open PRs never move it. GIST_TOKEN is a personal access
-      # token with the gist scope; GITHUB_TOKEN cannot write gists.
+      # costs no commit. Only a push to main on the ubuntu node-24 leg publishes,
+      # so the other legs and open PRs never change it. GIST_TOKEN is a personal
+      # access token with the gist scope; GITHUB_TOKEN cannot write gists.
       - name: Count tests
         id: test-count
         if: >-
