@@ -203,7 +203,7 @@ export function previewSettings(
     JSON.stringify(sortKeysDeep(merged), null, 2),
   );
   const notes = diff === '' && !rawEqual ? [CANONICAL_ORDER_NOTE] : [];
-  const removed = removedSettingsKeys(rawMerged, current ?? {}, preMerged, written);
+  const removed = removedSettingsKeys(rawMerged, current ?? {}, preMerged, written, writtenHookIds);
   if (removed.length > 0) notes.push(settingsRemovedMessage(removed));
   return { diff, notes };
 }

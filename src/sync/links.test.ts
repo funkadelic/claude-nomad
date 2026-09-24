@@ -486,6 +486,29 @@ describe('regenerateSettings (integration)', () => {
     expect(writes.join('')).toContain('backup/20260516-000000/settings.json');
   });
 
+  it('names a hook the repo dropped when the pull removes it', async () => {
+    const e = (command: string) => ({ matcher: '', hooks: [{ type: 'command', command }] });
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ hooks: { Stop: [e('stop')], PreToolUse: [e('dropped')] } }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    regenerateSettings('20260516-000000');
+
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({ hooks: { Stop: [e('stop')] } }) + '\n',
+    );
+    const writes: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      writes.push(args.map(String).join(' '));
+    });
+    const result = regenerateSettings('20260516-000000');
+
+    expect(result).toMatchObject({ blocked: [], removed: ["PreToolUse hook 'dropped'"] });
+    expect(writes.join('')).toContain("this pull removed 1 setting (PreToolUse hook 'dropped')");
+  });
+
   it('dry run names the removal without writing', async () => {
     writeFileSync(
       join(sharedDir, 'settings.base.json'),

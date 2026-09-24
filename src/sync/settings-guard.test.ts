@@ -371,6 +371,35 @@ describe('removedSettingsKeys', () => {
     ]);
   });
 
+  it('names hook entries removed upstream after the removed keys, and not refused ones', () => {
+    const e = (command: string) => ({ matcher: '', hooks: [{ type: 'command', command }] });
+    const merged = { hooks: { Stop: [e('stop')] } };
+    const hooksLive = {
+      hooks: {
+        Stop: [e('stop')],
+        PreToolUse: [e('pre-merged'), e('written'), e('mine')],
+      },
+    };
+    const [writtenId] = hookEntryIds({ hooks: { PreToolUse: [e('written')] } });
+    expect(
+      removedSettingsKeys(
+        merged,
+        { ...hooksLive, theme: 'dark' },
+        { theme: 'dark', hooks: { PreToolUse: [e('pre-merged')] } },
+        null,
+        new Set([settingValueHash(writtenId)]),
+      ),
+    ).toEqual(['theme', "PreToolUse hook 'pre-merged'", "PreToolUse hook 'written'"]);
+  });
+
+  it('names every live-only hook entry as removed when the whole hooks value is as written', () => {
+    const e = (command: string) => ({ matcher: '', hooks: [{ type: 'command', command }] });
+    const live = { hooks: { Stop: [e('stop')], PreToolUse: [e('gone')] } };
+    expect(
+      removedSettingsKeys({ hooks: { Stop: [e('stop')] } }, live, {}, rec({ hooks: live.hooks })),
+    ).toEqual(["PreToolUse hook 'gone'"]);
+  });
+
   it('excludes keys the pull refuses instead of deleting', () => {
     expect(removedSettingsKeys({ a: 1 }, live, {}, null)).toEqual([]);
   });

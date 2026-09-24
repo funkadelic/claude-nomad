@@ -100,7 +100,8 @@ The same refusal covers a hook added where the repo already has hooks: when the 
 carries a `hooks` key and this machine's live settings add another entry under it, pull stops
 the same way and names the hook by its event, and by its command too when it is short enough to
 show, for example `PreToolUse hook 'python3 ~/x.py'`. `nomad capture-settings` saves it, the same
-command used for local-only keys.
+command used for local-only keys. A hook another machine removed from the repo is removed and named
+the same way as a removed setting, and capture does not save it back.
 
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
@@ -110,8 +111,8 @@ them and will not stop for them. When it finds some the repo does not track, it 
 
 A setting that another machine removed from the repo is removed here too. After each successful
 settings write, pull records in `~/.cache/claude-nomad/` the top-level settings it wrote on this
-machine, with a fingerprint of each value. A setting in that record that the repo no longer carries,
-and that still has the value pull wrote, is one pull put there, so it is removed. The pull names
+machine, with a fingerprint of each value and of each hook. A setting in that record that the repo
+no longer carries, and that still has the value pull wrote, is one pull put there, so it is removed. The pull names
 each setting it removes (so does `nomad pull --dry-run`), and the file from before the pull stays
 in `~/.cache/claude-nomad/backup/`. A setting missing from the record is one you added, and one you
 changed since is yours now, so either is kept and listed as above. A removal is handled the same

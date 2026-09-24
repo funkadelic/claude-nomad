@@ -257,7 +257,10 @@ function reportSettingsDrift(
   }
   const credentials = credentialOverwriteCount(merged, existing);
   if (credentials > 0) warn(credentialOverwriteMessage(credentials));
-  return { blocked, removed: removedSettingsKeys(merged, existing, preMerged, written) };
+  return {
+    blocked,
+    removed: removedSettingsKeys(merged, existing, preMerged, written, writtenHookIds),
+  };
 }
 
 /**
