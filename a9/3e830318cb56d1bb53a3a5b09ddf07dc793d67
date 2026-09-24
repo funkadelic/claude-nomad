@@ -1,0 +1,27 @@
+docs-site/src/content/docs/how-it-works.mdx
+  s_a3180df4c49995::t_8c321e61660ac9 393-399
+docs-site/src/content/docs/commands.md
+  s_a3180df4c49995::t_efbfbf152385c7 99-104
+  s_a3180df4c49995::t_8a77f7e99933e4 402-408
+README.md
+  s_a3180df4c49995::t_95c7b8f358a979 43-45
+  s_a3180df4c49995::t_48de05f8147d79 233-242
+  s_a3180df4c49995::t_9304f7b14a5d77 301-307
+  s_a3180df4c49995::t_400a3cfeaf6af0 300
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a93e830318cb56d1bb53a3a5b09ddf07dc793d67",
+  "prompts": {},
+  "sessions": {
+    "s_a3180df4c49995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae1bd937-37e9-4d72-a379-628eedf6d211",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
