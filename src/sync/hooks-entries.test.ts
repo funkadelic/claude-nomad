@@ -212,6 +212,20 @@ describe('buildHookCaptureSubset (base destination)', () => {
     expect(result.skipped).toEqual(['Stop']);
   });
 
+  it('skips every event when the host file sets hooks to null', () => {
+    const overrides = { hooks: null };
+    const merged = { hooks: null };
+    const live = {
+      hooks: { Stop: [stopEntry], PreToolUse: [{ matcher: '', hooks: [preToolHook] }] },
+    };
+    const result = buildHookCaptureSubset(
+      sources({ base, overrides, merged, settings: live }),
+      false,
+    );
+    expect(result.hooks).toEqual({});
+    expect(result.skipped).toEqual(['Stop', 'PreToolUse']);
+  });
+
   it('returns empty hooks and skipped when there is no live-only entry', () => {
     const result = buildHookCaptureSubset(
       sources({ base, overrides: {}, merged: base, settings: base }),
@@ -259,6 +273,18 @@ describe('buildHookCaptureSubset (host destination)', () => {
       true,
     );
     expect(result.hooks).toEqual({ PreToolUse: [{ matcher: '', hooks: [preToolHook] }] });
+    expect(result.shadowed).toEqual([]);
+  });
+
+  it('writes every live hook when the host file sets hooks to null', () => {
+    const overrides = { hooks: null };
+    const merged = { hooks: null };
+    const live = { hooks: { Stop: [stopEntry, xEntry] } };
+    const result = buildHookCaptureSubset(
+      sources({ base, overrides, merged, settings: live }),
+      true,
+    );
+    expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry] });
     expect(result.shadowed).toEqual([]);
   });
 

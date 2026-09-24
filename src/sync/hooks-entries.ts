@@ -159,14 +159,25 @@ export type HookCaptureResult = {
   skipped: string[];
 };
 
+/** True for a non-null, non-array object. */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
 /**
  * The plain-object `hooks` value of `settings`, or `{}` for any other shape.
  */
 function hooksBlockOf(settings: Record<string, unknown>): Record<string, unknown> {
-  const v = settings.hooks;
-  return v !== null && typeof v === 'object' && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : {};
+  return isPlainObject(settings.hooks) ? settings.hooks : {};
+}
+
+/**
+ * Whether the host file sets `hooks` to a non-object such as `null`, which
+ * replaces the whole merged block, so no shared hook event reaches this host.
+ * @param overrides - `hosts/<HOST>.json`, or `{}` when absent.
+ */
+export function hostReplacesHooks(overrides: Record<string, unknown>): boolean {
+  return Object.hasOwn(overrides, 'hooks') && !isPlainObject(overrides.hooks);
 }
 
 /**
@@ -201,15 +212,17 @@ function appendedMatcherEntries(entries: HookEntry[]): Record<string, unknown>[]
 /**
  * Base-destination capture: appends normalized live-only entries to the
  * base's own array per event; skips (into `skipped`) an event the host file
- * sets itself, since its array would hide the base addition.
+ * sets itself, or every event when it replaces the whole `hooks` block, since
+ * the host value would hide the base addition.
  */
 function buildBaseHookCapture(sources: HookCaptureSources): HookCaptureResult {
   const baseHooks = hooksBlockOf(sources.base);
   const hostHooks = hooksBlockOf(sources.overrides);
+  const hostReplaces = hostReplacesHooks(sources.overrides);
   const hooks: Record<string, unknown[]> = {};
   const skipped: string[] = [];
   for (const [event, entries] of groupByEvent(sources.entries)) {
-    if (Object.hasOwn(hostHooks, event)) {
+    if (hostReplaces || Object.hasOwn(hostHooks, event)) {
       skipped.push(event);
       continue;
     }

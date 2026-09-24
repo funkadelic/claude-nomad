@@ -596,6 +596,39 @@ describe('cmdCaptureSettings', () => {
       expect(live.hooks).toEqual({ Stop: [e('stop')], PostToolUse: [e('mine')] });
     });
 
+    it('a host file with hooks: null skips a base capture and --host replaces the null', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const originalBase = JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n';
+      const originalSettings = JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n';
+      const hostPath = join(env.hostsDir, 'test-host.json');
+      writeFileSync(env.basePath, originalBase);
+      writeFileSync(hostPath, JSON.stringify({ hooks: null }) + '\n');
+      writeFileSync(env.settingsPath, originalSettings);
+
+      const writes: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        writes.push(args.map(String).join(' ') + '\n');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(originalBase);
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(originalSettings);
+      expect(writes.join('')).toContain('--host');
+
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+      const hostFile = JSON.parse(readFileSync(hostPath, 'utf8')) as { hooks: unknown };
+      expect(hostFile.hooks).toEqual({ Stop: [stopEntry] });
+      expect(writes.join('')).toContain('shared hooks for every other event reach this host again');
+
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      expect(regenerateSettings('20260924-000002').blocked).toEqual([]);
+    });
+
     it('--host writes the full event array and warns about the base-edit trade-off', async () => {
       const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
       const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };

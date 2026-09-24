@@ -236,9 +236,11 @@ enough to show, for example `PreToolUse hook 'python3 ~/x.py'`. Save it with
 `nomad capture-settings`, which adds it to the shared hooks for that event. With `--host`, this
 machine's host file gets that event's whole hook list, shared entries included, so later changes to
 that event's hooks in the shared file stop reaching this machine; capture tells you this before it
-writes. If your host file already sets its own hooks for that event, a plain
-`nomad capture-settings` skips saving the hook there and tells you to add `--host` instead. A hook
-another machine removed from the repo is removed here too, the same as any other setting.
+writes. If your host file already sets its own hooks for that event, or sets `hooks` to `null`, a
+plain `nomad capture-settings` skips saving the hook there and tells you to add `--host` instead. A
+`--host` capture over `hooks: null` writes the hooks in its place, so the shared hooks for every
+other event reach this machine again; capture warns before it writes. A hook another machine removed
+from the repo is removed here too, the same as any other setting.
 
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list

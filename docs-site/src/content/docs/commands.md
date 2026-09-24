@@ -403,8 +403,10 @@ It also saves a hook this machine added under an event the repo already tracks. 
 appends the hook to the shared hooks for that event. With `--host`, it writes that event's whole
 hook list, shared entries included, into `hosts/<NOMAD_HOST>.json`, and warns that later edits to
 that event's hooks in the shared base will stop reaching this machine. If the host file already
-sets its own hooks for that event, the default (non-`--host`) capture skips saving the hook there
-and points you at `--host` instead.
+sets its own hooks for that event, or sets `hooks` to `null`, the default (non-`--host`) capture
+skips saving the hook there and points you at `--host` instead. A `--host` capture over
+`hooks: null` writes the hooks in its place and warns that the shared hooks for every other event
+reach this machine again.
 
 | Flag        | Description                                                                                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |

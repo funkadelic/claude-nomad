@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
 import { buildCaptureSubset } from '../../sync/settings-classify.ts';
-import { buildHookCaptureSubset } from '../../sync/hooks-entries.ts';
+import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
 import { blockedHookEntries } from '../../sync/settings-guard.ts';
 import { readWrittenHookIds, readWrittenSettingsKeys } from '../../sync/settings-written.ts';
@@ -112,8 +112,8 @@ function collectCapture(
 
   for (const event of skipped) {
     warn(
-      `not saving ${event} hooks to shared/settings.base.json: hosts/${HOST}.json sets its own ` +
-        `${event} hooks, which replace the shared ones on this host; run 'nomad capture-settings ` +
+      `not saving ${event} hooks to shared/settings.base.json: hosts/${HOST}.json overrides ` +
+        `them on this host, so the shared ones never reach it; run 'nomad capture-settings ` +
         `--host' to save them there`,
     );
   }
@@ -125,6 +125,13 @@ function collectCapture(
   }
 
   const hookEventKeys = Object.keys(hooks);
+  if (useHost && hookEventKeys.length > 0 && hostReplacesHooks(sources.overrides)) {
+    warn(
+      `hosts/${HOST}.json sets hooks to a non-object value, which drops every shared hook on ` +
+        `this host; saving replaces it with these hook events, so the shared hooks for every ` +
+        `other event reach this host again`,
+    );
+  }
   const subset: Record<string, unknown> = { ...topSubset };
   if (hookEventKeys.length > 0) subset.hooks = hooks;
 
