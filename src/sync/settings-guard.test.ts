@@ -10,7 +10,7 @@ import {
   settingValueHash,
   stillAsWritten,
 } from './settings-guard.ts';
-import { hookEntryIds } from './hooks-entries.ts';
+import { hookEntryContents } from './hooks-entries.ts';
 
 /** A written-settings record holding each value's hash, as a real write records it. */
 function rec(values: Record<string, unknown>): Record<string, string> {
@@ -232,13 +232,13 @@ describe('blockedSettingsKeys hook entries', () => {
     ]);
   });
 
-  it('refuses only the local addition when the record keeps the id of the entry the repo dropped', () => {
+  it('refuses only the local addition when the record keeps the fingerprint of the entry the repo dropped', () => {
     const writtenHooks = {
       Stop: [{ matcher: '', hooks: [S] }],
       PreToolUse: [{ matcher: '', hooks: [R] }],
     };
     const writtenHookIds = new Set(
-      [...hookEntryIds({ hooks: writtenHooks })].map((id) => settingValueHash(id)),
+      [...hookEntryContents({ hooks: writtenHooks })].map((c) => settingValueHash(c)),
     );
     const live = {
       hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P, R] }] },
@@ -246,6 +246,26 @@ describe('blockedSettingsKeys hook entries', () => {
     expect(
       blockedSettingsKeys(mergedWithS, live, {}, rec({ hooks: writtenHooks }), writtenHookIds),
     ).toEqual(["PreToolUse hook 'pre-cmd'"]);
+  });
+
+  it('refuses a dropped hook whose timeout was edited locally, by record and by pre-pull merge', () => {
+    const writtenHooks = {
+      Stop: [{ matcher: '', hooks: [S] }],
+      PreToolUse: [{ matcher: '', hooks: [R] }],
+    };
+    const writtenHookIds = new Set(
+      [...hookEntryContents({ hooks: writtenHooks })].map((c) => settingValueHash(c)),
+    );
+    const edited = { ...R, timeout: 30 };
+    const live = {
+      hooks: {
+        Stop: [{ matcher: '', hooks: [S] }],
+        PreToolUse: [{ matcher: '', hooks: [edited] }],
+      },
+    };
+    const refused = ["PreToolUse hook 'removed-cmd'"];
+    expect(blockedSettingsKeys(mergedWithS, live, {}, null, writtenHookIds)).toEqual(refused);
+    expect(blockedSettingsKeys(mergedWithS, live, { hooks: writtenHooks }, null)).toEqual(refused);
   });
 
   it('drops the command from the label when it is longer than 60 characters', () => {
@@ -380,7 +400,7 @@ describe('removedSettingsKeys', () => {
         PreToolUse: [e('pre-merged'), e('written'), e('mine')],
       },
     };
-    const [writtenId] = hookEntryIds({ hooks: { PreToolUse: [e('written')] } });
+    const [writtenId] = hookEntryContents({ hooks: { PreToolUse: [e('written')] } });
     expect(
       removedSettingsKeys(
         merged,

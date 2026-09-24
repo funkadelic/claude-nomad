@@ -23,6 +23,8 @@ export type HookEntry = {
   hook: unknown;
   /** Key-order-independent identity string; see `hookEntryId`. */
   id: string;
+  /** Like `id`, but over every field of the hook, so a `timeout` edit changes it. */
+  content: string;
 };
 
 /**
@@ -48,6 +50,12 @@ function hookEntryId(event: string, matcher: unknown, hook: unknown): string {
   return JSON.stringify([event, m, sortKeysDeep(normalizeNodePathsDeep(hook))]);
 }
 
+/** Fingerprint of a hook's full value (event, matcher, every hook field). */
+function hookEntryContent(event: string, matcher: unknown, hook: unknown): string {
+  const m = typeof matcher === 'string' ? matcher : '';
+  return JSON.stringify([event, m, sortKeysDeep(normalizeNodePathsDeep(hook))]);
+}
+
 /**
  * Flatten one matcher entry's inner `hooks` array into `HookEntry` records.
  * Fail-safe: a non-object entry, or one whose `hooks` is not an array,
@@ -63,6 +71,7 @@ function flattenMatcherEntry(event: string, entry: unknown): HookEntry[] {
     entry: entryObj,
     hook,
     id: hookEntryId(event, matcher, hook),
+    content: hookEntryContent(event, matcher, hook),
   }));
 }
 
@@ -115,6 +124,14 @@ export function liveOnlyHookEntries(
  */
 export function hookEntryIds(settings: Record<string, unknown>): Set<string> {
   return new Set(flattenHookEntries(settings).map((e) => e.id));
+}
+
+/**
+ * The content fingerprints of every gsd-stripped hook entry in `settings`.
+ * @param settings - Any settings object (merge, live file, or pre-pull merge).
+ */
+export function hookEntryContents(settings: Record<string, unknown>): Set<string> {
+  return new Set(flattenHookEntries(settings).map((e) => e.content));
 }
 
 /**

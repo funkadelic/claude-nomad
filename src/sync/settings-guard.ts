@@ -15,7 +15,7 @@ import {
 } from './settings-classify.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import {
-  hookEntryIds,
+  hookEntryContents,
   hookEntryLabel,
   liveOnlyHookEntries,
   type HookEntry,
@@ -85,9 +85,10 @@ function splitHookEntries(
 ): { blocked: HookEntry[]; removed: HookEntry[] } {
   const live = liveOnlyHookEntries(merged, existing);
   if (stillAsWritten(written, existing, 'hooks')) return { blocked: [], removed: live };
-  const preMergedIds = hookEntryIds(preMerged);
+  // Match full content, so a locally edited hook (e.g. its timeout) is refused, not deleted.
+  const preMergedContents = hookEntryContents(preMerged);
   const removedUpstream = (e: HookEntry): boolean =>
-    preMergedIds.has(e.id) || writtenHookIds.has(settingValueHash(e.id));
+    preMergedContents.has(e.content) || writtenHookIds.has(settingValueHash(e.content));
   return {
     blocked: live.filter((e) => !removedUpstream(e)),
     removed: live.filter(removedUpstream),
@@ -100,7 +101,7 @@ function splitHookEntries(
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
  * @param written - The written-settings record, or `null`.
- * @param writtenHookIds - Hashed hook-entry ids the last write produced.
+ * @param writtenHookIds - Hashes of each hook entry's content from the last write.
  */
 export function blockedHookEntries(
   merged: Record<string, unknown>,
@@ -132,7 +133,7 @@ function hookLabels(entries: HookEntry[]): string[] {
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
  * @param written - Value hashes the last successful settings write produced on
  *   this host, or `null` for no record; see `stillAsWritten`.
- * @param writtenHookIds - Hashed hook-entry ids that write produced.
+ * @param writtenHookIds - Hashes of each hook entry's content from that write.
  * @returns The blocked keys then blocked hook-entry labels, sorted within
  *   each group.
  */
@@ -158,7 +159,7 @@ export function blockedSettingsKeys(
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD.
  * @param written - The written-settings record, or `null`.
- * @param writtenHookIds - Hashed hook-entry ids that write produced.
+ * @param writtenHookIds - Hashes of each hook entry's content from that write.
  * @returns The removed keys then removed hook-entry labels, sorted within
  *   each group.
  */

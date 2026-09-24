@@ -231,7 +231,7 @@ function readExistingSettings(settingsPath: string): {
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
  * @param written - The written-settings record; see `blockedSettingsKeys`.
- * @param writtenHookIds - Hashed hook-entry ids the last write produced.
+ * @param writtenHookIds - Hashes of each hook entry's content from the last write.
  * @returns The blocked keys, so the caller can skip the write, and the keys
  *   the write removes (empty when blocked).
  */

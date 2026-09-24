@@ -157,7 +157,7 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * @param settingsPath - Path to the live `~/.claude/settings.json`.
  * @param preMerged - The merge at the pre-pull HEAD (`preRebaseSettingsMerge`).
  * @param written - The written-settings record; see `blockedSettingsKeys`.
- * @param writtenHookIds - Hashed hook-entry ids the last write produced.
+ * @param writtenHookIds - Hashes of each hook entry's content from the last write.
  * @returns The unified diff (`''` for none) and any notes.
  */
 export function previewSettings(

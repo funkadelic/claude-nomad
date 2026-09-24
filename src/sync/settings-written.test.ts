@@ -122,7 +122,7 @@ describe('settings-written', () => {
     expect(Object.keys(readWrittenSettingsKeys() ?? {})).toEqual(['model', 'hooks']);
   });
 
-  it('records a hash of each non-gsd hook entry id, read back by readWrittenHookIds', async () => {
+  it('records a content hash of each non-gsd hook entry, read back by readWrittenHookIds', async () => {
     const userHook = { type: 'command', command: 'my-hook' };
     const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
     const settings = {
@@ -135,9 +135,11 @@ describe('settings-written', () => {
     };
     const { readWrittenHookIds, recordWrittenSettingsKeys } = await import('./settings-written.ts');
     const { settingValueHash } = await import('./settings-guard.ts');
-    const { hookEntryIds } = await import('./hooks-entries.ts');
+    const { hookEntryContents } = await import('./hooks-entries.ts');
     recordWrittenSettingsKeys(settings);
-    const [userId] = hookEntryIds({ hooks: { PreToolUse: [{ matcher: '', hooks: [userHook] }] } });
+    const [userId] = hookEntryContents({
+      hooks: { PreToolUse: [{ matcher: '', hooks: [userHook] }] },
+    });
     expect([...readWrittenHookIds()]).toEqual([settingValueHash(userId)]);
     expect(readFileSync(recordPath, 'utf8')).not.toContain('my-hook');
   });
