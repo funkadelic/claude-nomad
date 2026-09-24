@@ -95,7 +95,7 @@ function reportTrackedDenied(repo: string, path: string, segment: string): void 
     );
     return;
   }
-  if (!existsSync(join(repo, path))) return;
+  if (!presentAt(join(repo, path))) return;
   warn(
     `${path} is tracked and has changes against HEAD: ${denied}. Nothing was changed. Run git checkout HEAD -- "${path}" to put the committed content back, or move the file outside shared/ if you want to keep it. Neither of those takes the committed copy out of the repo: git rm -- "${path}" and a commit does that going forward, and if it holds a real secret, rotate it and rewrite history, because nomad only changes your local worktree and index and cannot scrub what a previous push already sent to the remote`,
   );

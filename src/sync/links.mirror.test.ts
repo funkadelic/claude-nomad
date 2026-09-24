@@ -1953,6 +1953,29 @@ describe('gateDeniedMirrorPaths', () => {
     },
   );
 
+  it.skipIf(!hasGit || isWin)(
+    'reports a committed hit replaced by a dangling symlink, which existsSync would miss',
+    async () => {
+      mkdirSync(join(repo, 'shared', 'commands', 'credentials'), { recursive: true });
+      const abs = join(repo, 'shared', 'commands', 'credentials', 'notes.md');
+      writeFileSync(abs, 'token=abc\n');
+      commitBase();
+      rmSync(abs);
+      symlinkSync(join(repo, 'shared', 'commands', 'gone-target'), abs);
+
+      const { gateDeniedMirrorPaths } = await import('./links.mirror.ts');
+      gateDeniedMirrorPaths(
+        repo,
+        { tracked: ['shared/commands/credentials/notes.md'], untracked: [] },
+        TS,
+      );
+
+      expect(warnings()).toContain(
+        'shared/commands/credentials/notes.md is tracked and has changes against HEAD',
+      );
+    },
+  );
+
   it.skipIf(!hasGit)('names neither command when the HEAD lookup cannot answer', async () => {
     // Every failure mode of the probe collapses to null: git absent, the probe
     // timeout, an unborn or corrupt HEAD, a promisor clone that cannot
