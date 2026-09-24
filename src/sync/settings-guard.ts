@@ -14,6 +14,7 @@ import {
   partitionByCaptureExclusion,
 } from './settings-classify.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
+import { hookEntryIds, hookEntryLabel, liveOnlyHookEntries } from './hooks-entries.ts';
 
 /** Hash of each top-level value the last settings write produced, by key. */
 export type WrittenSettings = Readonly<Record<string, string>>;
@@ -65,15 +66,38 @@ function unchangedSincePreMerge(
 }
 
 /**
+ * Blocked hook-entry labels: a live-only hook entry under a `hooks` key the
+ * merge also carries, unless `preMerged` had it or the whole gsd-stripped
+ * `hooks` value still matches the write record (then every live-only entry
+ * counts as removed upstream). Sorted, de-duplicated.
+ */
+function blockedHookLabels(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+  written: WrittenSettings | null,
+): string[] {
+  if (stillAsWritten(written, existing, 'hooks')) return [];
+  const preMergedIds = hookEntryIds(preMerged);
+  const labels = liveOnlyHookEntries(merged, existing)
+    .filter((e) => !preMergedIds.has(e.id))
+    .map(hookEntryLabel);
+  return [...new Set(labels)].sort((a, b) => a.localeCompare(b, 'en'));
+}
+
+/**
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
- * named). A key `preMerged` or `written` holds with the live value unchanged
- * was removed upstream, so it is not blocked; an edited value stays blocked.
+ * named), followed by one label per blocked live-only hook entry under a
+ * `hooks` key the merge also carries. A key `preMerged` or `written` holds
+ * with the live value unchanged was removed upstream, so it is not blocked;
+ * an edited value stays blocked.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
  * @param written - Value hashes the last successful settings write produced on
  *   this host, or `null` for no record; see `stillAsWritten`.
- * @returns The blocked keys, sorted.
+ * @returns The blocked keys then blocked hook-entry labels, sorted within
+ *   each group.
  */
 export function blockedSettingsKeys(
   merged: Record<string, unknown>,
@@ -81,7 +105,10 @@ export function blockedSettingsKeys(
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null = null,
 ): string[] {
-  return splitAheadKeys(merged, existing, preMerged, written).blocked;
+  return [
+    ...splitAheadKeys(merged, existing, preMerged, written).blocked,
+    ...blockedHookLabels(merged, existing, preMerged, written),
+  ];
 }
 
 /**

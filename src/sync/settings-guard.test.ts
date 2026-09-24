@@ -91,6 +91,35 @@ describe('blockedSettingsKeys', () => {
   });
 });
 
+describe('blockedSettingsKeys hook entries', () => {
+  const S = { type: 'command', command: 'stop-cmd' };
+  const P = { type: 'command', command: 'pre-cmd' };
+
+  it('blocks a live-only entry under a new event the merge does not have', () => {
+    const merged = { hooks: { Stop: [{ matcher: '', hooks: [S] }] } };
+    const live = {
+      hooks: {
+        Stop: [{ matcher: '', hooks: [S] }],
+        PreToolUse: [{ matcher: 'Bash', hooks: [P] }],
+      },
+    };
+    expect(blockedSettingsKeys(merged, live, {})).toEqual(["PreToolUse hook '" + P.command + "'"]);
+  });
+
+  it('blocks a live-only entry under the same event the merge already has', () => {
+    const merged = { hooks: { Stop: [{ matcher: '', hooks: [S] }] } };
+    const live = {
+      hooks: {
+        Stop: [
+          { matcher: '', hooks: [S] },
+          { matcher: 'x', hooks: [P] },
+        ],
+      },
+    };
+    expect(blockedSettingsKeys(merged, live, {})).toEqual(["Stop hook '" + P.command + "'"]);
+  });
+});
+
 describe('credentialOverwriteCount', () => {
   it('counts a live-only credential key the merge would drop', () => {
     expect(credentialOverwriteCount({ a: 1 }, { a: 1, env: { K: 'v' } })).toBe(1);
