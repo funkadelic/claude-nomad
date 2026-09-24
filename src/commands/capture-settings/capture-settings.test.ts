@@ -450,4 +450,322 @@ describe('cmdCaptureSettings', () => {
 
     expect(readFileSync(env.basePath, 'utf8')).toBe(originalContent);
   });
+
+  // -------------------------------------------------------------------------
+  // Hook-entry capture
+  // -------------------------------------------------------------------------
+
+  describe('hook-entry capture', () => {
+    it('saves a refused hook to the base and the refusal clears', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const preEntry = { matcher: '', hooks: [{ type: 'command', command: 'pre-cmd' }] };
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ hooks: { Stop: [stopEntry], PreToolUse: [preEntry] } }) + '\n',
+      );
+
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      const firstAttempt = regenerateSettings('20260916-000000');
+      expect(firstAttempt.blocked).not.toEqual([]);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as {
+        hooks: { Stop: unknown[]; PreToolUse: unknown[] };
+      };
+      expect(base.hooks.Stop).toEqual([stopEntry]);
+      expect(base.hooks.PreToolUse).toEqual([preEntry]);
+
+      const secondAttempt = regenerateSettings('20260916-000001');
+      expect(secondAttempt.blocked).toEqual([]);
+    });
+
+    it('skips a base capture of an event the host file already sets itself', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const hostStopEntry = { matcher: '', hooks: [{ type: 'command', command: 'host-cmd' }] };
+      const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
+      const originalBase = JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n';
+      writeFileSync(env.basePath, originalBase);
+      writeFileSync(
+        join(env.hostsDir, 'test-host.json'),
+        JSON.stringify({ hooks: { Stop: [hostStopEntry] } }) + '\n',
+      );
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ hooks: { Stop: [hostStopEntry, xEntry] } }) + '\n',
+      );
+
+      const logs: string[] = [];
+      const writes: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      });
+      vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        writes.push(args.map(String).join(' ') + '\n');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      expect(readFileSync(env.basePath, 'utf8')).toBe(originalBase);
+      const captured = writes.join('');
+      expect(captured).toContain('--host');
+      expect(logs.join('\n')).not.toContain('nothing to capture');
+    });
+
+    it('keeps a skipped hook in the live file when a base capture still writes another key', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const hostStopEntry = { matcher: '', hooks: [{ type: 'command', command: 'host-cmd' }] };
+      const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n');
+      writeFileSync(
+        join(env.hostsDir, 'test-host.json'),
+        JSON.stringify({ hooks: { Stop: [hostStopEntry] } }) + '\n',
+      );
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({
+          statusLine: { type: 'command', command: 's' },
+          hooks: { Stop: [hostStopEntry, xEntry] },
+        }) + '\n',
+      );
+
+      const writes: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        writes.push(args.map(String).join(' ') + '\n');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
+      expect(base.statusLine).toEqual({ type: 'command', command: 's' });
+      const live = JSON.parse(readFileSync(env.settingsPath, 'utf8')) as {
+        hooks: { Stop: unknown[] };
+      };
+      expect(live.hooks.Stop).toEqual([hostStopEntry, xEntry]);
+      expect(writes.join('')).toContain('settings.json left unchanged');
+
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+      const hostFile = JSON.parse(readFileSync(join(env.hostsDir, 'test-host.json'), 'utf8')) as {
+        hooks: { Stop: unknown[] };
+      };
+      expect(hostFile.hooks.Stop).toEqual([hostStopEntry, xEntry]);
+    });
+
+    it('does not re-add a hook the repo dropped since the last write, only the local one', async () => {
+      const e = (command: string) => ({ matcher: '', hooks: [{ type: 'command', command }] });
+      writeFileSync(
+        env.basePath,
+        JSON.stringify({ hooks: { Stop: [e('stop')], PreToolUse: [e('dropped')] } }) + '\n',
+      );
+      writeFileSync(env.settingsPath, '{}\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      regenerateSettings('20260924-000000');
+
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [e('stop')] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({
+          hooks: { Stop: [e('stop')], PreToolUse: [e('dropped')], PostToolUse: [e('mine')] },
+        }) + '\n',
+      );
+      expect(regenerateSettings('20260924-000001').blocked).toEqual(["PostToolUse hook 'mine'"]);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as { hooks: object };
+      expect(base.hooks).toEqual({ Stop: [e('stop')], PostToolUse: [e('mine')] });
+      const live = JSON.parse(readFileSync(env.settingsPath, 'utf8')) as { hooks: object };
+      expect(live.hooks).toEqual({ Stop: [e('stop')], PostToolUse: [e('mine')] });
+    });
+
+    it('a host file with hooks: null skips a base capture and --host replaces the null', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const originalBase = JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n';
+      const originalSettings = JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n';
+      const hostPath = join(env.hostsDir, 'test-host.json');
+      writeFileSync(env.basePath, originalBase);
+      writeFileSync(hostPath, JSON.stringify({ hooks: null }) + '\n');
+      writeFileSync(env.settingsPath, originalSettings);
+
+      const writes: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        writes.push(args.map(String).join(' ') + '\n');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(originalBase);
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(originalSettings);
+      expect(writes.join('')).toContain('--host');
+
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+      const hostFile = JSON.parse(readFileSync(hostPath, 'utf8')) as { hooks: unknown };
+      expect(hostFile.hooks).toEqual({ Stop: [stopEntry] });
+      expect(writes.join('')).toContain('shared hooks for every other event reach this host again');
+
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      expect(regenerateSettings('20260924-000002').blocked).toEqual([]);
+    });
+
+    it('--host writes the full event array and warns about the base-edit trade-off', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ hooks: { Stop: [stopEntry, xEntry] } }) + '\n',
+      );
+
+      const writes: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        writes.push(args.map(String).join(' ') + '\n');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+
+      const hostFile = JSON.parse(readFileSync(join(env.hostsDir, 'test-host.json'), 'utf8')) as {
+        hooks: { Stop: unknown[] };
+      };
+      expect(hostFile.hooks.Stop).toEqual([stopEntry, xEntry]);
+      expect(writes.join('')).toContain("this host's full Stop hook list");
+
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      const result = regenerateSettings('20260916-000002');
+      expect(result.blocked).toEqual([]);
+      const settingsAfter = JSON.parse(readFileSync(env.settingsPath, 'utf8')) as {
+        hooks: { Stop: [unknown, { hooks: [{ command: string }] }] };
+      };
+      expect(settingsAfter.hooks.Stop[1].hooks[0].command).toBe('x-cmd');
+    });
+
+    it('dry-run lists hooks.<Event> and leaves base, host and live settings.json unchanged', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const preEntry = { matcher: '', hooks: [{ type: 'command', command: 'pre-cmd' }] };
+      const originalBase = JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n';
+      const originalSettings =
+        JSON.stringify({ hooks: { Stop: [stopEntry], PreToolUse: [preEntry] } }) + '\n';
+      writeFileSync(env.basePath, originalBase);
+      writeFileSync(env.settingsPath, originalSettings);
+
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: true });
+
+      expect(logs.join('\n')).toContain('hooks.PreToolUse');
+      expect(readFileSync(env.basePath, 'utf8')).toBe(originalBase);
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(originalSettings);
+      expect(existsSync(join(env.hostsDir, 'test-host.json'))).toBe(false);
+    });
+
+    it('the confirm seam receives the destination and hooks.<Event> keys; declining writes nothing', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const preEntry = { matcher: '', hooks: [{ type: 'command', command: 'pre-cmd' }] };
+      const originalBase = JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n';
+      writeFileSync(env.basePath, originalBase);
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ hooks: { Stop: [stopEntry], PreToolUse: [preEntry] } }) + '\n',
+      );
+
+      let seen: { dest: string; keys: string[] } | null = null;
+      const confirm = (dest: string, keys: string[]): Promise<boolean> => {
+        seen = { dest, keys };
+        return Promise.resolve(false);
+      };
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, confirm });
+
+      expect(seen).toEqual({ dest: 'shared/settings.base.json', keys: ['hooks.PreToolUse'] });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(originalBase);
+    });
+
+    it('never captures a gsd hook entry, which survives the post-capture regenerate', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const gsdEntry = {
+        matcher: '',
+        hooks: [{ type: 'command', command: 'node /a/hooks/gsd-session-start.js' }],
+      };
+      const preEntry = { matcher: '', hooks: [{ type: 'command', command: 'pre-cmd' }] };
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({
+          hooks: { Stop: [stopEntry], SessionStart: [gsdEntry], PreToolUse: [preEntry] },
+        }) + '\n',
+      );
+
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      expect(readFileSync(env.basePath, 'utf8')).not.toContain('gsd-session-start');
+
+      const settingsAfter = JSON.parse(readFileSync(env.settingsPath, 'utf8')) as {
+        hooks: { SessionStart: [{ hooks: [{ command: string }] }] };
+      };
+      expect(settingsAfter.hooks.SessionStart[0].hooks[0].command).toBe(
+        'node /a/hooks/gsd-session-start.js',
+      );
+    });
+
+    it('captures a top-level key and a hook entry together, still excluding env', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const preEntry = { matcher: '', hooks: [{ type: 'command', command: 'pre-cmd' }] };
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({
+          hooks: { Stop: [stopEntry], PreToolUse: [preEntry] },
+          myKey: 'myVal',
+          env: { ANTHROPIC_API_KEY: 'sk-secret' },
+        }) + '\n',
+      );
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as {
+        myKey: string;
+        hooks: { PreToolUse: unknown[] };
+        env?: unknown;
+      };
+      expect(base.myKey).toBe('myVal');
+      expect(base.hooks.PreToolUse).toEqual([preEntry]);
+      expect(Object.hasOwn(base, 'env')).toBe(false);
+    });
+  });
 });

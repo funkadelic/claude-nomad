@@ -1696,10 +1696,18 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
   });
 
   /**
-   * A local clone whose base carried `statusLine`, a live settings.json that still has it, and an
-   * origin commit removing it (already pulled into the clone when `alreadyPulled`).
+   * A local clone whose base carried `before`, a live settings.json holding
+   * `live`, and an origin commit changing base to `after` (already pulled
+   * into the clone when `alreadyPulled`). Defaults reproduce the original
+   * `statusLine`-removal world, so existing callers are unaffected.
    */
-  function buildSettingsRemovalWorld(alreadyPulled: boolean): { settingsPath: string } {
+  function buildSettingsRemovalWorld(
+    alreadyPulled: boolean,
+    opts: { before?: object; after?: object; live?: object } = {},
+  ): { settingsPath: string } {
+    const before = opts.before ?? { model: 'sonnet', statusLine: { type: 'command' } };
+    const after = opts.after ?? { model: 'sonnet' };
+    const live = opts.live ?? { model: 'sonnet', statusLine: { type: 'command' } };
     const { local, origin } = buildSyncedRepo(tmp);
     process.env.HOME = tmp;
     process.env.NOMAD_REPO = local;
@@ -1712,16 +1720,13 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
       g(['commit', '-q', '-am', 'base'], other);
       g(['push', '-q', 'origin', 'main'], other);
     };
-    commitBase({ model: 'sonnet', statusLine: { type: 'command' } });
+    commitBase(before);
     g(['pull', '--rebase', '-q'], local);
-    commitBase({ model: 'sonnet' });
+    commitBase(after);
     if (alreadyPulled) g(['pull', '--rebase', '-q'], local);
     mkdirSync(join(tmp, '.claude'), { recursive: true });
     const settingsPath = join(tmp, '.claude', 'settings.json');
-    writeFileSync(
-      settingsPath,
-      JSON.stringify({ model: 'sonnet', statusLine: { type: 'command' } }) + '\n',
-    );
+    writeFileSync(settingsPath, JSON.stringify(live) + '\n');
     mockMirrorModule();
     vi.doMock('../../sync/remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 0),
@@ -1752,6 +1757,81 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
 
   it('cmdPull still refuses the same key once its removal was already pulled', async () => {
     const { settingsPath } = buildSettingsRemovalWorld(true);
+    const before = readFileSync(settingsPath, 'utf8');
+    const { cmdPull } = await import('./pull.ts');
+    cmdPull();
+    expect(process.exitCode).toBe(EXIT.SETTINGS_BLOCKED);
+    expect(readFileSync(settingsPath, 'utf8')).toBe(before);
+  });
+
+  it('cmdPull refuses a live-only hook entry added under a hooks key the base already has', async () => {
+    const stopHook = { type: 'command', command: 'stop-cmd' };
+    const preToolHook = { type: 'command', command: 'pre-cmd' };
+    const { settingsPath } = buildSettingsRemovalWorld(false, {
+      before: { model: 'sonnet', hooks: { Stop: [{ matcher: '', hooks: [stopHook] }] } },
+      after: { model: 'opus', hooks: { Stop: [{ matcher: '', hooks: [stopHook] }] } },
+      live: {
+        model: 'sonnet',
+        hooks: {
+          Stop: [{ matcher: '', hooks: [stopHook] }],
+          PreToolUse: [{ matcher: '', hooks: [preToolHook] }],
+        },
+      },
+    });
+    const before = readFileSync(settingsPath, 'utf8');
+    // fail() routes through console.error; capture it here.
+    const errorLines: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errorLines.push(args.join(' '));
+    });
+    const { cmdPull } = await import('./pull.ts');
+    cmdPull();
+    expect(process.exitCode).toBe(EXIT.SETTINGS_BLOCKED);
+    expect(readFileSync(settingsPath, 'utf8')).toBe(before);
+    const combined = errorLines.join('\n');
+    expect(combined).toContain('PreToolUse hook');
+    expect(combined).toContain('nomad capture-settings');
+  });
+
+  it('cmdPull deletes a hook entry the incoming commits removed instead of refusing', async () => {
+    const stopHook = { type: 'command', command: 'stop-cmd' };
+    const preHook = { type: 'command', command: 'pre-cmd' };
+    const withBoth = {
+      model: 'sonnet',
+      hooks: {
+        Stop: [{ matcher: '', hooks: [stopHook] }],
+        PreToolUse: [{ matcher: '', hooks: [preHook] }],
+      },
+    };
+    const stopOnly = { model: 'sonnet', hooks: { Stop: [{ matcher: '', hooks: [stopHook] }] } };
+    const { settingsPath } = buildSettingsRemovalWorld(false, {
+      before: withBoth,
+      after: stopOnly,
+      live: withBoth,
+    });
+    const { cmdPull } = await import('./pull.ts');
+    cmdPull();
+    expect(process.exitCode).toBe(0);
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+    expect(JSON.stringify(written.hooks ?? {})).not.toContain('pre-cmd');
+  });
+
+  it('cmdPull still refuses a hook entry once its removal was already pulled and no record exists', async () => {
+    const stopHook = { type: 'command', command: 'stop-cmd' };
+    const preHook = { type: 'command', command: 'pre-cmd' };
+    const withBoth = {
+      model: 'sonnet',
+      hooks: {
+        Stop: [{ matcher: '', hooks: [stopHook] }],
+        PreToolUse: [{ matcher: '', hooks: [preHook] }],
+      },
+    };
+    const stopOnly = { model: 'sonnet', hooks: { Stop: [{ matcher: '', hooks: [stopHook] }] } };
+    const { settingsPath } = buildSettingsRemovalWorld(true, {
+      before: withBoth,
+      after: stopOnly,
+      live: withBoth,
+    });
     const before = readFileSync(settingsPath, 'utf8');
     const { cmdPull } = await import('./pull.ts');
     cmdPull();

@@ -122,6 +122,41 @@ describe('settings-written', () => {
     expect(Object.keys(readWrittenSettingsKeys() ?? {})).toEqual(['model', 'hooks']);
   });
 
+  it('records a content hash of each non-gsd hook entry, read back by readWrittenHookIds', async () => {
+    const userHook = { type: 'command', command: 'my-hook' };
+    const gsdHook = { type: 'command', command: 'node /a/hooks/gsd-context-monitor.js' };
+    const settings = {
+      hooks: {
+        PreToolUse: [
+          { matcher: '', hooks: [userHook] },
+          { matcher: '', hooks: [gsdHook] },
+        ],
+      },
+    };
+    const { readWrittenHookIds, recordWrittenSettingsKeys } = await import('./settings-written.ts');
+    const { settingValueHash } = await import('./settings-guard.ts');
+    const { hookEntryContents } = await import('./hooks-entries.ts');
+    recordWrittenSettingsKeys(settings);
+    const [userId] = hookEntryContents({
+      hooks: { PreToolUse: [{ matcher: '', hooks: [userHook] }] },
+    });
+    expect([...readWrittenHookIds()]).toEqual([settingValueHash(userId)]);
+    expect(readFileSync(recordPath, 'utf8')).not.toContain('my-hook');
+  });
+
+  it('readWrittenHookIds is empty for no record, a record without hookIds, or non-string ids', async () => {
+    const { readWrittenHookIds, SETTINGS_WRITTEN_KIND } = await import('./settings-written.ts');
+    expect(readWrittenHookIds().size).toBe(0);
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(recordPath, JSON.stringify({ kind: SETTINGS_WRITTEN_KIND, keys: {} }));
+    expect(readWrittenHookIds().size).toBe(0);
+    writeFileSync(
+      recordPath,
+      JSON.stringify({ kind: SETTINGS_WRITTEN_KIND, keys: {}, hookIds: [42, 'h'] }),
+    );
+    expect([...readWrittenHookIds()]).toEqual(['h']);
+  });
+
   it('creates ~/.cache/claude-nomad/ when it does not exist yet', async () => {
     expect(existsSync(join(testHome, '.cache'))).toBe(false);
     const { recordWrittenSettingsKeys } = await import('./settings-written.ts');

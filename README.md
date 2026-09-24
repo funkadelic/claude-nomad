@@ -1,13 +1,12 @@
 # claude-nomad
 
 [![tests](https://img.shields.io/github/actions/workflow/status/funkadelic/claude-nomad/tests.yml?branch=main&label=tests)](https://github.com/funkadelic/claude-nomad/actions/workflows/tests.yml)
-[![test count](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Ffunkadelic%2Fe814bc9b80ce48781f29b860011051d9%2Fraw%2Fclaude-nomad-tests.json)](https://app.codecov.io/gh/funkadelic/claude-nomad/tests/main)
+[![test count](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Ffunkadelic%2Fe814bc9b80ce48781f29b860011051d9%2Fraw%2Fclaude-nomad-tests.json&color=brightgreen)](https://app.codecov.io/gh/funkadelic/claude-nomad/tests/main)
 [![codeql](https://img.shields.io/github/actions/workflow/status/funkadelic/claude-nomad/codeql.yml?branch=main&label=codeql)](https://github.com/funkadelic/claude-nomad/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/gh/funkadelic/claude-nomad/graph/badge.svg?token=5NML626POS)](https://codecov.io/gh/funkadelic/claude-nomad)
-[![NPM Version](https://img.shields.io/npm/v/claude-nomad?logo=npm)](https://www.npmjs.com/package/claude-nomad)
+[![NPM Version](https://img.shields.io/npm/v/claude-nomad?logo=npm&color=brightgreen)](https://www.npmjs.com/package/claude-nomad)
 [![npm downloads](https://img.shields.io/npm/dm/claude-nomad?logo=npm)](https://www.npmjs.com/package/claude-nomad)
 [![node](https://img.shields.io/node/v/claude-nomad?logo=nodedotjs)](https://www.npmjs.com/package/claude-nomad)
-[![license](https://img.shields.io/npm/l/claude-nomad)](LICENSE)
 
 ![claude-nomad - Sync your Claude Code setup. Same environment. Any machine.](docs/hero.svg)
 
@@ -40,8 +39,9 @@ session history survives different file paths and your secrets never ride along.
   with a per-host override, so one machine can run a different model or MCP URL without forking the
   rest. GSD-owned hook entries (scripts whose basename starts with `gsd-`) are filtered out of the
   generated `~/.claude/settings.json` during pull and stripped from `shared/settings.base.json` on
-  the next push; GSD reinstalls the correct per-host hook set itself. A non-gsd hook you add to your
-  live settings syncs normally via `nomad capture-settings`.
+  the next push; GSD reinstalls the correct per-host hook set itself. A pull never overwrites a
+  non-gsd hook you add to your live settings; run `nomad capture-settings` to save it so it syncs to
+  your other machines.
 - **Every push is secret-scanned.** Only an explicit allow-list of paths ever leaves the machine,
   credentials never sync, and gitleaks scans the exact files about to be published. The push aborts
   on any hit, with an interactive menu to redact, allow, or drop the finding. Always publish through
@@ -229,6 +229,20 @@ longer want them. Your shared files, skills, sessions, and project extras still 
 command exits with a non-zero status so a scripted or cron-driven pull does not report success. Once
 you have saved or deleted the settings, the next pull proceeds normally.
 
+When your repo already has hooks and you add another one on this machine, `nomad pull` stops the
+same way. It names the new hook by its event, and by its command too when the command is short
+enough to show, for example `PreToolUse hook 'python3 ~/x.py'`. Save it with
+`nomad capture-settings`, which adds it to the shared hooks for that event. A hook another machine
+removed from the repo is removed here too and named by the pull, the same as any other setting, and
+`nomad capture-settings` does not save it back.
+
+With `--host`, capture writes that event's whole hook list, shared entries included, into this
+machine's host file. Later changes to that event's hooks in the shared file then stop reaching this
+machine, and capture warns you before it writes. If your host file already sets its own hooks for
+that event, or sets `hooks` to `null`, a plain `nomad capture-settings` does not save the hook and
+tells you to add `--host`. A `--host` capture over `hooks: null` replaces the `null`, so the shared
+hooks for every other event reach this machine again, and capture warns about that too.
+
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
 them and will not stop for them. When it finds some your repo does not track, it writes
@@ -237,13 +251,13 @@ them and will not stop for them. When it finds some your repo does not track, it
 
 A setting that another machine removed from the repo is removed here too. Each time nomad writes
 your settings, on a pull or a `nomad capture-settings`, it records which settings it wrote on this
-machine, with a fingerprint of each value. A setting in that record that the repo no longer carries,
-and that still has the value nomad wrote, is one nomad put there, so the next pull removes it. The
-pull names each setting it removes (so does `nomad pull --dry-run`), and the file from before the
-pull stays in `~/.cache/claude-nomad/backup/`. A setting missing from the record is one you added,
-and one you changed since is yours now, so either is kept and listed as above. A removal is handled
-the same whether it arrives with this pull or reached your repo earlier through an edit you made, a
-`nomad push`, or a `nomad pull --dry-run`.
+machine, with a fingerprint of each value and of each hook. A setting in that record that the repo
+no longer carries, and that still has the value nomad wrote, is one nomad put there, so the next
+pull removes it. The pull names each setting it removes (so does `nomad pull --dry-run`), and the
+file from before the pull stays in `~/.cache/claude-nomad/backup/`. A setting missing from the
+record is one you added, and one you changed since is yours now, so either is kept and listed as
+above. A removal is handled the same whether it arrives with this pull or reached your repo earlier
+through an edit you made, a `nomad push`, or a `nomad pull --dry-run`.
 
 A machine that has not finished a pull yet, or whose cache folder was cleared, has nothing recorded.
 There a removal that reached the repo earlier is still listed as a setting you added. Save it or
@@ -286,13 +300,14 @@ file still carries conflict markers, so they are never copied into your live con
 specific problem and points at the right fix.
 
 If an external tool (such as Claude Code or GSD) wrote new keys into your `~/.claude/settings.json`
-that are not yet in your shared repo, run `nomad capture-settings` to promote them before the next
-`nomad pull` overwrites them. With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of
-`shared/settings.base.json` (useful for machine-specific values such as absolute paths). `--dry-run`
-shows what would be written without touching anything. Before it writes, `capture-settings` shows
-the destination and the keys and asks you to confirm; pass `--yes` (or `-y`) to skip the prompt,
-which is required when running without an interactive terminal. `nomad push` also warns when it
-detects ahead-drift so you have a prompt to act before the push completes.
+that are not yet in your shared repo, run `nomad capture-settings` to promote them, or to save a
+hook it added under an event your repo already tracks, before the next `nomad pull` overwrites them.
+With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json`
+(useful for machine-specific values such as absolute paths). `--dry-run` shows what would be written
+without touching anything. Before it writes, `capture-settings` shows the destination and the keys
+and asks you to confirm; pass `--yes` (or `-y`) to skip the prompt, which is required when running
+without an interactive terminal. `nomad push` also warns when it detects ahead-drift so you have a
+prompt to act before the push completes.
 
 ## Claude Code plugin
 

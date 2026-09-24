@@ -129,6 +129,7 @@ export const DEFAULT_HELP = [
   ),
   cont('the next pull. Backs up the destination, writes atomically, then regenerates'),
   cont('settings.json so local matches. Idempotent when no local-only keys remain.'),
+  cont('Also saves a hook added under an event the repo already has.'),
   cont('Prompts for confirmation before writing (shows the destination and keys).'),
   row('       --host', 'Write into hosts/<HOST>.json (host-specific values) instead of'),
   cont('shared/settings.base.json (default; normalizes absolute node launcher paths).'),

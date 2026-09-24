@@ -21,7 +21,11 @@ import {
   type WrittenSettings,
 } from './settings-guard.ts';
 import { preRebaseSettingsMerge } from './settings-upstream.ts';
-import { readWrittenSettingsKeys, recordWrittenSettingsKeys } from './settings-written.ts';
+import {
+  readWrittenHookIds,
+  readWrittenSettingsKeys,
+  recordWrittenSettingsKeys,
+} from './settings-written.ts';
 import { applySharedLinksWin32 } from './links.win32.ts';
 import { die, fail, log, warn } from '../core/utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from '../core/utils.fs.ts';
@@ -215,7 +219,8 @@ function readExistingSettings(settingsPath: string): {
 
 /**
  * Report drift between the live `existing` settings and the freshly `merged`
- * result: a promotable ahead-drift key is refused (via `fail`) rather than
+ * result: a promotable ahead-drift key, or a live-only hook entry under a
+ * `hooks` key the merge also carries, is refused (via `fail`) rather than
  * silently overwritten; otherwise a behind-drift key WARNs advising
  * `nomad pull`. The behind WARN is skipped on a refusal, since this pull is
  * not restoring anything. A live-only credential key WARNs by count only.
@@ -226,6 +231,7 @@ function readExistingSettings(settingsPath: string): {
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
  * @param written - The written-settings record; see `blockedSettingsKeys`.
+ * @param writtenHookIds - Hashes of each hook entry's content from the last write.
  * @returns The blocked keys, so the caller can skip the write, and the keys
  *   the write removes (empty when blocked).
  */
@@ -234,8 +240,9 @@ function reportSettingsDrift(
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
+  writtenHookIds: ReadonlySet<string>,
 ): { blocked: string[]; removed: string[] } {
-  const blocked = blockedSettingsKeys(merged, existing, preMerged, written);
+  const blocked = blockedSettingsKeys(merged, existing, preMerged, written, writtenHookIds);
   if (blocked.length > 0) {
     fail(settingsBlockedMessage(blocked, 'left unchanged'));
     return { blocked, removed: [] };
@@ -250,7 +257,10 @@ function reportSettingsDrift(
   }
   const credentials = credentialOverwriteCount(merged, existing);
   if (credentials > 0) warn(credentialOverwriteMessage(credentials));
-  return { blocked, removed: removedSettingsKeys(merged, existing, preMerged, written) };
+  return {
+    blocked,
+    removed: removedSettingsKeys(merged, existing, preMerged, written, writtenHookIds),
+  };
 }
 
 /**
@@ -264,7 +274,8 @@ function reportSettingsDrift(
  * so pull stops deleting the hooks gsd self-heals each session; the clean path
  * (no gsd hooks in the live file) stays byte-identical. When the live file
  * has promotable top-level keys that neither this merge nor the pre-pull
- * merge has, prints a stderr refusal naming them and skips the write entirely
+ * merge has, or a live-only hook entry under a `hooks` key the merge also
+ * carries, prints a stderr refusal naming them and skips the write entirely
  * (no backup, no atomic write).
  *
  * `opts.dryRun` (default `false`): when `true`, skip the
@@ -332,6 +343,7 @@ export function regenerateSettings(
         existing,
         preRebaseSettingsMerge(repo, opts.prePostHeads),
         readWrittenSettingsKeys(),
+        readWrittenHookIds(),
       ));
     }
   }

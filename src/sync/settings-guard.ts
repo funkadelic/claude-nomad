@@ -14,6 +14,12 @@ import {
   partitionByCaptureExclusion,
 } from './settings-classify.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
+import {
+  hookEntryContents,
+  hookEntryLabel,
+  liveOnlyHookEntries,
+  type HookEntry,
+} from './hooks-entries.ts';
 
 /** Hash of each top-level value the last settings write produced, by key. */
 export type WrittenSettings = Readonly<Record<string, string>>;
@@ -65,42 +71,109 @@ function unchangedSincePreMerge(
 }
 
 /**
+ * Split live-only hook entries under a `hooks` key the merge also carries
+ * into those a pull refuses (`blocked`) and those it deletes as removed
+ * upstream (`removed`): `preMerged` had the entry, the last write produced it,
+ * or the whole gsd-stripped `hooks` value still matches the write record.
+ */
+function splitHookEntries(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+  written: WrittenSettings | null,
+  writtenHookIds: ReadonlySet<string>,
+): { blocked: HookEntry[]; removed: HookEntry[] } {
+  const live = liveOnlyHookEntries(merged, existing);
+  if (stillAsWritten(written, existing, 'hooks')) return { blocked: [], removed: live };
+  // Match full content, so a locally edited hook (e.g. its timeout) is refused, not deleted.
+  const preMergedContents = hookEntryContents(preMerged);
+  const removedUpstream = (e: HookEntry): boolean =>
+    preMergedContents.has(e.content) || writtenHookIds.has(settingValueHash(e.content));
+  return {
+    blocked: live.filter((e) => !removedUpstream(e)),
+    removed: live.filter(removedUpstream),
+  };
+}
+
+/**
+ * Live-only hook entries a pull refuses; see `splitHookEntries`.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
+ * @param written - The written-settings record, or `null`.
+ * @param writtenHookIds - Hashes of each hook entry's content from the last write.
+ */
+export function blockedHookEntries(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+  written: WrittenSettings | null,
+  writtenHookIds: ReadonlySet<string>,
+): HookEntry[] {
+  return splitHookEntries(merged, existing, preMerged, written, writtenHookIds).blocked;
+}
+
+/**
+ * Sorted labels, one per distinct hook (by id, not by label, so two hooks
+ * sharing a label still count as two).
+ */
+function hookLabels(entries: HookEntry[]): string[] {
+  const unique = new Map(entries.map((e) => [e.id, e]));
+  return [...unique.values()].map(hookEntryLabel).sort((a, b) => a.localeCompare(b, 'en'));
+}
+
+/**
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
- * named). A key `preMerged` or `written` holds with the live value unchanged
- * was removed upstream, so it is not blocked; an edited value stays blocked.
+ * named), followed by one label per blocked live-only hook entry under a
+ * `hooks` key the merge also carries. A key `preMerged` or `written` holds
+ * with the live value unchanged was removed upstream, so it is not blocked;
+ * an edited value stays blocked.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
  * @param written - Value hashes the last successful settings write produced on
  *   this host, or `null` for no record; see `stillAsWritten`.
- * @returns The blocked keys, sorted.
+ * @param writtenHookIds - Hashes of each hook entry's content from that write.
+ * @returns The blocked keys then blocked hook-entry labels, sorted within
+ *   each group.
  */
 export function blockedSettingsKeys(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null = null,
+  writtenHookIds: ReadonlySet<string> = new Set(),
 ): string[] {
-  return splitAheadKeys(merged, existing, preMerged, written).blocked;
+  return [
+    ...splitAheadKeys(merged, existing, preMerged, written).blocked,
+    ...hookLabels(blockedHookEntries(merged, existing, preMerged, written, writtenHookIds)),
+  ];
 }
 
 /**
  * Promotable live-only keys a pull deletes because the repo dropped them (the
- * complement of `blockedSettingsKeys`). Credential keys are left to
+ * complement of `blockedSettingsKeys`), followed by one label per hook entry
+ * it deletes for the same reason. Credential keys are left to
  * `credentialOverwriteCount`.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD.
  * @param written - The written-settings record, or `null`.
- * @returns The removed keys, sorted.
+ * @param writtenHookIds - Hashes of each hook entry's content from that write.
+ * @returns The removed keys then removed hook-entry labels, sorted within
+ *   each group.
  */
 export function removedSettingsKeys(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
+  writtenHookIds: ReadonlySet<string> = new Set(),
 ): string[] {
-  return splitAheadKeys(merged, existing, preMerged, written).removed;
+  return [
+    ...splitAheadKeys(merged, existing, preMerged, written).removed,
+    ...hookLabels(splitHookEntries(merged, existing, preMerged, written, writtenHookIds).removed),
+  ];
 }
 
 /**
