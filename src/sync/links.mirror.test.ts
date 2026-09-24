@@ -847,7 +847,7 @@ describe('stageLocalSharedEdits (win32 pre-pull mirror)', () => {
     // The map's own (invalid) sharedDirs entry is never consulted: only the
     // caller-supplied linkNames list drives which names get mirrored.
     stageLocalSharedEdits({ projects: {}, sharedDirs: ['../escape'] }, TS, {
-      // Forged on purpose: production code can only get this type from allSharedLinks.
+      // Deliberately forged; production code can only get this type from allSharedLinks.
       linkNames: ['gsd'] as unknown as ValidatedSharedNames,
     });
     expect(errSpy).not.toHaveBeenCalled();
