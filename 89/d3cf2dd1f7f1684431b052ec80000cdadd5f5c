@@ -1,0 +1,39 @@
+src/commands/capture-settings/capture-settings.test.ts
+  s_a3180df4c49995::t_4fa7d0f14ba6d4 453-524
+src/commands/capture-settings/capture-settings.ts
+  s_a3180df4c49995::t_985c4bc236527a 132-135,137
+  s_a3180df4c49995::t_bd56def7f9bb28 173-176,178-179
+  s_a3180df4c49995::t_8ff774fc8902d5 7
+  s_a3180df4c49995::t_77127f3996dc7f 81-127
+src/sync/hooks-entries.test.ts
+  s_a3180df4c49995::t_92afdcfe02d91c 121-175,180,182,185,188,190,192
+  s_a3180df4c49995::t_e8717175171423 3-8
+  s_a3180df4c49995::t_3eda0a5b947986 176-179
+  s_a3180df4c49995::t_2ac4b5e6446279 181
+  s_a3180df4c49995::t_14d0d1319c97fc 183-184
+  s_a3180df4c49995::t_3a6a164aca3053 186-187
+  s_a3180df4c49995::t_12edddc2bad790 189
+  s_a3180df4c49995::t_d546c225f13f6c 191
+  s_a3180df4c49995::t_070caa44095573 193-194
+src/sync/hooks-entries.ts
+  s_a3180df4c49995::t_427b8c733d48b9 135-201,205-225,227-230,232-233
+  s_a3180df4c49995::t_c614fe1f88fe9c 231
+  s_a3180df4c49995::t_b99427dfde3b64 226
+  s_a3180df4c49995::t_3cdd827fcb2d0d 202-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89d3cf2dd1f7f1684431b052ec80000cdadd5f5c",
+  "prompts": {},
+  "sessions": {
+    "s_a3180df4c49995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae1bd937-37e9-4d72-a379-628eedf6d211",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
