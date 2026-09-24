@@ -1,0 +1,21 @@
+docs-site/src/content/docs/gsd-aware-sync.md
+  s_a3180df4c49995::t_0912e7d7779a9c 86-88
+src/cli/help.ts
+  s_a3180df4c49995::t_0912e7d7779a9c 132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "921c4894fdea95fc7fc9f9d9b265d92a24574687",
+  "prompts": {},
+  "sessions": {
+    "s_a3180df4c49995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae1bd937-37e9-4d72-a379-628eedf6d211",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
