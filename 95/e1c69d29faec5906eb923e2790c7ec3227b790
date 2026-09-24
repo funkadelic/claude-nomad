@@ -1,0 +1,30 @@
+src/commands/pull/pull.test.ts
+  s_a3180df4c49995::t_3cc883c39468d6 1796-1841
+src/sync/links.test.ts
+  s_a3180df4c49995::t_4f4c49f756cc93 2469-2499
+  s_a3180df4c49995::t_50b190fe47e56d 761-846
+src/render/preview.ts
+  s_a3180df4c49995::t_6ad80519dea403 130-132
+src/render/preview.test.ts
+  s_a3180df4c49995::t_4ca746cdcf80f1 296-326
+  s_a3180df4c49995::t_9c3c5aa666a39f 327-329
+src/sync/links.ts
+  s_a3180df4c49995::t_f047dab28390be 218-219
+  s_a3180df4c49995::t_97b3c5db36ccd0 268-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "95e1c69d29faec5906eb923e2790c7ec3227b790",
+  "prompts": {},
+  "sessions": {
+    "s_a3180df4c49995": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae1bd937-37e9-4d72-a379-628eedf6d211",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
