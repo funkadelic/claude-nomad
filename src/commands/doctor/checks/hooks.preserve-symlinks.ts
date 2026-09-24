@@ -4,14 +4,7 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { relativeRequireTargetsBroken } from './hooks.preserve-symlinks.probe.ts';
-import {
-  allSharedLinks,
-  claudeHome,
-  home,
-  repoHome,
-  type PathMap,
-  type ValidatedSharedNames,
-} from '../../../core/config.ts';
+import { allSharedLinks, claudeHome, home, repoHome, type PathMap } from '../../../core/config.ts';
 
 /**
  * WARN-only `nomad doctor` reporter that catches the symlink-broken-relative-require
@@ -88,7 +81,7 @@ function readPathMapSafe(): PathMap {
  */
 function resolvesUnderSymlinkedShared(
   scriptPath: string,
-  sharedLinkNames: ValidatedSharedNames,
+  sharedLinkNames: readonly string[],
 ): boolean {
   // Compare with forward slashes normalized on both sides: claudeHome() joins
   // with the native separator (backslash on win32), but scriptPath keeps its
@@ -181,7 +174,7 @@ function* commandsFromOneGroup(group: unknown): Iterable<string> {
  * @param sharedLinkNames - Names from `allSharedLinks(map)`.
  * @returns The script path when flagged, or null when not flagged.
  */
-function flaggedScript(command: string, sharedLinkNames: ValidatedSharedNames): string | null {
+function flaggedScript(command: string, sharedLinkNames: readonly string[]): string | null {
   const tokens = commandTokens(command);
   const nodeIdx = tokens.indexOf('node');
   if (nodeIdx < 0) return null;
@@ -207,7 +200,7 @@ function checkEventForPreserveSymlinks(
   section: DoctorSection,
   event: string,
   groups: unknown[],
-  sharedLinkNames: ValidatedSharedNames,
+  sharedLinkNames: readonly string[],
 ): boolean {
   let anyWarn = false;
   for (const group of groups) {

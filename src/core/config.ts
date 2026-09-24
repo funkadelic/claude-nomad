@@ -238,8 +238,9 @@ declare const validatedSharedNames: unique symbol;
 
 /**
  * Shared-link names that passed `validateSharedDirEntry`. Only `allSharedLinks`
- * produces the branded form, so a list read straight from `map.sharedDirs`
- * cannot reach a filesystem join without a compile error. The empty list
+ * produces the branded form, and the `linkNames` params in `src/sync/links*.ts`
+ * require it, so a raw `map.sharedDirs` list cannot reach those joins. Eject,
+ * adopt and the doctor path-map check guard their own joins. The empty list
  * carries no name and is accepted as is.
  */
 export type ValidatedSharedNames =

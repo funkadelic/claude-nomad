@@ -1293,7 +1293,7 @@ describe('gateDeniedMirrorPaths', () => {
   const TS = '20260810-030000';
 
   beforeEach(() => {
-    testHome = mkdtempSync(join(tmpdir(), 'nomad-revert-denied-'));
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-gate-denied-'));
     // HOME drives backupBase(), which the removal branch now snapshots into.
     // Without this the snapshots would land in the developer's real
     // ~/.cache/claude-nomad/backup/. USERPROFILE is set alongside it because
@@ -1563,7 +1563,7 @@ describe('gateDeniedMirrorPaths', () => {
     expect(survivors.some((p) => p.includes('backup'))).toBe(false);
   });
 
-  it('reverts nothing and warns nothing when neither list holds a denylisted path', async () => {
+  it('changes nothing and warns nothing when neither list holds a denylisted path', async () => {
     writeFileSync(join(repo, 'shared', 'commands', 'deploy.md'), '# deploy\n');
     writeFileSync(join(repo, 'shared', 'commands', 'new.md'), '# new\n');
 
