@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
-import { buildCaptureSubset } from '../../sync/settings-drift.ts';
+import { buildCaptureSubset } from '../../sync/settings-classify.ts';
 import { regenerateSettings } from '../../sync/links.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
 import { deepMerge, readJson } from '../../core/utils.json.ts';

@@ -8,7 +8,7 @@ import {
   describeSettings,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
-} from './settings-drift.ts';
+} from './settings-classify.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { deepMerge } from '../core/utils.json.ts';
 
