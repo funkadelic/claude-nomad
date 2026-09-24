@@ -75,9 +75,9 @@ function reportRemediation(
 ): void {
   addItem(section, '');
   addItem(section, bold('Remediation'));
-  // Same sessions, same order as bySession: both regexes match the same paths
-  // (pinned by a test), and dedupe keys embed File, so a sid's first finding is
-  // never the one dedupe drops.
+  // Holds the same sessions in the same order as bySession. Both regexes match
+  // the same paths (pinned by a test), and dedupe keys include File, so dedupe
+  // never drops a sid's first finding.
   for (const [sid, logical] of logicalBySession) {
     const rotateLine = dim(
       `- rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
