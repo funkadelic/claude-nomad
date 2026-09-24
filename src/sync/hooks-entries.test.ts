@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { hookEntryIds, hookEntryLabel, liveOnlyHookEntries } from './hooks-entries.ts';
+import {
+  buildHookCaptureSubset,
+  hookEntryIds,
+  hookEntryLabel,
+  liveOnlyHookEntries,
+} from './hooks-entries.ts';
 
 const stopHook = { type: 'command', command: 'stop-cmd' };
 const preToolHook = { type: 'command', command: 'pre-cmd' };
@@ -110,6 +115,80 @@ describe('security', () => {
     const live = JSON.parse(raw) as Record<string, unknown>;
     expect(liveOnlyHookEntries(merged, live)).toEqual([]);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe('buildHookCaptureSubset (base destination)', () => {
+  const stopEntry = { matcher: '', hooks: [stopHook] };
+  const base = { hooks: { Stop: [stopEntry] } };
+
+  it('adds a new event with the live entries', () => {
+    const live = {
+      hooks: { Stop: [stopEntry], PreToolUse: [{ matcher: '', hooks: [preToolHook] }] },
+    };
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: live },
+      false,
+    );
+    expect(result.hooks).toEqual({ PreToolUse: [{ matcher: '', hooks: [preToolHook] }] });
+    expect(result.skipped).toEqual([]);
+  });
+
+  it('appends a second matcher entry to the base array for an existing event', () => {
+    const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
+    const live = { hooks: { Stop: [stopEntry, xEntry] } };
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: live },
+      false,
+    );
+    expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry] });
+  });
+
+  it('contributes only the new inner hook from a matcher entry mixing merge-carried and live-only', () => {
+    const xHook = { type: 'command', command: 'x-cmd' };
+    const live = { hooks: { Stop: [{ matcher: '', hooks: [stopHook, xHook] }] } };
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: live },
+      false,
+    );
+    expect(result.hooks).toEqual({ Stop: [stopEntry, { matcher: '', hooks: [xHook] }] });
+  });
+
+  it('normalizes an absolute node launcher path in a captured entry', () => {
+    const live = {
+      hooks: {
+        Stop: [stopEntry],
+        PreToolUse: [
+          { matcher: '', hooks: [{ type: 'command', command: '/usr/local/bin/node /x/hook.js' }] },
+        ],
+      },
+    };
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: live },
+      false,
+    );
+    const captured = result.hooks.PreToolUse[0] as { hooks: [{ command: string }] };
+    expect(captured.hooks[0].command).toBe('node /x/hook.js');
+  });
+
+  it('skips an event the host file already sets, reporting it in skipped', () => {
+    const overrides = {
+      hooks: { Stop: [{ matcher: '', hooks: [{ type: 'command', command: 'host-cmd' }] }] },
+    };
+    const xHook = { type: 'command', command: 'x-cmd' };
+    const live = { hooks: { Stop: [stopEntry, { matcher: '', hooks: [xHook] }] } };
+    const result = buildHookCaptureSubset({ base, overrides, merged: base, settings: live }, false);
+    expect(result.hooks).toEqual({});
+    expect(result.skipped).toEqual(['Stop']);
+  });
+
+  it('returns empty hooks and skipped when there is no live-only entry', () => {
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: base },
+      false,
+    );
+    expect(result.hooks).toEqual({});
+    expect(result.skipped).toEqual([]);
   });
 });
 

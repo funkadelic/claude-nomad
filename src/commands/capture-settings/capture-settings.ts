@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
 import { buildCaptureSubset } from '../../sync/settings-classify.ts';
+import { buildHookCaptureSubset } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
 import { deepMerge, readJson } from '../../core/utils.json.ts';
@@ -77,15 +78,63 @@ function resolveCaptureDestination(
   return { destPath, existing };
 }
 
+/** Sources `collectCapture` composes into one capture subset. */
+type CaptureSources = {
+  base: Record<string, unknown>;
+  overrides: Record<string, unknown>;
+  merged: Record<string, unknown>;
+  settings: Record<string, unknown>;
+};
+
+/**
+ * Compose the top-level `ahead`-key capture with the hook-entry capture,
+ * warning about skipped/shadowed hook events before the caller decides
+ * whether there is anything to write.
+ */
+function collectCapture(
+  sources: CaptureSources,
+  useHost: boolean,
+): { subset: Record<string, unknown>; keys: string[]; skipped: string[] } {
+  const topSubset = buildCaptureSubset(sources.merged, sources.settings, {
+    normalizeNodePath: !useHost,
+  });
+  const { hooks, shadowed, skipped } = buildHookCaptureSubset(sources, useHost);
+
+  for (const event of skipped) {
+    warn(
+      `not saving ${event} hooks to shared/settings.base.json: hosts/${HOST}.json sets its own ` +
+        `${event} hooks, which replace the shared ones on this host; run 'nomad capture-settings ` +
+        `--host' to save them there`,
+    );
+  }
+  for (const event of shadowed) {
+    warn(
+      `hosts/${HOST}.json will carry this host's full ${event} hook list, so later edits to ` +
+        `${event} hooks in shared/settings.base.json will not reach this host`,
+    );
+  }
+
+  const hookEventKeys = Object.keys(hooks);
+  const subset: Record<string, unknown> = { ...topSubset };
+  if (hookEventKeys.length > 0) subset.hooks = hooks;
+
+  const keys = [...Object.keys(topSubset), ...hookEventKeys.map((e) => `hooks.${e}`)].sort((a, b) =>
+    a.localeCompare(b, 'en'),
+  );
+
+  return { subset, keys, skipped };
+}
+
 /**
  * Promote local-only settings keys into the shared repo.
  *
  * Reads `shared/settings.base.json`, `hosts/<HOST>.json` (when present), and
- * `~/.claude/settings.json`. Computes the ahead-only capture subset via the
- * Plan-01 core. When non-empty, merges the subset into the destination repo
- * file (base by default, host with `--host`), backs up the destination via
+ * `~/.claude/settings.json`. Computes the ahead-only key capture plus any
+ * live-only hook entries under a `hooks` key the repo already carries. When
+ * non-empty, merges the subset into the destination repo file (base by
+ * default, host with `--host`), backs up the destination via
  * `backupRepoWrite`, writes atomically, then calls `regenerateSettings` so
- * the local file matches. Idempotent when no ahead-only keys remain.
+ * the local file matches. Idempotent when nothing local-only remains.
  *
  * Before any wet write the user must confirm (destination + key list), unless
  * `--yes` is passed or the run is `--dry-run`. In a non-interactive shell the
@@ -121,17 +170,19 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     const merged = deepMerge(base, overrides);
 
     const settings = readJson<Record<string, unknown>>(settingsPath);
-    const subset = buildCaptureSubset(merged, settings, { normalizeNodePath: !useHost });
+    const { subset, keys, skipped } = collectCapture(
+      { base, overrides, merged, settings },
+      useHost,
+    );
 
-    if (Object.keys(subset).length === 0) {
-      log('nothing to capture: no local-only keys found');
+    if (keys.length === 0) {
+      if (skipped.length === 0) log('nothing to capture: no local-only keys found');
       return;
     }
 
     const { destPath, existing } = resolveCaptureDestination(repo, useHost);
     const newContent = deepMerge(existing, subset as Partial<typeof existing>);
     const dest = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
-    const keys = Object.keys(subset).sort((a, b) => a.localeCompare(b, 'en'));
 
     if (dryRun) {
       log(`dry-run: would write ${dest} with keys: ${keys.join(', ')}`);

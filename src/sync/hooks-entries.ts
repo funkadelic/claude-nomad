@@ -132,3 +132,102 @@ export function hookEntryLabel(e: HookEntry): string {
   }
   return `${e.event} hook`;
 }
+
+// ---------------------------------------------------------------------------
+// Capture subset (nomad capture-settings)
+// ---------------------------------------------------------------------------
+
+/** Sources `buildHookCaptureSubset` reads from. */
+export type HookCaptureSources = {
+  /** `shared/settings.base.json`. */
+  base: Record<string, unknown>;
+  /** `hosts/<HOST>.json`, or `{}` when absent. */
+  overrides: Record<string, unknown>;
+  /** `deepMerge(base, overrides)`. */
+  merged: Record<string, unknown>;
+  /** The parsed live `settings.json`. */
+  settings: Record<string, unknown>;
+};
+
+/** Result of `buildHookCaptureSubset`. */
+export type HookCaptureResult = {
+  /** Per-event FULL array to write into the capture destination. */
+  hooks: Record<string, unknown[]>;
+  /** Host-capture events the host file did not set before this capture. */
+  shadowed: string[];
+  /** Base-capture events skipped because the host file sets them itself. */
+  skipped: string[];
+};
+
+/**
+ * The plain-object `hooks` value of `settings`, or `{}` for any other shape.
+ */
+function hooksBlockOf(settings: Record<string, unknown>): Record<string, unknown> {
+  const v = settings.hooks;
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * Group live-only hook entries by event, in first-seen (live document) order.
+ */
+function groupByEvent(entries: HookEntry[]): Map<string, HookEntry[]> {
+  const out = new Map<string, HookEntry[]>();
+  for (const e of entries) {
+    const list = out.get(e.event);
+    if (list) list.push(e);
+    else out.set(e.event, [e]);
+  }
+  return out;
+}
+
+/**
+ * Build one appended matcher entry per distinct source matcher entry in
+ * `entries` (grouped by `entry` object identity), each narrowed to its
+ * live-only inner hooks: `{ ...entry, hooks: [its live-only inner hooks] }`,
+ * in live order.
+ */
+function appendedMatcherEntries(entries: HookEntry[]): Record<string, unknown>[] {
+  const byEntry = new Map<Record<string, unknown>, unknown[]>();
+  for (const e of entries) {
+    const inner = byEntry.get(e.entry);
+    if (inner) inner.push(e.hook);
+    else byEntry.set(e.entry, [e.hook]);
+  }
+  return [...byEntry.entries()].map(([entry, hooksArr]) => ({ ...entry, hooks: hooksArr }));
+}
+
+/**
+ * Base-destination capture: appends normalized live-only entries to the
+ * base's own array per event; skips (into `skipped`) an event the host file
+ * sets itself, since its array would hide the base addition.
+ */
+function buildBaseHookCapture(sources: HookCaptureSources): HookCaptureResult {
+  const liveOnly = liveOnlyHookEntries(sources.merged, sources.settings);
+  const baseHooks = hooksBlockOf(sources.base);
+  const hostHooks = hooksBlockOf(sources.overrides);
+  const hooks: Record<string, unknown[]> = {};
+  const skipped: string[] = [];
+  for (const [event, entries] of groupByEvent(liveOnly)) {
+    if (Object.hasOwn(hostHooks, event)) {
+      skipped.push(event);
+      continue;
+    }
+    const priorArr = Array.isArray(baseHooks[event]) ? (baseHooks[event] as unknown[]) : [];
+    const appended = appendedMatcherEntries(entries).map(
+      (entry) => normalizeNodePathsDeep(entry) as Record<string, unknown>,
+    );
+    hooks[event] = [...priorArr, ...appended];
+  }
+  return { hooks, shadowed: [], skipped };
+}
+
+/** Per-event hook-entry subset for `nomad capture-settings` (base destination only so far). */
+export function buildHookCaptureSubset(
+  sources: HookCaptureSources,
+  useHost: boolean,
+): HookCaptureResult {
+  // eslint-disable-next-line sonarjs/no-selector-parameter -- mirrors buildCaptureSubset's caller
+  return useHost ? { hooks: {}, shadowed: [], skipped: [] } : buildBaseHookCapture(sources);
+}

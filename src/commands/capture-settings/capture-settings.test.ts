@@ -450,4 +450,76 @@ describe('cmdCaptureSettings', () => {
 
     expect(readFileSync(env.basePath, 'utf8')).toBe(originalContent);
   });
+
+  // -------------------------------------------------------------------------
+  // Hook-entry capture (D-09/D-10)
+  // -------------------------------------------------------------------------
+
+  describe('hook-entry capture', () => {
+    it('saves a refused hook to the base and the refusal clears', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const preEntry = { matcher: '', hooks: [{ type: 'command', command: 'pre-cmd' }] };
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ hooks: { Stop: [stopEntry], PreToolUse: [preEntry] } }) + '\n',
+      );
+
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      const firstAttempt = regenerateSettings('20260916-000000');
+      expect(firstAttempt.blocked).not.toEqual([]);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as {
+        hooks: { Stop: unknown[]; PreToolUse: unknown[] };
+      };
+      expect(base.hooks.Stop).toEqual([stopEntry]);
+      expect(base.hooks.PreToolUse).toEqual([preEntry]);
+
+      const secondAttempt = regenerateSettings('20260916-000001');
+      expect(secondAttempt.blocked).toEqual([]);
+    });
+
+    it('skips a base capture of an event the host file already sets itself', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const hostStopEntry = { matcher: '', hooks: [{ type: 'command', command: 'host-cmd' }] };
+      const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
+      const originalBase = JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n';
+      writeFileSync(env.basePath, originalBase);
+      writeFileSync(
+        join(env.hostsDir, 'test-host.json'),
+        JSON.stringify({ hooks: { Stop: [hostStopEntry] } }) + '\n',
+      );
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ hooks: { Stop: [hostStopEntry, xEntry] } }) + '\n',
+      );
+
+      const logs: string[] = [];
+      const writes: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      });
+      vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        writes.push(args.map(String).join(' ') + '\n');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      expect(readFileSync(env.basePath, 'utf8')).toBe(originalBase);
+      const captured = writes.join('');
+      expect(captured).toContain('--host');
+      expect(logs.join('\n')).not.toContain('nothing to capture');
+    });
+  });
 });
