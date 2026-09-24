@@ -1,0 +1,23 @@
+src/commands/doctor/checks/hooks.preserve-symlinks.ts
+  s_1633402227907b::t_6e9a9f268207f0 7,84,177,203
+src/core/config.ts
+  s_1633402227907b::t_e6517ae760e85e 241-243
+src/sync/links.mirror.test.ts
+  s_1633402227907b::t_b4681728884080 1296,1566
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "58f99e609b1f5c985876554a88ff3dda5a42e83c",
+  "prompts": {},
+  "sessions": {
+    "s_1633402227907b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1f579d4-90d7-4ac8-b83f-8a030e36807a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
