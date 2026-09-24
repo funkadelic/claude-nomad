@@ -145,8 +145,8 @@ export type HookCaptureSources = {
   overrides: Record<string, unknown>;
   /** `deepMerge(base, overrides)`. */
   merged: Record<string, unknown>;
-  /** The parsed live `settings.json`. */
-  settings: Record<string, unknown>;
+  /** The live-only hook entries to save, in live order (see `blockedHookEntries`). */
+  entries: HookEntry[];
 };
 
 /** Result of `buildHookCaptureSubset`. */
@@ -204,12 +204,11 @@ function appendedMatcherEntries(entries: HookEntry[]): Record<string, unknown>[]
  * sets itself, since its array would hide the base addition.
  */
 function buildBaseHookCapture(sources: HookCaptureSources): HookCaptureResult {
-  const liveOnly = liveOnlyHookEntries(sources.merged, sources.settings);
   const baseHooks = hooksBlockOf(sources.base);
   const hostHooks = hooksBlockOf(sources.overrides);
   const hooks: Record<string, unknown[]> = {};
   const skipped: string[] = [];
-  for (const [event, entries] of groupByEvent(liveOnly)) {
+  for (const [event, entries] of groupByEvent(sources.entries)) {
     if (Object.hasOwn(hostHooks, event)) {
       skipped.push(event);
       continue;
@@ -245,12 +244,11 @@ function hostPriorArray(
  * host file did not set it and the gsd-stripped merged array was non-empty.
  */
 function buildHostHookCapture(sources: HookCaptureSources): HookCaptureResult {
-  const liveOnly = liveOnlyHookEntries(sources.merged, sources.settings);
   const hostHooks = hooksBlockOf(sources.overrides);
   const mergedHooks = hooksBlockOf(stripGsdHookEntries(sources.merged));
   const hooks: Record<string, unknown[]> = {};
   const shadowed: string[] = [];
-  for (const [event, entries] of groupByEvent(liveOnly)) {
+  for (const [event, entries] of groupByEvent(sources.entries)) {
     const { array: priorArr, setByHost } = hostPriorArray(hostHooks, mergedHooks, event);
     if (!setByHost && priorArr.length > 0) shadowed.push(event);
     hooks[event] = [...priorArr, ...appendedMatcherEntries(entries)];

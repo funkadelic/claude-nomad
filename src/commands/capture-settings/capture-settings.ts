@@ -6,6 +6,8 @@ import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
 import { buildCaptureSubset } from '../../sync/settings-classify.ts';
 import { buildHookCaptureSubset } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
+import { blockedHookEntries } from '../../sync/settings-guard.ts';
+import { readWrittenHookIds, readWrittenSettingsKeys } from '../../sync/settings-written.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
 import { deepMerge, readJson } from '../../core/utils.json.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
@@ -98,7 +100,15 @@ function collectCapture(
   const topSubset = buildCaptureSubset(sources.merged, sources.settings, {
     normalizeNodePath: !useHost,
   });
-  const { hooks, shadowed, skipped } = buildHookCaptureSubset(sources, useHost);
+  // Leave out entries a pull deletes as removed upstream, so capture never undoes that removal.
+  const entries = blockedHookEntries(
+    sources.merged,
+    sources.settings,
+    {},
+    readWrittenSettingsKeys(),
+    readWrittenHookIds(),
+  );
+  const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
   for (const event of skipped) {
     warn(

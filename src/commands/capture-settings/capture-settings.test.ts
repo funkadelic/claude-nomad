@@ -566,6 +566,36 @@ describe('cmdCaptureSettings', () => {
       expect(hostFile.hooks.Stop).toEqual([hostStopEntry, xEntry]);
     });
 
+    it('does not re-add a hook the repo dropped since the last write, only the local one', async () => {
+      const e = (command: string) => ({ matcher: '', hooks: [{ type: 'command', command }] });
+      writeFileSync(
+        env.basePath,
+        JSON.stringify({ hooks: { Stop: [e('stop')], PreToolUse: [e('dropped')] } }) + '\n',
+      );
+      writeFileSync(env.settingsPath, '{}\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      regenerateSettings('20260924-000000');
+
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [e('stop')] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({
+          hooks: { Stop: [e('stop')], PreToolUse: [e('dropped')], PostToolUse: [e('mine')] },
+        }) + '\n',
+      );
+      expect(regenerateSettings('20260924-000001').blocked).toEqual(["PostToolUse hook 'mine'"]);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as { hooks: object };
+      expect(base.hooks).toEqual({ Stop: [e('stop')], PostToolUse: [e('mine')] });
+      const live = JSON.parse(readFileSync(env.settingsPath, 'utf8')) as { hooks: object };
+      expect(live.hooks).toEqual({ Stop: [e('stop')], PostToolUse: [e('mine')] });
+    });
+
     it('--host writes the full event array and warns about the base-edit trade-off', async () => {
       const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
       const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };

@@ -10,6 +10,7 @@ import {
   settingValueHash,
   stillAsWritten,
 } from './settings-guard.ts';
+import { hookEntryIds } from './hooks-entries.ts';
 
 /** A written-settings record holding each value's hash, as a real write records it. */
 function rec(values: Record<string, unknown>): Record<string, string> {
@@ -229,6 +230,22 @@ describe('blockedSettingsKeys hook entries', () => {
       "PreToolUse hook 'pre-cmd'",
       "PreToolUse hook 'removed-cmd'",
     ]);
+  });
+
+  it('refuses only the local addition when the record keeps the id of the entry the repo dropped', () => {
+    const writtenHooks = {
+      Stop: [{ matcher: '', hooks: [S] }],
+      PreToolUse: [{ matcher: '', hooks: [R] }],
+    };
+    const writtenHookIds = new Set(
+      [...hookEntryIds({ hooks: writtenHooks })].map((id) => settingValueHash(id)),
+    );
+    const live = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P, R] }] },
+    };
+    expect(
+      blockedSettingsKeys(mergedWithS, live, {}, rec({ hooks: writtenHooks }), writtenHookIds),
+    ).toEqual(["PreToolUse hook 'pre-cmd'"]);
   });
 
   it('drops the command from the label when it is longer than 60 characters', () => {

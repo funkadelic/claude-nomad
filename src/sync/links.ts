@@ -21,7 +21,11 @@ import {
   type WrittenSettings,
 } from './settings-guard.ts';
 import { preRebaseSettingsMerge } from './settings-upstream.ts';
-import { readWrittenSettingsKeys, recordWrittenSettingsKeys } from './settings-written.ts';
+import {
+  readWrittenHookIds,
+  readWrittenSettingsKeys,
+  recordWrittenSettingsKeys,
+} from './settings-written.ts';
 import { applySharedLinksWin32 } from './links.win32.ts';
 import { die, fail, log, warn } from '../core/utils.ts';
 import { backupBeforeWrite, ensureSymlink, writeJsonAtomic } from '../core/utils.fs.ts';
@@ -227,6 +231,7 @@ function readExistingSettings(settingsPath: string): {
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
  * @param written - The written-settings record; see `blockedSettingsKeys`.
+ * @param writtenHookIds - Hashed hook-entry ids the last write produced.
  * @returns The blocked keys, so the caller can skip the write, and the keys
  *   the write removes (empty when blocked).
  */
@@ -235,8 +240,9 @@ function reportSettingsDrift(
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
+  writtenHookIds: ReadonlySet<string>,
 ): { blocked: string[]; removed: string[] } {
-  const blocked = blockedSettingsKeys(merged, existing, preMerged, written);
+  const blocked = blockedSettingsKeys(merged, existing, preMerged, written, writtenHookIds);
   if (blocked.length > 0) {
     fail(settingsBlockedMessage(blocked, 'left unchanged'));
     return { blocked, removed: [] };
@@ -334,6 +340,7 @@ export function regenerateSettings(
         existing,
         preRebaseSettingsMerge(repo, opts.prePostHeads),
         readWrittenSettingsKeys(),
+        readWrittenHookIds(),
       ));
     }
   }

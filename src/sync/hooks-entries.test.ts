@@ -7,6 +7,16 @@ import {
   liveOnlyHookEntries,
 } from './hooks-entries.ts';
 
+/** Capture sources whose `entries` are every live-only hook entry of `settings`. */
+function sources(s: {
+  base: Record<string, unknown>;
+  overrides: Record<string, unknown>;
+  merged: Record<string, unknown>;
+  settings: Record<string, unknown>;
+}) {
+  return { ...s, entries: liveOnlyHookEntries(s.merged, s.settings) };
+}
+
 const stopHook = { type: 'command', command: 'stop-cmd' };
 const preToolHook = { type: 'command', command: 'pre-cmd' };
 
@@ -127,7 +137,7 @@ describe('buildHookCaptureSubset (base destination)', () => {
       hooks: { Stop: [stopEntry], PreToolUse: [{ matcher: '', hooks: [preToolHook] }] },
     };
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: live },
+      sources({ base, overrides: {}, merged: base, settings: live }),
       false,
     );
     expect(result.hooks).toEqual({ PreToolUse: [{ matcher: '', hooks: [preToolHook] }] });
@@ -138,7 +148,7 @@ describe('buildHookCaptureSubset (base destination)', () => {
     const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
     const live = { hooks: { Stop: [stopEntry, xEntry] } };
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: live },
+      sources({ base, overrides: {}, merged: base, settings: live }),
       false,
     );
     expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry] });
@@ -155,7 +165,7 @@ describe('buildHookCaptureSubset (base destination)', () => {
     };
     const live = { hooks: { Stop: [stopEntry, xEntry, yEntry] } };
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: live },
+      sources({ base, overrides: {}, merged: base, settings: live }),
       false,
     );
     expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry, yEntry] });
@@ -165,7 +175,7 @@ describe('buildHookCaptureSubset (base destination)', () => {
     const xHook = { type: 'command', command: 'x-cmd' };
     const live = { hooks: { Stop: [{ matcher: '', hooks: [stopHook, xHook] }] } };
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: live },
+      sources({ base, overrides: {}, merged: base, settings: live }),
       false,
     );
     expect(result.hooks).toEqual({ Stop: [stopEntry, { matcher: '', hooks: [xHook] }] });
@@ -181,7 +191,7 @@ describe('buildHookCaptureSubset (base destination)', () => {
       },
     };
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: live },
+      sources({ base, overrides: {}, merged: base, settings: live }),
       false,
     );
     const captured = result.hooks.PreToolUse[0] as { hooks: [{ command: string }] };
@@ -194,14 +204,17 @@ describe('buildHookCaptureSubset (base destination)', () => {
     };
     const xHook = { type: 'command', command: 'x-cmd' };
     const live = { hooks: { Stop: [stopEntry, { matcher: '', hooks: [xHook] }] } };
-    const result = buildHookCaptureSubset({ base, overrides, merged: base, settings: live }, false);
+    const result = buildHookCaptureSubset(
+      sources({ base, overrides, merged: base, settings: live }),
+      false,
+    );
     expect(result.hooks).toEqual({});
     expect(result.skipped).toEqual(['Stop']);
   });
 
   it('returns empty hooks and skipped when there is no live-only entry', () => {
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: base },
+      sources({ base, overrides: {}, merged: base, settings: base }),
       false,
     );
     expect(result.hooks).toEqual({});
@@ -217,7 +230,7 @@ describe('buildHookCaptureSubset (host destination)', () => {
   it('writes the full merged array and shadows an event the host had not set', () => {
     const live = { hooks: { Stop: [stopEntry, xEntry] } };
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: live },
+      sources({ base, overrides: {}, merged: base, settings: live }),
       true,
     );
     expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry] });
@@ -229,7 +242,10 @@ describe('buildHookCaptureSubset (host destination)', () => {
     const overrides = { hooks: { Stop: [hostEntry] } };
     const merged = { hooks: { Stop: [hostEntry] } };
     const live = { hooks: { Stop: [hostEntry, xEntry] } };
-    const result = buildHookCaptureSubset({ base, overrides, merged, settings: live }, true);
+    const result = buildHookCaptureSubset(
+      sources({ base, overrides, merged, settings: live }),
+      true,
+    );
     expect(result.hooks).toEqual({ Stop: [hostEntry, xEntry] });
     expect(result.shadowed).toEqual([]);
   });
@@ -239,7 +255,7 @@ describe('buildHookCaptureSubset (host destination)', () => {
       hooks: { Stop: [stopEntry], PreToolUse: [{ matcher: '', hooks: [preToolHook] }] },
     };
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: live },
+      sources({ base, overrides: {}, merged: base, settings: live }),
       true,
     );
     expect(result.hooks).toEqual({ PreToolUse: [{ matcher: '', hooks: [preToolHook] }] });
@@ -255,7 +271,7 @@ describe('buildHookCaptureSubset (host destination)', () => {
       },
     };
     const result = buildHookCaptureSubset(
-      { base, overrides: {}, merged: base, settings: live },
+      sources({ base, overrides: {}, merged: base, settings: live }),
       true,
     );
     const captured = result.hooks.PreToolUse[0] as { hooks: [{ command: string }] };
@@ -270,7 +286,7 @@ describe('buildHookCaptureSubset (host destination)', () => {
     const baseWithGsd = { hooks: { Stop: [gsdEntry, stopEntry] } };
     const live = { hooks: { Stop: [gsdEntry, stopEntry, xEntry] } };
     const result = buildHookCaptureSubset(
-      { base: baseWithGsd, overrides: {}, merged: baseWithGsd, settings: live },
+      sources({ base: baseWithGsd, overrides: {}, merged: baseWithGsd, settings: live }),
       true,
     );
     expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry] });

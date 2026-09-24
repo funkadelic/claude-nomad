@@ -14,7 +14,12 @@ import {
   partitionByCaptureExclusion,
 } from './settings-classify.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
-import { hookEntryIds, hookEntryLabel, liveOnlyHookEntries } from './hooks-entries.ts';
+import {
+  hookEntryIds,
+  hookEntryLabel,
+  liveOnlyHookEntries,
+  type HookEntry,
+} from './hooks-entries.ts';
 
 /** Hash of each top-level value the last settings write produced, by key. */
 export type WrittenSettings = Readonly<Record<string, string>>;
@@ -66,22 +71,41 @@ function unchangedSincePreMerge(
 }
 
 /**
- * Blocked hook-entry labels: a live-only hook entry under a `hooks` key the
- * merge also carries, unless `preMerged` had it or the whole gsd-stripped
- * `hooks` value still matches the write record (then every live-only entry
- * counts as removed upstream). Sorted, de-duplicated.
+ * Live-only hook entries under a `hooks` key the merge also carries that a
+ * pull refuses, unless explained as removed upstream: `preMerged` had the
+ * entry, the last write produced it, or the whole gsd-stripped `hooks` value
+ * still matches the write record.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
+ * @param written - The written-settings record, or `null`.
+ * @param writtenHookIds - Hashed hook-entry ids the last write produced.
  */
+export function blockedHookEntries(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+  written: WrittenSettings | null,
+  writtenHookIds: ReadonlySet<string>,
+): HookEntry[] {
+  if (stillAsWritten(written, existing, 'hooks')) return [];
+  const preMergedIds = hookEntryIds(preMerged);
+  return liveOnlyHookEntries(merged, existing).filter(
+    (e) => !preMergedIds.has(e.id) && !writtenHookIds.has(settingValueHash(e.id)),
+  );
+}
+
+/** Sorted, de-duplicated labels of `blockedHookEntries`. */
 function blockedHookLabels(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
+  writtenHookIds: ReadonlySet<string>,
 ): string[] {
-  if (stillAsWritten(written, existing, 'hooks')) return [];
-  const preMergedIds = hookEntryIds(preMerged);
-  const labels = liveOnlyHookEntries(merged, existing)
-    .filter((e) => !preMergedIds.has(e.id))
-    .map(hookEntryLabel);
+  const labels = blockedHookEntries(merged, existing, preMerged, written, writtenHookIds).map(
+    hookEntryLabel,
+  );
   return [...new Set(labels)].sort((a, b) => a.localeCompare(b, 'en'));
 }
 
@@ -96,6 +120,7 @@ function blockedHookLabels(
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
  * @param written - Value hashes the last successful settings write produced on
  *   this host, or `null` for no record; see `stillAsWritten`.
+ * @param writtenHookIds - Hashed hook-entry ids that write produced.
  * @returns The blocked keys then blocked hook-entry labels, sorted within
  *   each group.
  */
@@ -104,10 +129,11 @@ export function blockedSettingsKeys(
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null = null,
+  writtenHookIds: ReadonlySet<string> = new Set(),
 ): string[] {
   return [
     ...splitAheadKeys(merged, existing, preMerged, written).blocked,
-    ...blockedHookLabels(merged, existing, preMerged, written),
+    ...blockedHookLabels(merged, existing, preMerged, written, writtenHookIds),
   ];
 }
 
