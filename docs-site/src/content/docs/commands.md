@@ -96,6 +96,12 @@ longer want them. Shared files, skills, sessions, and extras still update in the
 command exits with a non-zero status (6) so a scripted or cron-driven pull does not report success.
 Pulling again after you save or delete the settings proceeds normally.
 
+The same refusal covers a hook added where the repo already has hooks: when the repo already
+carries a `hooks` key and this machine's live settings add another entry under it, pull stops
+the same way and names the hook by its event, and by its command too when it is short enough to
+show, for example `PreToolUse hook 'python3 ~/x.py'`. `nomad capture-settings` saves it, the same
+command used for local-only keys.
+
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
 them and will not stop for them. When it finds some the repo does not track, it writes
@@ -392,6 +398,13 @@ When `nomad pull` stops because it found settings on this machine the sync repo 
 this command saves them so the next pull goes through (deleting them from
 `~/.claude/settings.json` is the other way out). Use `--host` for machine-specific values, such as
 absolute paths, that should not sync to every machine.
+
+It also saves a hook this machine added under an event the repo already tracks. By default it
+appends the hook to the shared hooks for that event. With `--host`, it writes that event's whole
+hook list, shared entries included, into `hosts/<NOMAD_HOST>.json`, and warns that later edits to
+that event's hooks in the shared base will stop reaching this machine. If the host file already
+sets its own hooks for that event, the default (non-`--host`) capture skips saving the hook there
+and points you at `--host` instead.
 
 | Flag        | Description                                                                                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -390,9 +390,13 @@ What nomad does for you:
   earlier era, nomad rewrites it to drop them before staging (a one-time self-clean; idempotent
   on a clean base).
 - **Your own hooks still sync.** A hook entry you write yourself (whose script basename does not
-  start with `gsd-`) travels through `nomad capture-settings` exactly like any other ahead key:
-  run `nomad capture-settings` to promote it into the base, then it travels on every subsequent
-  pull.
+  start with `gsd-`) reaches the shared base through `nomad capture-settings`. When the repo has
+  no `hooks` key at all yet, it travels like any other ahead key. When the repo already tracks
+  `hooks`, `nomad pull` instead refuses to overwrite the new entry and names it by event;
+  `nomad capture-settings` saves it there, appending to the shared hooks for that event, or with
+  `--host`, writing that event's whole hook list into your host file. See
+  [pull](/claude-nomad/commands/#pull) and [capture-settings](/claude-nomad/commands/#capture-settings)
+  for the details.
 - **In `nomad diff` and `--dry-run`:** the preview filters both sides before comparing, so GSD's
   per-session self-heal never renders as a phantom `hooks` change. The preview matches what a real
   pull writes.

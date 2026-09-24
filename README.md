@@ -40,8 +40,9 @@ session history survives different file paths and your secrets never ride along.
   with a per-host override, so one machine can run a different model or MCP URL without forking the
   rest. GSD-owned hook entries (scripts whose basename starts with `gsd-`) are filtered out of the
   generated `~/.claude/settings.json` during pull and stripped from `shared/settings.base.json` on
-  the next push; GSD reinstalls the correct per-host hook set itself. A non-gsd hook you add to your
-  live settings syncs normally via `nomad capture-settings`.
+  the next push; GSD reinstalls the correct per-host hook set itself. A pull never overwrites a
+  non-gsd hook you add to your live settings; run `nomad capture-settings` to save it so it syncs to
+  your other machines.
 - **Every push is secret-scanned.** Only an explicit allow-list of paths ever leaves the machine,
   credentials never sync, and gitleaks scans the exact files about to be published. The push aborts
   on any hit, with an interactive menu to redact, allow, or drop the finding. Always publish through
@@ -229,6 +230,16 @@ longer want them. Your shared files, skills, sessions, and project extras still 
 command exits with a non-zero status so a scripted or cron-driven pull does not report success. Once
 you have saved or deleted the settings, the next pull proceeds normally.
 
+When your repo already has hooks and you add another one on this machine, `nomad pull` stops the
+same way. It names the new hook by its event, and by its command too when the command is short
+enough to show, for example `PreToolUse hook 'python3 ~/x.py'`. Save it with
+`nomad capture-settings`, which adds it to the shared hooks for that event. With `--host`, this
+machine's host file gets that event's whole hook list, shared entries included, so later changes to
+that event's hooks in the shared file stop reaching this machine; capture tells you this before it
+writes. If your host file already sets its own hooks for that event, a plain
+`nomad capture-settings` skips saving the hook there and tells you to add `--host` instead. A hook
+another machine removed from the repo is removed here too, the same as any other setting.
+
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
 them and will not stop for them. When it finds some your repo does not track, it writes
@@ -286,13 +297,14 @@ file still carries conflict markers, so they are never copied into your live con
 specific problem and points at the right fix.
 
 If an external tool (such as Claude Code or GSD) wrote new keys into your `~/.claude/settings.json`
-that are not yet in your shared repo, run `nomad capture-settings` to promote them before the next
-`nomad pull` overwrites them. With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of
-`shared/settings.base.json` (useful for machine-specific values such as absolute paths). `--dry-run`
-shows what would be written without touching anything. Before it writes, `capture-settings` shows
-the destination and the keys and asks you to confirm; pass `--yes` (or `-y`) to skip the prompt,
-which is required when running without an interactive terminal. `nomad push` also warns when it
-detects ahead-drift so you have a prompt to act before the push completes.
+that are not yet in your shared repo, run `nomad capture-settings` to promote them, or to save a
+hook it added under an event your repo already tracks, before the next `nomad pull` overwrites them.
+With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json`
+(useful for machine-specific values such as absolute paths). `--dry-run` shows what would be written
+without touching anything. Before it writes, `capture-settings` shows the destination and the keys
+and asks you to confirm; pass `--yes` (or `-y`) to skip the prompt, which is required when running
+without an interactive terminal. `nomad push` also warns when it detects ahead-drift so you have a
+prompt to act before the push completes.
 
 ## Claude Code plugin
 
