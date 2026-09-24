@@ -22,7 +22,6 @@ export function expandStagedDir(dirRel: string, repo: string): string[] {
       .split('\0')
       .filter((p) => p !== '');
   } catch {
-    // A git ls-files failure falls back to an empty list.
     return [];
   }
 }

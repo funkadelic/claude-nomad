@@ -76,7 +76,8 @@ function reportRemediation(
   addItem(section, '');
   addItem(section, bold('Remediation'));
   // Same sessions, same order as bySession: both regexes match the same paths
-  // and dedupe keeps each first occurrence.
+  // (pinned by a test), and dedupe keys embed File, so a sid's first finding is
+  // never the one dedupe drops.
   for (const [sid, logical] of logicalBySession) {
     const rotateLine = dim(
       `- rotate the credential, then scrub ${scrubPath(logical, sid, logicalToEncoded)}`,
@@ -92,7 +93,7 @@ function reportRemediation(
  * the exported `SESSION_PATH` shape; the `<logical>` group lets the scrub-path
  * hint reuse this single authoritative parse.
  */
-const SESSION_PATH_LOGICAL = /^shared\/projects\/([^/]+)\/([^/]+)\.jsonl$/;
+export const SESSION_PATH_LOGICAL = /^shared\/projects\/([^/]+)\/([^/]+)\.jsonl$/;
 
 /**
  * Emit the single canonical clean row reporting the scanned-project count

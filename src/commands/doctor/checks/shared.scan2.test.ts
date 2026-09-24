@@ -503,8 +503,25 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     ).toHaveLength(1);
     expect(process.exitCode).toBe(1);
   });
+
+  it('matches exactly the session paths partitionFindings groups', async () => {
+    const { SESSION_PATH } = await import('../../push/gitleaks.ts');
+    const { SESSION_PATH_LOGICAL } = await import('./shared.scan.ts');
+    for (const path of [
+      'shared/projects/proj/sid.jsonl',
+      'shared/projects/p-q.r/abc-123.jsonl',
+      'shared/projects/proj/sid/subagents/a.jsonl',
+      'shared/projects/proj/memory/notes.md',
+      'shared/projects/sid.jsonl',
+      'shared/other/proj/sid.jsonl',
+      'shared/projects/proj/sid.jsonl.bak',
+    ]) {
+      expect(SESSION_PATH_LOGICAL.test(path), path).toBe(SESSION_PATH.test(path));
+    }
+  });
 });
 
+/** `scanAndReport` driven by mocked `scanStagedTree` findings rather than a mocked child process. */
 describe('scanAndReport (mocked findings)', () => {
   let snapshot: EnvSnapshot;
   let testHome: string;
@@ -534,5 +551,21 @@ describe('scanAndReport (mocked findings)', () => {
     const scrub = join(testHome, '.claude', 'projects', 'proj', 'sid-a.jsonl');
     expect(section.items.join('\n')).toContain(`then scrub ${scrub}`);
     expect(process.exitCode).toBe(1);
+  });
+
+  it('matches exactly the session paths partitionFindings groups', async () => {
+    const { SESSION_PATH } = await import('../../push/gitleaks.ts');
+    const { SESSION_PATH_LOGICAL } = await import('./shared.scan.ts');
+    for (const path of [
+      'shared/projects/proj/sid.jsonl',
+      'shared/projects/p-q.r/abc-123.jsonl',
+      'shared/projects/proj/sid/subagents/a.jsonl',
+      'shared/projects/proj/memory/notes.md',
+      'shared/projects/sid.jsonl',
+      'shared/other/proj/sid.jsonl',
+      'shared/projects/proj/sid.jsonl.bak',
+    ]) {
+      expect(SESSION_PATH_LOGICAL.test(path), path).toBe(SESSION_PATH.test(path));
+    }
   });
 });
