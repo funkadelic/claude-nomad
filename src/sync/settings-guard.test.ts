@@ -93,7 +93,11 @@ describe('blockedSettingsKeys', () => {
 
 describe('blockedSettingsKeys hook entries', () => {
   const S = { type: 'command', command: 'stop-cmd' };
+  const T = { type: 'command', command: 'stop-cmd-2' };
   const P = { type: 'command', command: 'pre-cmd' };
+  const R = { type: 'command', command: 'removed-cmd' };
+  const gsdCommand = { type: 'command', command: 'node /a/hooks/gsd-check-update.js' };
+  const mergedWithS = { hooks: { Stop: [{ matcher: '', hooks: [S] }] } };
 
   it('blocks a live-only entry under a new event the merge does not have', () => {
     const merged = { hooks: { Stop: [{ matcher: '', hooks: [S] }] } };
@@ -117,6 +121,163 @@ describe('blockedSettingsKeys hook entries', () => {
       },
     };
     expect(blockedSettingsKeys(merged, live, {})).toEqual(["Stop hook '" + P.command + "'"]);
+  });
+
+  it('does not block when the pre-pull merge already carried the live-only entry', () => {
+    const live = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P] }] },
+    };
+    const preMerged = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P] }] },
+    };
+    expect(blockedSettingsKeys(mergedWithS, live, preMerged)).toEqual([]);
+  });
+
+  it('does not block when the written record still matches the whole hooks value', () => {
+    const live = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P] }] },
+    };
+    const written = rec({ hooks: live.hooks });
+    expect(blockedSettingsKeys(mergedWithS, live, {}, written)).toEqual([]);
+  });
+
+  it('blocks when the recorded hooks value no longer matches (edited since the write)', () => {
+    const writtenHooks = {
+      Stop: [{ matcher: '', hooks: [S] }],
+      PreToolUse: [{ matcher: '', hooks: [P] }],
+    };
+    const written = rec({ hooks: writtenHooks });
+    const editedP = { type: 'command', command: 'pre-cmd-v2' };
+    const live = {
+      hooks: {
+        Stop: [{ matcher: '', hooks: [S] }],
+        PreToolUse: [{ matcher: '', hooks: [editedP] }],
+      },
+    };
+    expect(blockedSettingsKeys(mergedWithS, live, {}, written)).toEqual([
+      "PreToolUse hook 'pre-cmd-v2'",
+    ]);
+  });
+
+  it('never refuses a reorder of the merge entries', () => {
+    const merged = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P] }] },
+    };
+    const live = {
+      hooks: { PreToolUse: [{ matcher: '', hooks: [P] }], Stop: [{ matcher: '', hooks: [S] }] },
+    };
+    expect(blockedSettingsKeys(merged, live, {})).toEqual([]);
+  });
+
+  it('never refuses a local deletion of a hook the merge carries', () => {
+    const merged = { hooks: { Stop: [{ matcher: '', hooks: [S, T] }] } };
+    const live = { hooks: { Stop: [{ matcher: '', hooks: [S] }] } };
+    expect(blockedSettingsKeys(merged, live, {})).toEqual([]);
+  });
+
+  it('never blocks a live-only gsd entry under an event the merge already has', () => {
+    const live = { hooks: { Stop: [{ matcher: '', hooks: [S, gsdCommand] }] } };
+    expect(blockedSettingsKeys(mergedWithS, live, {})).toEqual([]);
+  });
+
+  it('never blocks a live-only gsd entry under a new event', () => {
+    const live = {
+      hooks: {
+        Stop: [{ matcher: '', hooks: [S] }],
+        SessionStart: [{ matcher: '', hooks: [gsdCommand] }],
+      },
+    };
+    expect(blockedSettingsKeys(mergedWithS, live, {})).toEqual([]);
+  });
+
+  it("leaves every other changed key on today's behavior (repo value wins, no refusal)", () => {
+    const merged = { permissions: { allow: ['a'] } };
+    const live = { permissions: { allow: ['a', 'b'] } };
+    expect(blockedSettingsKeys(merged, live, {})).toEqual([]);
+  });
+
+  it('combines a blocked top-level key and a blocked hook entry in one refusal', () => {
+    const live = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P] }] },
+      theme: 'dark',
+    };
+    const blocked = blockedSettingsKeys(mergedWithS, live, {});
+    expect(blocked).toEqual(['theme', "PreToolUse hook 'pre-cmd'"]);
+    const msg = settingsBlockedMessage(blocked, 'left unchanged');
+    expect(msg).toContain('2 settings');
+    expect(msg).toContain('theme');
+    expect(msg).toContain('PreToolUse hook');
+  });
+
+  it('fails closed with neither a pre-pull merge nor a written record', () => {
+    const live = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P] }] },
+    };
+    expect(blockedSettingsKeys(mergedWithS, live, {}, null)).toEqual(["PreToolUse hook 'pre-cmd'"]);
+  });
+
+  it('refuses both entries when a local addition and an upstream removal coincide and no pre-pull merge is readable', () => {
+    const writtenHooks = {
+      Stop: [{ matcher: '', hooks: [S] }],
+      PreToolUse: [{ matcher: '', hooks: [R] }],
+    };
+    const written = rec({ hooks: writtenHooks });
+    const live = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P, R] }] },
+    };
+    expect(blockedSettingsKeys(mergedWithS, live, {}, written)).toEqual([
+      "PreToolUse hook 'pre-cmd'",
+      "PreToolUse hook 'removed-cmd'",
+    ]);
+  });
+
+  it('drops the command from the label when it is longer than 60 characters', () => {
+    const longCmd = { type: 'command', command: 'x'.repeat(61) };
+    const live = {
+      hooks: {
+        Stop: [{ matcher: '', hooks: [S] }],
+        PreToolUse: [{ matcher: '', hooks: [longCmd] }],
+      },
+    };
+    expect(blockedSettingsKeys(mergedWithS, live, {})).toEqual(['PreToolUse hook']);
+  });
+
+  it('drops the command from the label when it contains a newline', () => {
+    const newlineCmd = { type: 'command', command: 'a\nb' };
+    const live = {
+      hooks: {
+        Stop: [{ matcher: '', hooks: [S] }],
+        PreToolUse: [{ matcher: '', hooks: [newlineCmd] }],
+      },
+    };
+    expect(blockedSettingsKeys(mergedWithS, live, {})).toEqual(['PreToolUse hook']);
+  });
+
+  it('deduplicates two live-only entries under the same event with unreadable commands', () => {
+    const longA = { type: 'command', command: 'a'.repeat(61) };
+    const longB = { type: 'command', command: 'b'.repeat(61) };
+    const live = {
+      hooks: {
+        Stop: [
+          { matcher: '', hooks: [S] },
+          { matcher: 'x', hooks: [longA] },
+          { matcher: 'y', hooks: [longB] },
+        ],
+      },
+    };
+    expect(blockedSettingsKeys(mergedWithS, live, {})).toEqual(['Stop hook']);
+  });
+
+  it('names both ways out for a hook-entry refusal', () => {
+    const live = {
+      hooks: { Stop: [{ matcher: '', hooks: [S] }], PreToolUse: [{ matcher: '', hooks: [P] }] },
+    };
+    const blocked = blockedSettingsKeys(mergedWithS, live, {});
+    const msg = settingsBlockedMessage(blocked, 'left unchanged');
+    expect(msg).toContain('nomad capture-settings');
+    expect(msg).toContain('--host');
+    expect(msg).toContain('delete it from ~/.claude/settings.json');
+    expect(msg).toContain('then pull again');
   });
 });
 
