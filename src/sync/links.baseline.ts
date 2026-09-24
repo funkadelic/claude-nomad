@@ -27,6 +27,7 @@ import {
   sharedBaselinePath,
   ALWAYS_NEVER_SYNC,
   type PathMap,
+  type ValidatedSharedNames,
 } from '../core/config.ts';
 import {
   buildManifest,
@@ -83,7 +84,7 @@ export type LocalFileStat = { size: number; mtime: number };
  */
 export type SharedScanOpts = {
   /** Pre-derived name list; falls back to deriving from `map`. */
-  linkNames?: readonly string[];
+  linkNames?: ValidatedSharedNames;
   /** Suppress the rejection WARNs of an internal derivation. */
   quiet?: boolean;
 };

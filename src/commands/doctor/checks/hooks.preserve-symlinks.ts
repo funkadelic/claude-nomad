@@ -79,7 +79,10 @@ function readPathMapSafe(): PathMap {
  * @param sharedLinkNames - Names from `allSharedLinks(map)`.
  * @returns True when the script resolves under a nomad-managed symlink.
  */
-function resolvesUnderSymlinkedShared(scriptPath: string, sharedLinkNames: string[]): boolean {
+function resolvesUnderSymlinkedShared(
+  scriptPath: string,
+  sharedLinkNames: readonly string[],
+): boolean {
   // Compare with forward slashes normalized on both sides: claudeHome() joins
   // with the native separator (backslash on win32), but scriptPath keeps its
   // literal forward slashes after expandHome splices in the (backslash-style)
@@ -171,7 +174,7 @@ function* commandsFromOneGroup(group: unknown): Iterable<string> {
  * @param sharedLinkNames - Names from `allSharedLinks(map)`.
  * @returns The script path when flagged, or null when not flagged.
  */
-function flaggedScript(command: string, sharedLinkNames: string[]): string | null {
+function flaggedScript(command: string, sharedLinkNames: readonly string[]): string | null {
   const tokens = commandTokens(command);
   const nodeIdx = tokens.indexOf('node');
   if (nodeIdx < 0) return null;
@@ -197,7 +200,7 @@ function checkEventForPreserveSymlinks(
   section: DoctorSection,
   event: string,
   groups: unknown[],
-  sharedLinkNames: string[],
+  sharedLinkNames: readonly string[],
 ): boolean {
   let anyWarn = false;
   for (const group of groups) {

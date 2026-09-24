@@ -25,6 +25,7 @@ import {
   repoHome,
   ALWAYS_NEVER_SYNC,
   type PathMap,
+  type ValidatedSharedNames,
 } from '../core/config.ts';
 import { enumerateLocalSharedScan, readSharedBaseline } from './links.baseline.ts';
 import { warn } from '../core/utils.ts';
@@ -159,7 +160,7 @@ function deletionFor(
  */
 export function planSharedLinkDeletions(
   map: PathMap | null,
-  opts: { linkNames?: readonly string[] } = {},
+  opts: { linkNames?: ValidatedSharedNames } = {},
 ): SharedLinkDeletion[] {
   if (process.platform !== 'win32') return [];
   if (map === null) return [];
@@ -223,7 +224,7 @@ export function planSharedLinkDeletions(
 export function applySharedLinkDeletions(
   map: PathMap | null,
   ts: string,
-  opts: { linkNames?: readonly string[] } = {},
+  opts: { linkNames?: ValidatedSharedNames } = {},
 ): SharedLinkDeletion[] {
   const repo = repoHome();
   const removed: SharedLinkDeletion[] = [];

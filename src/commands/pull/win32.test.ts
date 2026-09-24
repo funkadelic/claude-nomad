@@ -108,7 +108,7 @@ describe('reconcileSharedLinksBeforePull', () => {
       order.push('deletions');
     });
     // Spread the real module rather than replacing it outright: the denylist
-    // backstop below (revertDeniedUnderShared) reaches revertDeniedMirrorPaths
+    // backstop below (gateDeniedUnderShared) reaches gateDeniedMirrorPaths
     // outside this function's try/catch, and a bare `{ stageLocalSharedEdits }`
     // factory leaves that export undefined, only silently inert here because
     // these fixtures are not git checkouts (gitProbe returns null first).
@@ -1180,7 +1180,7 @@ describe.skipIf(!hasGit)('reconcileSharedLinksBeforePull denylist backstop', () 
   });
 
   it('leaves a widened NEVER_SYNC-only name under a shared name alone, end to end', async () => {
-    // Same contract as revertDeniedMirrorPaths's own unit case, proven through
+    // Same contract as gateDeniedMirrorPaths's own unit case, proven through
     // the real caller on a real git fixture: the backstop no longer strips
     // content the narrowed writers legitimately write.
     const rel = 'shared/my-tools/sessions/notes.md';

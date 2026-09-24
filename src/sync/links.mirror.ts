@@ -13,6 +13,7 @@ import {
   repoHome,
   ALWAYS_NEVER_SYNC,
   type PathMap,
+  type ValidatedSharedNames,
 } from '../core/config.ts';
 import { errorText } from '../core/error-text.ts';
 import { copyExtrasFiltered, copyExtrasOverlayFiltered } from './extras/core.ts';
@@ -20,7 +21,7 @@ import { classifyPresence, isUnusableTarget, type PresenceState } from '../core/
 import { log, warn } from '../core/utils.ts';
 import { backupRepoWrite } from '../core/utils.fs.ts';
 
-export { revertDeniedMirrorPaths } from './links.mirror.revert.ts';
+export { gateDeniedMirrorPaths } from './links.mirror.gate.ts';
 
 /**
  * Event emitted by the win32 host-to-repo mirror (`stageLocalSharedEdits`,
@@ -55,7 +56,7 @@ type MirrorOpts = {
   /** Structured-event sink; see `MirrorPreviewEvent`. */
   onPreview?: (e: MirrorPreviewEvent) => void;
   /** Pre-derived name list; falls back to `allSharedLinks(map)` when absent. */
-  linkNames?: readonly string[];
+  linkNames?: ValidatedSharedNames;
 };
 
 /**

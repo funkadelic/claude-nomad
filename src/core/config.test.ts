@@ -2,7 +2,7 @@ import { join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PathMap } from './config.ts';
+import type { PathMap, ValidatedSharedNames } from './config.ts';
 import { stubPlatform } from '../test-support/platform.ts';
 
 // The "on non-win32" tests below assert `process.platform !== 'win32'`
@@ -383,6 +383,14 @@ describe('allSharedLinks', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('brands its result so a raw name list is not a ValidatedSharedNames', () => {
+    const raw: string[] = ['commands', '../escape'];
+    // @ts-expect-error a list that did not come from allSharedLinks must not type-check
+    const forged: ValidatedSharedNames = raw;
+    const empty: ValidatedSharedNames = [];
+    expect([forged, empty]).toEqual([raw, []]);
   });
 
   it('returns SHARED_LINKS when map has no sharedDirs key', async () => {

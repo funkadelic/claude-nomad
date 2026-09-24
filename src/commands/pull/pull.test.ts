@@ -33,8 +33,8 @@ import { stubPlatform } from '../../test-support/platform.ts';
  * only `stageLocalSharedEdits`.
  *
  * Spreading the real module matters rather than replacing it outright: the
- * win32 denylist backstop (revertDeniedUnderShared) reaches
- * revertDeniedMirrorPaths outside reconcileSharedLinksBeforePull's try/catch,
+ * win32 denylist backstop (gateDeniedUnderShared) reaches
+ * gateDeniedMirrorPaths outside reconcileSharedLinksBeforePull's try/catch,
  * and a bare `{ stageLocalSharedEdits }` factory leaves that export undefined
  * there.
  *

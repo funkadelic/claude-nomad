@@ -125,7 +125,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
       regenerateSettings: vi.fn(),
     }));
     // Spread the real module rather than replacing it outright. The denylist
-    // backstop inside the pre-pull reconcile reaches revertDeniedMirrorPaths,
+    // backstop inside the pre-pull reconcile reaches gateDeniedMirrorPaths,
     // and the child_process mock above makes its git probe answer (an empty
     // porcelain), so the call is live on a real Windows host. A bare
     // `{ stageLocalSharedEdits }` factory leaves that export undefined and the

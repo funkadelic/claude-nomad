@@ -1,5 +1,5 @@
 /**
- * Denied-path revert backstop for the pre-pull reconcile: split out of
+ * Denied-path gate for the pre-pull reconcile: split out of
  * `links.mirror.ts` so the sweep lives beside itself, as the second layer
  * behind `mirrorOneSharedName`'s copy-time filter.
  */
@@ -13,8 +13,8 @@ import { gitProbe } from '../core/git-probe.ts';
 import { warn } from '../core/utils.ts';
 import { backupRepoWrite } from '../core/utils.fs.ts';
 
-/** `git status` snapshot {@link revertDeniedMirrorPaths} acts on; module-private since both call sites pass an object literal. */
-type DeniedRevertStatus = {
+/** `git status` snapshot {@link gateDeniedMirrorPaths} acts on; module-private since both call sites pass an object literal. */
+type DeniedGateStatus = {
   /** Repo-relative tracked paths, including both halves of a rename. */
   tracked: readonly string[];
   /** Repo-relative untracked paths. */
@@ -95,7 +95,7 @@ function reportTrackedDenied(repo: string, path: string, segment: string): void 
     );
     return;
   }
-  if (!existsSync(join(repo, path))) return;
+  if (!presentAt(join(repo, path))) return;
   warn(
     `${path} is tracked and has changes against HEAD: ${denied}. Nothing was changed. Run git checkout HEAD -- "${path}" to put the committed content back, or move the file outside shared/ if you want to keep it. Neither of those takes the committed copy out of the repo: git rm -- "${path}" and a commit does that going forward, and if it holds a real secret, rotate it and rewrite history, because nomad only changes your local worktree and index and cannot scrub what a previous push already sent to the remote`,
   );
@@ -107,11 +107,7 @@ function reportTrackedDenied(repo: string, path: string, segment: string): void 
  * the caller proceeds into the rebase either way. `ts` is the backup
  * timestamp, used only by the untracked (write) half.
  */
-export function revertDeniedMirrorPaths(
-  repo: string,
-  status: DeniedRevertStatus,
-  ts: string,
-): void {
+export function gateDeniedMirrorPaths(repo: string, status: DeniedGateStatus, ts: string): void {
   for (const path of new Set(status.untracked)) {
     const segment = deniedSegmentFor(path);
     if (segment !== null) removeUntrackedDenied(repo, path, segment, ts);
