@@ -127,7 +127,9 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  *     wet pull cannot read it either, so no diff or refusal is computed)
  *   - `'malformed; skipping diff'` when current settings.json is unreadable
  *   - the shared `settingsBlockedMessage` when a live top-level key would be
- *     a promotable ahead-drift key a wet pull would refuse to overwrite
+ *     a promotable ahead-drift key a wet pull would refuse to overwrite, or
+ *     the live file adds a hook entry under a `hooks` key the merge also
+ *     carries
  *
  * When `diff` is `''` and `notes` is empty, the settings section is omitted
  * by the caller.

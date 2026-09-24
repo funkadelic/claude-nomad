@@ -1793,6 +1793,52 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     expect(combined).toContain('nomad capture-settings');
   });
 
+  it('cmdPull deletes a hook entry the incoming commits removed instead of refusing', async () => {
+    const stopHook = { type: 'command', command: 'stop-cmd' };
+    const preHook = { type: 'command', command: 'pre-cmd' };
+    const withBoth = {
+      model: 'sonnet',
+      hooks: {
+        Stop: [{ matcher: '', hooks: [stopHook] }],
+        PreToolUse: [{ matcher: '', hooks: [preHook] }],
+      },
+    };
+    const stopOnly = { model: 'sonnet', hooks: { Stop: [{ matcher: '', hooks: [stopHook] }] } };
+    const { settingsPath } = buildSettingsRemovalWorld(false, {
+      before: withBoth,
+      after: stopOnly,
+      live: withBoth,
+    });
+    const { cmdPull } = await import('./pull.ts');
+    cmdPull();
+    expect(process.exitCode).toBe(0);
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+    expect(JSON.stringify(written.hooks ?? {})).not.toContain('pre-cmd');
+  });
+
+  it('cmdPull still refuses a hook entry once its removal was already pulled and no record exists', async () => {
+    const stopHook = { type: 'command', command: 'stop-cmd' };
+    const preHook = { type: 'command', command: 'pre-cmd' };
+    const withBoth = {
+      model: 'sonnet',
+      hooks: {
+        Stop: [{ matcher: '', hooks: [stopHook] }],
+        PreToolUse: [{ matcher: '', hooks: [preHook] }],
+      },
+    };
+    const stopOnly = { model: 'sonnet', hooks: { Stop: [{ matcher: '', hooks: [stopHook] }] } };
+    const { settingsPath } = buildSettingsRemovalWorld(true, {
+      before: withBoth,
+      after: stopOnly,
+      live: withBoth,
+    });
+    const before = readFileSync(settingsPath, 'utf8');
+    const { cmdPull } = await import('./pull.ts');
+    cmdPull();
+    expect(process.exitCode).toBe(EXIT.SETTINGS_BLOCKED);
+    expect(readFileSync(settingsPath, 'utf8')).toBe(before);
+  });
+
   it('cmdPull preserves local-only .planning file (overlay semantics end-to-end)', async () => {
     const { local, projectRoot } = buildSyncedRepo(tmp);
     process.env.HOME = tmp;

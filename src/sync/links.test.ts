@@ -758,6 +758,92 @@ describe('regenerateSettings (integration)', () => {
       writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(live) + '\n');
       expect(regenerate('20260516-000000').blocked).toEqual(['hooks']);
     });
+
+    const stopEntryHook = { type: 'command', command: 'stop-cmd' };
+    const preEntryHook = { type: 'command', command: 'pre-cmd' };
+
+    /**
+     * First pull writes base hooks Stop + PreToolUse (live matches exactly), so
+     * the base keeps a non-gsd Stop hook after the PreToolUse entry is dropped,
+     * and the merge still carries a `hooks` key for the entry-level gate.
+     */
+    async function writeHooksThenAddEntry(): Promise<(ts: string) => { blocked: string[] }> {
+      const withBoth = {
+        model: 'sonnet',
+        hooks: {
+          Stop: [{ matcher: '', hooks: [stopEntryHook] }],
+          PreToolUse: [{ matcher: '', hooks: [preEntryHook] }],
+        },
+      };
+      writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify(withBoth) + '\n');
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(withBoth) + '\n');
+      const { regenerateSettings } = await import('./links.ts');
+      regenerateSettings('20260516-000000');
+      writeFileSync(
+        join(sharedDir, 'settings.base.json'),
+        JSON.stringify({
+          model: 'sonnet',
+          hooks: { Stop: [{ matcher: '', hooks: [stopEntryHook] }] },
+        }) + '\n',
+      );
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      return regenerateSettings;
+    }
+
+    it('removes a recorded hook entry the repo dropped, keeping the shared hooks key', async () => {
+      const regenerate = await writeHooksThenAddEntry();
+      expect(regenerate('20260516-000000').blocked).toEqual([]);
+      const after = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      expect(JSON.stringify(after.hooks ?? {})).not.toContain('pre-cmd');
+    });
+
+    it('refuses a hook entry edited after the write even though the shared key survives', async () => {
+      const regenerate = await writeHooksThenAddEntry();
+      const live = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as {
+        hooks: { PreToolUse: { hooks: { command: string }[] }[] };
+      };
+      live.hooks.PreToolUse[0].hooks[0].command = 'pre-cmd-v2';
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(live) + '\n');
+      expect(regenerate('20260516-000000').blocked).toEqual(["PreToolUse hook 'pre-cmd-v2'"]);
+    });
+
+    it('refuses a live-only hook entry under a hooks key the merge already carries, no record', async () => {
+      writeFileSync(
+        join(sharedDir, 'settings.base.json'),
+        JSON.stringify({
+          model: 'sonnet',
+          hooks: { Stop: [{ matcher: '', hooks: [stopEntryHook] }] },
+        }) + '\n',
+      );
+      writeFileSync(
+        join(claudeDir, 'settings.json'),
+        JSON.stringify({
+          model: 'sonnet',
+          hooks: {
+            Stop: [{ matcher: '', hooks: [stopEntryHook] }],
+            PreToolUse: [{ matcher: '', hooks: [preEntryHook] }],
+          },
+        }) + '\n',
+      );
+      const before = readFileSync(join(claudeDir, 'settings.json'), 'utf8');
+      const writes: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        writes.push(args.map(String).join(' ') + '\n');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+      const { regenerateSettings } = await import('./links.ts');
+      const result = regenerateSettings('20260516-000000');
+      expect(result.blocked).toEqual(["PreToolUse hook 'pre-cmd'"]);
+      expect(readFileSync(join(claudeDir, 'settings.json'), 'utf8')).toBe(before);
+      expect(writes.join('')).toContain('settings.json left unchanged');
+    });
   });
 
   it('a record in the pre-hash bare-array format falls back to blocking', async () => {
@@ -2376,6 +2462,37 @@ describe('regenerateSettings gsd-hook preservation', () => {
     expect(written.model).toBe('sonnet');
     const event = (written.hooks as Record<string, unknown>).SessionStart as unknown[];
     expect(event).toHaveLength(1);
+    const inner = (event[0] as Record<string, unknown>).hooks as unknown[];
+    expect((inner[0] as Record<string, unknown>).command).toBe('node /a/hooks/gsd-check-update.js');
+  });
+
+  it('a gsd SessionStart hook survives an unblocked pull when the base already carries a different non-gsd hook', async () => {
+    const stopHook = { type: 'command', command: 'stop-cmd' };
+    writeFileSync(
+      join(sharedDir, 'settings.base.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: { Stop: [{ matcher: '', hooks: [stopHook] }] },
+      }) + '\n',
+    );
+    writeFileSync(
+      join(claudeDir, 'settings.json'),
+      JSON.stringify({
+        model: 'sonnet',
+        hooks: {
+          Stop: [{ matcher: '', hooks: [stopHook] }],
+          SessionStart: [{ matcher: '', hooks: [gsdCheckUpdate] }],
+        },
+      }) + '\n',
+    );
+    const { regenerateSettings } = await import('./links.ts');
+    const result = regenerateSettings('20260101-000000');
+    expect(result.blocked).toEqual([]);
+    const written = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const event = (written.hooks as Record<string, unknown>).SessionStart as unknown[];
     const inner = (event[0] as Record<string, unknown>).hooks as unknown[];
     expect((inner[0] as Record<string, unknown>).command).toBe('node /a/hooks/gsd-check-update.js');
   });

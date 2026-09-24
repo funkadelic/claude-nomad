@@ -215,7 +215,8 @@ function readExistingSettings(settingsPath: string): {
 
 /**
  * Report drift between the live `existing` settings and the freshly `merged`
- * result: a promotable ahead-drift key is refused (via `fail`) rather than
+ * result: a promotable ahead-drift key, or a live-only hook entry under a
+ * `hooks` key the merge also carries, is refused (via `fail`) rather than
  * silently overwritten; otherwise a behind-drift key WARNs advising
  * `nomad pull`. The behind WARN is skipped on a refusal, since this pull is
  * not restoring anything. A live-only credential key WARNs by count only.
@@ -264,7 +265,8 @@ function reportSettingsDrift(
  * so pull stops deleting the hooks gsd self-heals each session; the clean path
  * (no gsd hooks in the live file) stays byte-identical. When the live file
  * has promotable top-level keys that neither this merge nor the pre-pull
- * merge has, prints a stderr refusal naming them and skips the write entirely
+ * merge has, or a live-only hook entry under a `hooks` key the merge also
+ * carries, prints a stderr refusal naming them and skips the write entirely
  * (no backup, no atomic write).
  *
  * `opts.dryRun` (default `false`): when `true`, skip the

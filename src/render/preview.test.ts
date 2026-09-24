@@ -293,6 +293,40 @@ describe('previewSettings canonicalization', () => {
     expect(result.notes.at(-1)).toContain('settings.json would be left unchanged');
   });
 
+  it('reports the shared refusal note for a live-only hook entry under a shared hooks key', async () => {
+    writeFileSync(
+      basePath,
+      JSON.stringify(
+        {
+          model: 'opus',
+          hooks: { Stop: [{ matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] }] },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          model: 'opus',
+          hooks: {
+            Stop: [{ matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] }],
+            PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: 'pre-cmd' }] }],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const { previewSettings } = await import('./preview.ts');
+    const result = previewSettings(basePath, hostPath, settingsPath);
+    expect(result.diff).toBe('');
+    expect(result.notes.at(-1)).toContain('settings.json would be left unchanged');
+    expect(result.notes.at(-1)).toContain('PreToolUse hook');
+  });
+
   it('names a key the write would remove as a note beside the diff', async () => {
     writeFileSync(basePath, JSON.stringify({ model: 'opus' }, null, 2));
     writeFileSync(settingsPath, JSON.stringify({ model: 'opus', statusLine: 1 }, null, 2));
