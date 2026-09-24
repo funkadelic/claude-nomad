@@ -151,7 +151,7 @@ export type HookCaptureSources = {
 
 /** Result of `buildHookCaptureSubset`. */
 export type HookCaptureResult = {
-  /** Per-event FULL array to write into the capture destination. */
+  /** Per-event full array to write into the capture destination. */
   hooks: Record<string, unknown[]>;
   /** Host-capture events the host file did not set before this capture. */
   shadowed: string[];
@@ -252,7 +252,7 @@ function hostPriorArray(
 }
 
 /**
- * Host-destination capture: writes the FULL event array (prior entries plus
+ * Host-destination capture: writes the full event array (prior entries plus
  * the live-only ones), unnormalized. Reports an event as `shadowed` when the
  * host file did not set it and the gsd-stripped merged array was non-empty.
  */

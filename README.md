@@ -233,15 +233,16 @@ you have saved or deleted the settings, the next pull proceeds normally.
 When your repo already has hooks and you add another one on this machine, `nomad pull` stops the
 same way. It names the new hook by its event, and by its command too when the command is short
 enough to show, for example `PreToolUse hook 'python3 ~/x.py'`. Save it with
-`nomad capture-settings`, which adds it to the shared hooks for that event. With `--host`, this
-machine's host file gets that event's whole hook list, shared entries included, so later changes to
-that event's hooks in the shared file stop reaching this machine; capture tells you this before it
-writes. If your host file already sets its own hooks for that event, or sets `hooks` to `null`, a
-plain `nomad capture-settings` skips saving the hook there and tells you to add `--host` instead. A
-`--host` capture over `hooks: null` writes the hooks in its place, so the shared hooks for every
-other event reach this machine again; capture warns before it writes. A hook another machine removed
-from the repo is removed here too and named by the pull, the same as any other setting, and
+`nomad capture-settings`, which adds it to the shared hooks for that event. A hook another machine
+removed from the repo is removed here too and named by the pull, the same as any other setting, and
 `nomad capture-settings` does not save it back.
+
+With `--host`, capture writes that event's whole hook list, shared entries included, into this
+machine's host file. Later changes to that event's hooks in the shared file then stop reaching this
+machine, and capture warns you before it writes. If your host file already sets its own hooks for
+that event, or sets `hooks` to `null`, a plain `nomad capture-settings` does not save the hook and
+tells you to add `--host`. A `--host` capture over `hooks: null` replaces the `null`, so the shared
+hooks for every other event reach this machine again, and capture warns about that too.
 
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
