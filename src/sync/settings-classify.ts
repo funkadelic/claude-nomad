@@ -1,17 +1,11 @@
 /**
- * Pure, filesystem-free core for direction-aware settings drift detection and
- * the capture-settings command.
- *
- * Exports:
- * - `SettingsDrift`: direction-named partition of settings key divergence.
- * - `classifySettingsDrift`: pure classifier, no fs.
- * - `buildCaptureSubset`: key/value subset to promote from live settings into base or host.
- * - `normalizeNodePathsDeep`: rewrite absolute node launcher paths to bare `node`.
- * - `CAPTURE_EXCLUDED_KEYS`: sensitive keys never eligible for capture.
+ * Pure, filesystem-free settings drift classification shared by pull, push,
+ * doctor and capture-settings: which top-level keys are ahead, behind or
+ * changed, which are excluded from capture, and the subset capture promotes.
  */
 
-import { isProtoPollutionKey } from '../../core/utils.json.ts';
-import { stripGsdHookEntries } from '../../sync/hooks-filter.ts';
+import { isProtoPollutionKey } from '../core/utils.json.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
 
 // ---------------------------------------------------------------------------
 // Deep-equality helpers (dep-free). This module owns the single drift

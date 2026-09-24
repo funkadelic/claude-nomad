@@ -2,7 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
-import { classifySettingsDrift, partitionByCaptureExclusion } from '../../capture-settings/core.ts';
+import {
+  classifySettingsDrift,
+  partitionByCaptureExclusion,
+} from '../../../sync/settings-classify.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
 import { baseHasGsdHookEntries } from '../../../sync/hooks-filter.ts';
@@ -39,7 +42,7 @@ export type SettingsDiff = {
  * Pure comparator in doctor's local vocabulary (`missing`/`changed`/`extra`).
  *
  * This is a thin adapter over `classifySettingsDrift` (the single shared
- * classifier in `commands.capture-settings.core.ts`): the core's `behind`
+ * classifier in `sync/settings-classify.ts`): the core's `behind`
  * bucket is doctor's `missing`, and the core's `ahead` bucket is doctor's
  * `extra`. Keeping one classifier prevents the doctor and capture/push surfaces
  * from drifting apart; the rename preserves doctor's stable public shape and
