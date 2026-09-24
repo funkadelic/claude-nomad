@@ -328,3 +328,35 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      # The README test-count badge reads its number from a gist, so a new count
+      # costs no commit. Only a push to main on the ubuntu node-24 leg publishes,
+      # so the other legs and open PRs never change it. GIST_TOKEN is a personal
+      # access token with the gist scope; GITHUB_TOKEN cannot write gists.
+      - name: Count tests
+        id: test-count
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && steps.gate.outputs.skip != 'true'
+          && matrix.os == 'ubuntu-latest' && matrix.node-version == '24' }}
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          if [ -z "$GIST_TOKEN" ]; then
+            echo "GIST_TOKEN is not set; leaving the badge at its last value."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          node -e 'const x = require("fs").readFileSync(process.argv[1], "utf8"); console.log("count=" + /<testsuites\b[^>]*\stests="(\d+)"/.exec(x)[1]);' "$JUNIT_REPORT" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the test-count badge
+        if: steps.test-count.outputs.publish == 'true'
+        uses: schneegans/dynamic-badges-action@28b0fa8bdeb46170ac397105ece0c1fe58f68910 # v1.9.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: e814bc9b80ce48781f29b860011051d9
+          filename: claude-nomad-tests.json
+          label: tests
+          message: ${{ steps.test-count.outputs.count }}
+          color: blue
