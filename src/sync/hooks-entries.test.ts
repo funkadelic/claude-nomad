@@ -144,6 +144,23 @@ describe('buildHookCaptureSubset (base destination)', () => {
     expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry] });
   });
 
+  it('groups two live-only entries under one event, and two live-only inner hooks in one entry', () => {
+    const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
+    const yEntry = {
+      matcher: 'Edit',
+      hooks: [
+        { type: 'command', command: 'y1-cmd' },
+        { type: 'command', command: 'y2-cmd' },
+      ],
+    };
+    const live = { hooks: { Stop: [stopEntry, xEntry, yEntry] } };
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: live },
+      false,
+    );
+    expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry, yEntry] });
+  });
+
   it('contributes only the new inner hook from a matcher entry mixing merge-carried and live-only', () => {
     const xHook = { type: 'command', command: 'x-cmd' };
     const live = { hooks: { Stop: [{ matcher: '', hooks: [stopHook, xHook] }] } };
@@ -189,6 +206,74 @@ describe('buildHookCaptureSubset (base destination)', () => {
     );
     expect(result.hooks).toEqual({});
     expect(result.skipped).toEqual([]);
+  });
+});
+
+describe('buildHookCaptureSubset (host destination)', () => {
+  const stopEntry = { matcher: '', hooks: [stopHook] };
+  const base = { hooks: { Stop: [stopEntry] } };
+  const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
+
+  it('writes the full merged array and shadows an event the host had not set', () => {
+    const live = { hooks: { Stop: [stopEntry, xEntry] } };
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: live },
+      true,
+    );
+    expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry] });
+    expect(result.shadowed).toEqual(['Stop']);
+  });
+
+  it('appends to the array the host file already sets, without shadowing', () => {
+    const hostEntry = { matcher: '', hooks: [{ type: 'command', command: 'host-cmd' }] };
+    const overrides = { hooks: { Stop: [hostEntry] } };
+    const merged = { hooks: { Stop: [hostEntry] } };
+    const live = { hooks: { Stop: [hostEntry, xEntry] } };
+    const result = buildHookCaptureSubset({ base, overrides, merged, settings: live }, true);
+    expect(result.hooks).toEqual({ Stop: [hostEntry, xEntry] });
+    expect(result.shadowed).toEqual([]);
+  });
+
+  it('captures a new event the merge lacks with no shadow', () => {
+    const live = {
+      hooks: { Stop: [stopEntry], PreToolUse: [{ matcher: '', hooks: [preToolHook] }] },
+    };
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: live },
+      true,
+    );
+    expect(result.hooks).toEqual({ PreToolUse: [{ matcher: '', hooks: [preToolHook] }] });
+    expect(result.shadowed).toEqual([]);
+  });
+
+  it('keeps an absolute launcher path as written (no normalization)', () => {
+    const nodePath = '/home/user/.nvm/versions/node/v22/bin/node';
+    const live = {
+      hooks: {
+        Stop: [stopEntry],
+        PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: nodePath }] }],
+      },
+    };
+    const result = buildHookCaptureSubset(
+      { base, overrides: {}, merged: base, settings: live },
+      true,
+    );
+    const captured = result.hooks.PreToolUse[0] as { hooks: [{ command: string }] };
+    expect(captured.hooks[0].command).toBe(nodePath);
+  });
+
+  it('copies the prior array from the gsd-stripped merge, excluding a gsd entry', () => {
+    const gsdEntry = {
+      matcher: '',
+      hooks: [{ type: 'command', command: 'node /a/hooks/gsd-x.js' }],
+    };
+    const baseWithGsd = { hooks: { Stop: [gsdEntry, stopEntry] } };
+    const live = { hooks: { Stop: [gsdEntry, stopEntry, xEntry] } };
+    const result = buildHookCaptureSubset(
+      { base: baseWithGsd, overrides: {}, merged: baseWithGsd, settings: live },
+      true,
+    );
+    expect(result.hooks).toEqual({ Stop: [stopEntry, xEntry] });
   });
 });
 

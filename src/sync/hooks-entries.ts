@@ -223,11 +223,46 @@ function buildBaseHookCapture(sources: HookCaptureSources): HookCaptureResult {
   return { hooks, shadowed: [], skipped };
 }
 
-/** Per-event hook-entry subset for `nomad capture-settings` (base destination only so far). */
+/**
+ * The prior array for one host-capture event: the host file's own array when
+ * it set one, else the gsd-stripped merged array (or `[]`); also reports
+ * whether the host file set the event itself.
+ */
+function hostPriorArray(
+  hostHooks: Record<string, unknown>,
+  mergedHooks: Record<string, unknown>,
+  event: string,
+): { array: unknown[]; setByHost: boolean } {
+  const hostArr = hostHooks[event];
+  if (Array.isArray(hostArr)) return { array: hostArr, setByHost: true };
+  const mergedArr = mergedHooks[event];
+  return { array: Array.isArray(mergedArr) ? mergedArr : [], setByHost: false };
+}
+
+/**
+ * Host-destination capture: writes the FULL event array (prior entries plus
+ * the live-only ones), unnormalized. Reports an event as `shadowed` when the
+ * host file did not set it and the gsd-stripped merged array was non-empty.
+ */
+function buildHostHookCapture(sources: HookCaptureSources): HookCaptureResult {
+  const liveOnly = liveOnlyHookEntries(sources.merged, sources.settings);
+  const hostHooks = hooksBlockOf(sources.overrides);
+  const mergedHooks = hooksBlockOf(stripGsdHookEntries(sources.merged));
+  const hooks: Record<string, unknown[]> = {};
+  const shadowed: string[] = [];
+  for (const [event, entries] of groupByEvent(liveOnly)) {
+    const { array: priorArr, setByHost } = hostPriorArray(hostHooks, mergedHooks, event);
+    if (!setByHost && priorArr.length > 0) shadowed.push(event);
+    hooks[event] = [...priorArr, ...appendedMatcherEntries(entries)];
+  }
+  return { hooks, shadowed, skipped: [] };
+}
+
+/** Per-event hook-entry subset `nomad capture-settings` writes to the destination. */
 export function buildHookCaptureSubset(
   sources: HookCaptureSources,
   useHost: boolean,
 ): HookCaptureResult {
   // eslint-disable-next-line sonarjs/no-selector-parameter -- mirrors buildCaptureSubset's caller
-  return useHost ? { hooks: {}, shadowed: [], skipped: [] } : buildBaseHookCapture(sources);
+  return useHost ? buildHostHookCapture(sources) : buildBaseHookCapture(sources);
 }
