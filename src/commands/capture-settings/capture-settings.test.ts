@@ -522,6 +522,50 @@ describe('cmdCaptureSettings', () => {
       expect(logs.join('\n')).not.toContain('nothing to capture');
     });
 
+    it('keeps a skipped hook in the live file when a base capture still writes another key', async () => {
+      const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
+      const hostStopEntry = { matcher: '', hooks: [{ type: 'command', command: 'host-cmd' }] };
+      const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [stopEntry] } }) + '\n');
+      writeFileSync(
+        join(env.hostsDir, 'test-host.json'),
+        JSON.stringify({ hooks: { Stop: [hostStopEntry] } }) + '\n',
+      );
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({
+          statusLine: { type: 'command', command: 's' },
+          hooks: { Stop: [hostStopEntry, xEntry] },
+        }) + '\n',
+      );
+
+      const writes: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        writes.push(args.map(String).join(' ') + '\n');
+      });
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
+      expect(base.statusLine).toEqual({ type: 'command', command: 's' });
+      const live = JSON.parse(readFileSync(env.settingsPath, 'utf8')) as {
+        hooks: { Stop: unknown[] };
+      };
+      expect(live.hooks.Stop).toEqual([hostStopEntry, xEntry]);
+      expect(writes.join('')).toContain('settings.json left unchanged');
+
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+      const hostFile = JSON.parse(readFileSync(join(env.hostsDir, 'test-host.json'), 'utf8')) as {
+        hooks: { Stop: unknown[] };
+      };
+      expect(hostFile.hooks.Stop).toEqual([hostStopEntry, xEntry]);
+    });
+
     it('--host writes the full event array and warns about the base-edit trade-off', async () => {
       const stopEntry = { matcher: '', hooks: [{ type: 'command', command: 'stop-cmd' }] };
       const xEntry = { matcher: 'Write', hooks: [{ type: 'command', command: 'x-cmd' }] };

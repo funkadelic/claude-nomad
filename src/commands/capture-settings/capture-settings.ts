@@ -202,11 +202,18 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     backupRepoWrite(destPath, ts, repo);
     writeJsonAtomic(destPath, newContent);
 
-    // Resync the local file from the now-updated repo source. Suppress the
-    // pull-side drift WARN: re-advising 'nomad capture-settings' in the run that
-    // just captured would be contradictory, and any keys still classified ahead
-    // here are the excluded credential keys that capture intentionally refuses.
-    regenerateSettings(ts, { suppressDriftWarn: true });
+    if (skipped.length > 0) {
+      // A regenerate would delete the skipped hooks from the live file before they are saved.
+      warn(
+        "settings.json left unchanged so the skipped hooks stay; run 'nomad capture-settings " +
+          "--host' to save them, then pull",
+      );
+    } else {
+      // Resync the local file from the now-updated repo source. Suppress the
+      // pull-side drift WARN: re-advising 'nomad capture-settings' in the run
+      // that just captured would be contradictory.
+      regenerateSettings(ts, { suppressDriftWarn: true });
+    }
     log(`captured ${keys.length} key(s) into ${dest} (backup: ${ts})`);
   } finally {
     // Release the lock on every exit path. Any NomadFatal propagates to the
