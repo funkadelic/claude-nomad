@@ -1,5 +1,6 @@
 import { failGlyph, warnGlyph } from '../../render/color.ts';
 import { isChild, type DoctorSection } from '../../render/output-tree.ts';
+import { UNPUBLISHED_MARKER } from './checks/repo.win32.ts';
 
 /**
  * Section headers kept in full in the compact view. `Nomad Version` and
@@ -58,11 +59,11 @@ function isCopySyncModalityLine(item: string): boolean {
  * True for the win32 unpublished-name row (`win32CopyUnpublishedRow`). The row
  * is informational, but without it the only sign of an unpublished name is a
  * directory missing on another host, so it stays visible without `--verbose`.
- * Matches on the row's `UNPUBLISHED_MARKER` text, so this stays a pure
- * function of its argument.
+ * Matches on `UNPUBLISHED_MARKER`, so this stays a pure function of its
+ * argument.
  */
 function isUnpublishedLine(item: string): boolean {
-  return item.includes('real local copy, not published');
+  return item.includes(UNPUBLISHED_MARKER);
 }
 
 /** The keep-rule for every non-Environment section. */
