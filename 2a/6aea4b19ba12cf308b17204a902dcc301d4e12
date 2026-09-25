@@ -1,0 +1,25 @@
+src/sync/extras/extras.test.ts
+  s_8906e34969e3d7::t_1104dc96d3ea27 402
+src/sync/extras/extras.ts
+  s_8906e34969e3d7::t_1104dc96d3ea27 44
+src/sync/extras/planning-deletes.ts
+  s_8906e34969e3d7::t_1104dc96d3ea27 140
+src/sync/extras/pull.test.ts
+  s_8906e34969e3d7::t_1104dc96d3ea27 1142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a6aea4b19ba12cf308b17204a902dcc301d4e12",
+  "prompts": {},
+  "sessions": {
+    "s_8906e34969e3d7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9490214a-4f64-49a0-a081-fcf5be1c61b9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
