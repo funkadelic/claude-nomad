@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.69.5](https://github.com/funkadelic/claude-nomad/compare/v0.69.4...v0.69.5) (2026-09-25)
+
+
+### Fixed
+
+* **doctor:** show unpublished shared folders without --verbose ([#642](https://github.com/funkadelic/claude-nomad/issues/642)) ([7128c4b](https://github.com/funkadelic/claude-nomad/commit/7128c4ba42768b6b6ca92ac56b5d783e487ae9f8))
+* **extras:** stop previews naming a backup path they never write ([#641](https://github.com/funkadelic/claude-nomad/issues/641)) ([20cc9e7](https://github.com/funkadelic/claude-nomad/commit/20cc9e7830440373bd8e830b506f803c8ba00e24))
+
+
+### Changed
+
+* pass the app token's client-id instead of the deprecated app-id ([#639](https://github.com/funkadelic/claude-nomad/issues/639)) ([5e81d04](https://github.com/funkadelic/claude-nomad/commit/5e81d042a18cde889787ae50c263aca065225c41))
+
 ## [0.69.4](https://github.com/funkadelic/claude-nomad/compare/v0.69.3...v0.69.4) (2026-09-24)
 
 
