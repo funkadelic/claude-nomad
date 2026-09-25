@@ -322,13 +322,13 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
    * output and the returned both-sides-modified count. Shared by the warn-line
    * grammar cases below.
    */
-  async function runDivergence(): Promise<{ text: string; count: number }> {
+  async function runDivergence(dryRun = false): Promise<{ text: string; count: number }> {
     const warnLines: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       warnLines.push(args.map(String).join(' '));
     });
     const { divergenceCheckExtras } = await import('./extras.ts');
-    const count = divergenceCheckExtras('20260516-000000');
+    const count = divergenceCheckExtras('20260516-000000', undefined, dryRun);
     return { text: warnLines.join('\n'), count };
   }
 
@@ -385,6 +385,23 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     expect(combined).not.toContain('overwrite');
     expect(combined).toContain('your current file is backed up to');
     expect(count).toBe(1);
+  });
+
+  it('names no backup path on a preview, since a preview writes none', async () => {
+    const projectRoot = join(testHome, 'proj-preview');
+    const localPlanning = join(projectRoot, '.planning');
+    mkdirSync(localPlanning, { recursive: true });
+    writeFileSync(join(localPlanning, 'a.md'), 'local-a\n');
+    const repoExtras = join(testRepo, 'shared', 'extras', 'testproj', '.planning');
+    mkdirSync(repoExtras, { recursive: true });
+    writeFileSync(join(repoExtras, 'a.md'), 'repo-a\n');
+    writePathMap(projectRoot, ['.planning']);
+
+    const { text } = await runDivergence(true);
+    expect(text).toContain(
+      '(push to reconcile; your current file will be backed up first when the pull runs)',
+    );
+    expect(text).not.toContain('backed up to');
   });
 
   it('warns "file" for a single-file extra (CLAUDE.md) divergence', async () => {
