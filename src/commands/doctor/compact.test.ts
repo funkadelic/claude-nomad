@@ -152,4 +152,9 @@ describe('compactSections unpublished-name row', () => {
     ]);
     expect(out.items).toEqual([unpublished]);
   });
+
+  it('drops the same text in any other section', () => {
+    const [out] = compactSections([sec('Settings', [info(`key ${UNPUBLISHED_MARKER} (x)`)])]);
+    expect(out.items).toEqual([]);
+  });
 });

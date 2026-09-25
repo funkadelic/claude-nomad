@@ -186,7 +186,8 @@ function gatherDoctorSections(opts: {
  * `opts.verbose` (the `--verbose` / `--all` / `-v` flag) restores the full
  * per-check tree. By default the report is collapsed via `compactSections` to
  * the Nomad Version row, the Environment repo-state line, any section carrying a
- * WARN/FAIL (OK/info rows stripped), and the Summary verdict. Filtering is
+ * WARN/FAIL (OK/info rows stripped, except the win32 unpublished-name row in
+ * Shared links), and the Summary verdict. Filtering is
  * purely presentational and runs after gathering, so the FAIL exit code set by
  * reporters is unaffected in either mode.
  *

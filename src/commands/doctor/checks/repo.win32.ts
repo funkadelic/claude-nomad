@@ -7,10 +7,10 @@
  *
  * Split out of `commands/doctor/checks/repo.ts` so that reporter is not
  * carrying a platform-specific content compare it reaches through a single
- * call. Nothing here is exported except that call and the row shape: the three
- * row builders and both path helpers are reachable only through
- * `classifyWin32Copy`, which is what keeps this a leaf rather than a second
- * doctor surface.
+ * call. Nothing here is exported except that call, the row shape and
+ * `UNPUBLISHED_MARKER` (read by `compactSections`): the three row builders and
+ * both path helpers are reachable only through `classifyWin32Copy`, which is
+ * what keeps this a leaf rather than a second doctor surface.
  */
 
 import { join, win32 as win32Path } from 'node:path';

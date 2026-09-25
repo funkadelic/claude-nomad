@@ -66,8 +66,8 @@ function isUnpublishedLine(item: string): boolean {
   return item.includes(UNPUBLISHED_MARKER);
 }
 
-/** The keep-rule for every non-Environment section. */
-function isKeptRow(item: string): boolean {
+/** The Shared links keep-rule: WARN/FAIL rows plus the unpublished-name row. */
+function isKeptLinksRow(item: string): boolean {
   return isProblem(item) || isUnpublishedLine(item);
 }
 
@@ -78,6 +78,12 @@ function isKeptRow(item: string): boolean {
 function isKeptEnvironmentRow(item: string): boolean {
   return isRepoStateLine(item) || isCopySyncModalityLine(item) || isProblem(item);
 }
+
+/** Per-section keep-rules; any section not listed keeps only WARN/FAIL rows. */
+const KEEP_RULES = new Map<string, (item: string) => boolean>([
+  ['Environment', isKeptEnvironmentRow],
+  ['Shared links', isKeptLinksRow],
+]);
 
 /**
  * Filter a section's items by `keep`, carrying each retained row's nested child
@@ -112,9 +118,10 @@ function keepWithChildren(items: string[], keep: (item: string) => boolean): str
  * - `ALWAYS_FULL` sections pass through unchanged.
  * - `Environment` keeps the repo-state row, the copy-sync modality row
  *   (see `isCopySyncModalityLine`), plus any WARN/FAIL rows.
- * - every other section keeps its WARN/FAIL rows plus the unpublished-name
- *   row (see `isUnpublishedLine`); an emptied section is skipped by
- *   `renderTree` (it renders no zero-item sections).
+ * - `Shared links` also keeps the unpublished-name row (see
+ *   `isUnpublishedLine`).
+ * - every other section keeps only its WARN/FAIL rows; an emptied section is
+ *   skipped by `renderTree` (it renders no zero-item sections).
  * - a retained row keeps its nested child rows (see `keepWithChildren`), so a
  *   count and the names behind it stay together.
  *
@@ -124,7 +131,7 @@ function keepWithChildren(items: string[], keep: (item: string) => boolean): str
 export function compactSections(sections: DoctorSection[]): DoctorSection[] {
   return sections.map((s) => {
     if (ALWAYS_FULL.has(s.header)) return s;
-    const keep = s.header === 'Environment' ? isKeptEnvironmentRow : isKeptRow;
+    const keep = KEEP_RULES.get(s.header) ?? isProblem;
     return { ...s, items: keepWithChildren(s.items, keep) };
   });
 }
