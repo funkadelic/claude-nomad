@@ -481,7 +481,8 @@ sets `process.exitCode = 1` (`⚠︎` does not). Output ends with a **Summary** 
 every warning and failure and closes with a one-line verdict (`✓ healthy`, or warning/failure
 counts), so the last line always answers "am I healthy?". By default the report is compact: only the
 version line, the Environment repo-state line, any section carrying a warning or failure (passing
-rows removed), and the Summary are shown. Add `--verbose` (alias `--all`, `-v`) to print the full
+rows removed), the two Windows-only info rows described below, and the Summary are shown. Add
+`--verbose` (alias `--all`, `-v`) to print the full
 per-check tree, including everything that passed. The exit code is identical in both modes. Includes
 a release-version staleness check (an info line says when the latest version could not be
 determined, so a skipped check is not mistaken for "current"), a Hook targets check that fails (`✗`,
