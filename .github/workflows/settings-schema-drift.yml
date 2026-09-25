@@ -34,7 +34,7 @@ jobs:
         with:
           # The RELEASE_PLEASE_* secrets hold the funkadelic-release-bot App
           # credentials (the same App that authors the release-please PRs).
-          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
