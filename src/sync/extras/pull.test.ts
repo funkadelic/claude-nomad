@@ -1139,7 +1139,7 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
 
     const output = writes.join('\n');
     expect(output).toContain('keeping locally-edited');
-    expect(output).toContain('your copy will be backed up first when the pull runs');
+    expect(output).toContain('your copy will be backed up when you pull');
     expect(output).not.toContain('your copy is backed up');
     expect(output).toContain('DELETE-ME.md');
     // Read-only: the local file is untouched by the preview.

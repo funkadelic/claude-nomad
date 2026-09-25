@@ -41,7 +41,7 @@ function divergenceWarnLine(o: {
   const yours = one ? 'your current file' : 'your current files';
   const verb = one ? 'is' : 'are';
   const backup = o.dryRun
-    ? 'will be backed up first when the pull runs'
+    ? 'will be backed up when you pull'
     : `${verb} backed up to ${o.projectBackupRoot}/`;
   return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step will keep your local copy (push to reconcile; ${yours} ${backup})`;
 }

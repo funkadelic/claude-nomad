@@ -399,7 +399,7 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
 
     const { text } = await runDivergence(true);
     expect(text).toContain(
-      '(push to reconcile; your current file will be backed up first when the pull runs)',
+      '(push to reconcile; your current file will be backed up when you pull)',
     );
     expect(text).not.toContain('backed up to');
   });

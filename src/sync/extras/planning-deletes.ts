@@ -137,7 +137,7 @@ function deletePairsFor(t: ExtrasTarget, raw: string): DeletePair[] {
  * backup clause, since a preview writes no backup.
  */
 export function keptDeleteWarnLine(logical: string, relToLocal: string, dryRun = false): string {
-  const backup = dryRun ? 'will be backed up first when the pull runs' : 'is backed up';
+  const backup = dryRun ? 'will be backed up when you pull' : 'is backed up';
   return (
     `keeping locally-edited ${relToLocal} in ${logical}: deleted upstream but ` +
     `changed locally (push to reconcile; your copy ${backup})`
