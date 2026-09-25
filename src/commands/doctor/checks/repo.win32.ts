@@ -46,6 +46,9 @@ function win32CopyOkRow(name: string, exempt = 0): SharedLinkClassification {
   return { line: `${green(okGlyph)} ${name}: real copy (win32 copy-sync)${note}`, fail: false };
 }
 
+/** Fixed text of the unpublished-name row; `compactSections` matches on it. */
+export const UNPUBLISHED_MARKER = 'real local copy, not published';
+
 /**
  * The win32 copy-sync unpublished-name row: a real local copy at
  * `~/.claude/<name>` with no `shared/<name>` counterpart in the repo.
@@ -57,14 +60,15 @@ function win32CopyOkRow(name: string, exempt = 0): SharedLinkClassification {
  * (`links.mirror.ts`) never creates a repo counterpart for a name the repo
  * does not already carry: without this row, the only symptom of an
  * unpublished name is its absence on another machine, with nothing on this
- * one pointing at the cause or the fix.
+ * one pointing at the cause or the fix. So `compactSections` keeps it in the
+ * default view, unlike other informational Links rows.
  *
  * Never sets `process.exitCode`, matching every other informational Links
  * row (`not synced (nothing in shared/)`, a stale symlink, ...).
  */
 function win32CopyUnpublishedRow(name: string): SharedLinkClassification {
   return {
-    line: `${dim(infoGlyph)} ${name}: real local copy, not published (run \`nomad adopt ${name}\` to share it)`,
+    line: `${dim(infoGlyph)} ${name}: ${UNPUBLISHED_MARKER} (run \`nomad adopt ${name}\` to share it)`,
     fail: false,
   };
 }

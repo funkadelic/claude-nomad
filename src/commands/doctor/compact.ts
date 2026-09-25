@@ -55,6 +55,22 @@ function isCopySyncModalityLine(item: string): boolean {
 }
 
 /**
+ * True for the win32 unpublished-name row (`win32CopyUnpublishedRow`). The row
+ * is informational, but without it the only sign of an unpublished name is a
+ * directory missing on another host, so it stays visible without `--verbose`.
+ * Matches on the row's `UNPUBLISHED_MARKER` text, so this stays a pure
+ * function of its argument.
+ */
+function isUnpublishedLine(item: string): boolean {
+  return item.includes('real local copy, not published');
+}
+
+/** The keep-rule for every non-Environment section. */
+function isKeptRow(item: string): boolean {
+  return isProblem(item) || isUnpublishedLine(item);
+}
+
+/**
  * The Environment keep-rule: the repo-state row, the copy-sync modality row,
  * and anything carrying a WARN or FAIL glyph.
  */
@@ -95,8 +111,9 @@ function keepWithChildren(items: string[], keep: (item: string) => boolean): str
  * - `ALWAYS_FULL` sections pass through unchanged.
  * - `Environment` keeps the repo-state row, the copy-sync modality row
  *   (see `isCopySyncModalityLine`), plus any WARN/FAIL rows.
- * - every other section keeps only its WARN/FAIL rows; an emptied section is
- *   skipped by `renderTree` (it renders no zero-item sections).
+ * - every other section keeps its WARN/FAIL rows plus the unpublished-name
+ *   row (see `isUnpublishedLine`); an emptied section is skipped by
+ *   `renderTree` (it renders no zero-item sections).
  * - a retained row keeps its nested child rows (see `keepWithChildren`), so a
  *   count and the names behind it stay together.
  *
@@ -106,7 +123,7 @@ function keepWithChildren(items: string[], keep: (item: string) => boolean): str
 export function compactSections(sections: DoctorSection[]): DoctorSection[] {
   return sections.map((s) => {
     if (ALWAYS_FULL.has(s.header)) return s;
-    const keep = s.header === 'Environment' ? isKeptEnvironmentRow : isProblem;
+    const keep = s.header === 'Environment' ? isKeptEnvironmentRow : isKeptRow;
     return { ...s, items: keepWithChildren(s.items, keep) };
   });
 }
