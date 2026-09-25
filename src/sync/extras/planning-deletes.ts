@@ -133,12 +133,14 @@ function deletePairsFor(t: ExtrasTarget, raw: string): DeletePair[] {
 
 /**
  * The user-facing WARN naming a `.planning` file kept on a delete-vs-edit
- * conflict. Shared so the wet pull and `pull --dry-run` word it identically.
+ * conflict. Shared by the wet pull and `pull --dry-run`; `dryRun` rewords the
+ * backup clause, since a preview writes no backup.
  */
-export function keptDeleteWarnLine(logical: string, relToLocal: string): string {
+export function keptDeleteWarnLine(logical: string, relToLocal: string, dryRun = false): string {
+  const backup = dryRun ? 'will be backed up first when the pull runs' : 'is backed up';
   return (
     `keeping locally-edited ${relToLocal} in ${logical}: deleted upstream but ` +
-    `changed locally (push to reconcile; your copy is backed up)`
+    `changed locally (push to reconcile; your copy ${backup})`
   );
 }
 

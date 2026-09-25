@@ -120,7 +120,7 @@ export function divergenceCheckExtras(
   // Delete-vs-edit keep-local preview (dry-run only; see the JSDoc note above).
   if (prePostHeads !== undefined) {
     for (const { logical, relToLocal } of keptDeletePreview(v, prePostHeads, repo)) {
-      warn(keptDeleteWarnLine(logical, relToLocal));
+      warn(keptDeleteWarnLine(logical, relToLocal, dryRun));
     }
   }
   return divergedCount;
