@@ -3,6 +3,12 @@
 ## [0.69.5](https://github.com/funkadelic/claude-nomad/compare/v0.69.4...v0.69.5) (2026-09-25)
 
 
+### What's new
+
+* On native Windows, `nomad doctor` now lists a shared folder you have not published yet, and the `nomad adopt` command to share it, without `--verbose`.
+* `nomad diff` and `nomad pull --dry-run` now say your local copy will be backed up when you pull, instead of naming a backup folder that does not exist yet.
+
+
 ### Fixed
 
 * **doctor:** show unpublished shared folders without --verbose ([#642](https://github.com/funkadelic/claude-nomad/issues/642)) ([7128c4b](https://github.com/funkadelic/claude-nomad/commit/7128c4ba42768b6b6ca92ac56b5d783e487ae9f8))
