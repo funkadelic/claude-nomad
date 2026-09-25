@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { compactSections } from './compact.ts';
 import { MODALITY_COPY_SYNC, MODALITY_SYMLINK } from './checks/longpaths.ts';
+import { UNPUBLISHED_MARKER } from './checks/repo.win32.ts';
 import { failGlyph, okGlyph, warnGlyph, infoGlyph } from '../../render/color.ts';
 import { type DoctorSection } from '../../render/output-tree.ts';
 
@@ -134,5 +135,26 @@ describe('compactSections sync-modality row', () => {
   it('still drops other informational Environment rows alongside the kept one', () => {
     const [out] = compactSections([sec('Environment', [copySync, info('NOMAD_REPO: /tmp/x')])]);
     expect(out.items).toEqual([copySync]);
+  });
+});
+
+// The win32 unpublished-name row is informational, but compact mode keeps it,
+// because otherwise the only sign of the problem is a directory missing on
+// another host.
+describe('compactSections unpublished-name row', () => {
+  const unpublished = info(
+    `commands: ${UNPUBLISHED_MARKER} (run \`nomad adopt commands\` to share it)`,
+  );
+
+  it('keeps the unpublished-name row in Shared links and drops other info rows', () => {
+    const [out] = compactSections([
+      sec('Shared links', [ok('CLAUDE.md: symlink ok'), unpublished, info('rules: not synced')]),
+    ]);
+    expect(out.items).toEqual([unpublished]);
+  });
+
+  it('drops the same text in any other section', () => {
+    const [out] = compactSections([sec('Settings', [info(`key ${UNPUBLISHED_MARKER} (x)`)])]);
+    expect(out.items).toEqual([]);
   });
 });

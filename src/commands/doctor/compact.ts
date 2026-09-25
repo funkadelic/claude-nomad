@@ -1,5 +1,6 @@
 import { failGlyph, warnGlyph } from '../../render/color.ts';
 import { isChild, type DoctorSection } from '../../render/output-tree.ts';
+import { UNPUBLISHED_MARKER } from './checks/repo.win32.ts';
 
 /**
  * Section headers kept in full in the compact view. `Nomad Version` and
@@ -55,12 +56,34 @@ function isCopySyncModalityLine(item: string): boolean {
 }
 
 /**
+ * True for the win32 unpublished-name row (`win32CopyUnpublishedRow`). The row
+ * is informational, but without it the only sign of an unpublished name is a
+ * directory missing on another host, so it stays visible without `--verbose`.
+ * Matches on `UNPUBLISHED_MARKER`, so this stays a pure function of its
+ * argument.
+ */
+function isUnpublishedLine(item: string): boolean {
+  return item.includes(UNPUBLISHED_MARKER);
+}
+
+/** The Shared links keep-rule: WARN/FAIL rows plus the unpublished-name row. */
+function isKeptLinksRow(item: string): boolean {
+  return isProblem(item) || isUnpublishedLine(item);
+}
+
+/**
  * The Environment keep-rule: the repo-state row, the copy-sync modality row,
  * and anything carrying a WARN or FAIL glyph.
  */
 function isKeptEnvironmentRow(item: string): boolean {
   return isRepoStateLine(item) || isCopySyncModalityLine(item) || isProblem(item);
 }
+
+/** Per-section keep-rules; any section not listed keeps only WARN/FAIL rows. */
+const KEEP_RULES = new Map<string, (item: string) => boolean>([
+  ['Environment', isKeptEnvironmentRow],
+  ['Shared links', isKeptLinksRow],
+]);
 
 /**
  * Filter a section's items by `keep`, carrying each retained row's nested child
@@ -95,6 +118,8 @@ function keepWithChildren(items: string[], keep: (item: string) => boolean): str
  * - `ALWAYS_FULL` sections pass through unchanged.
  * - `Environment` keeps the repo-state row, the copy-sync modality row
  *   (see `isCopySyncModalityLine`), plus any WARN/FAIL rows.
+ * - `Shared links` also keeps the unpublished-name row (see
+ *   `isUnpublishedLine`).
  * - every other section keeps only its WARN/FAIL rows; an emptied section is
  *   skipped by `renderTree` (it renders no zero-item sections).
  * - a retained row keeps its nested child rows (see `keepWithChildren`), so a
@@ -106,7 +131,7 @@ function keepWithChildren(items: string[], keep: (item: string) => boolean): str
 export function compactSections(sections: DoctorSection[]): DoctorSection[] {
   return sections.map((s) => {
     if (ALWAYS_FULL.has(s.header)) return s;
-    const keep = s.header === 'Environment' ? isKeptEnvironmentRow : isProblem;
+    const keep = KEEP_RULES.get(s.header) ?? isProblem;
     return { ...s, items: keepWithChildren(s.items, keep) };
   });
 }

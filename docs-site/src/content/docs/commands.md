@@ -481,7 +481,8 @@ sets `process.exitCode = 1` (`⚠︎` does not). Output ends with a **Summary** 
 every warning and failure and closes with a one-line verdict (`✓ healthy`, or warning/failure
 counts), so the last line always answers "am I healthy?". By default the report is compact: only the
 version line, the Environment repo-state line, any section carrying a warning or failure (passing
-rows removed), and the Summary are shown. Add `--verbose` (alias `--all`, `-v`) to print the full
+rows removed), the two Windows-only info rows described below, and the Summary are shown. Add
+`--verbose` (alias `--all`, `-v`) to print the full
 per-check tree, including everything that passed. The exit code is identical in both modes. Includes
 a release-version staleness check (an info line says when the latest version could not be
 determined, so a skipped check is not mistaken for "current"), a Hook targets check that fails (`✗`,
@@ -513,8 +514,8 @@ of that comparison rather than reported as drift, since no command could reconci
 were excluded, the passing row carries a dim `(N never-synced path(s) not compared)` note under
 `--verbose`. On native Windows, a real local copy the sync repo does not carry (never published,
 since `nomad push` no longer creates a repo counterpart on its own) gets its own info row naming
-`nomad adopt <name>`; it never fails the check and, like every other informational Links row, it is
-stripped from the default compact view and shown under `--verbose`. On native Windows, when a real
+`nomad adopt <name>`; it never fails the check and, unlike other informational Links rows, it stays
+in the default compact view, so you see it without `--verbose`. On native Windows, when a real
 local copy sits beside a `shared/<name>` counterpart that leads nowhere, doctor now warns and names
 the broken repo pointer, instead of the older behavior of reporting the name as never published and
 pointing you at `nomad adopt <name>`, a command that now refuses that exact state. On every

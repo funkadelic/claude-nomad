@@ -7,10 +7,10 @@
  *
  * Split out of `commands/doctor/checks/repo.ts` so that reporter is not
  * carrying a platform-specific content compare it reaches through a single
- * call. Nothing here is exported except that call and the row shape: the three
- * row builders and both path helpers are reachable only through
- * `classifyWin32Copy`, which is what keeps this a leaf rather than a second
- * doctor surface.
+ * call. Nothing here is exported except that call, the row shape and
+ * `UNPUBLISHED_MARKER` (read by `compactSections`): the three row builders and
+ * both path helpers are reachable only through `classifyWin32Copy`, which is
+ * what keeps this a leaf rather than a second doctor surface.
  */
 
 import { join, win32 as win32Path } from 'node:path';
@@ -46,6 +46,9 @@ function win32CopyOkRow(name: string, exempt = 0): SharedLinkClassification {
   return { line: `${green(okGlyph)} ${name}: real copy (win32 copy-sync)${note}`, fail: false };
 }
 
+/** Fixed text of the unpublished-name row; `compactSections` matches on it. */
+export const UNPUBLISHED_MARKER = 'real local copy, not published';
+
 /**
  * The win32 copy-sync unpublished-name row: a real local copy at
  * `~/.claude/<name>` with no `shared/<name>` counterpart in the repo.
@@ -57,14 +60,15 @@ function win32CopyOkRow(name: string, exempt = 0): SharedLinkClassification {
  * (`links.mirror.ts`) never creates a repo counterpart for a name the repo
  * does not already carry: without this row, the only symptom of an
  * unpublished name is its absence on another machine, with nothing on this
- * one pointing at the cause or the fix.
+ * one pointing at the cause or the fix. So `compactSections` keeps it in the
+ * default view, unlike other informational Links rows.
  *
  * Never sets `process.exitCode`, matching every other informational Links
  * row (`not synced (nothing in shared/)`, a stale symlink, ...).
  */
 function win32CopyUnpublishedRow(name: string): SharedLinkClassification {
   return {
-    line: `${dim(infoGlyph)} ${name}: real local copy, not published (run \`nomad adopt ${name}\` to share it)`,
+    line: `${dim(infoGlyph)} ${name}: ${UNPUBLISHED_MARKER} (run \`nomad adopt ${name}\` to share it)`,
     fail: false,
   };
 }
