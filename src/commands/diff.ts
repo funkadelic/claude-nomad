@@ -49,7 +49,7 @@ export function cmdDiff(): void {
     // network) and writes nothing, so cmdDiff's offline/lockless/no-backup-dir
     // contract holds. A malformed path-map raises NomadFatal into the catch
     // below (fail + exitCode 1), matching computePreview's tolerance boundary.
-    divergenceCheckExtras(ts);
+    divergenceCheckExtras(ts, undefined, true);
     // computePreview renders the full tree including the Summary row; no
     // separate emitSummary call needed (it would print a duplicate).
     computePreview(ts, map, 'diff');

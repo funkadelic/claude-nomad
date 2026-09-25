@@ -627,6 +627,7 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     const output = writes.join('\n');
     expect(output).toContain('DELETE-ME.md');
     expect(output).toContain('keeping locally-edited');
+    expect(output).toContain('(push to reconcile; your copy is backed up)');
   });
 
   it('keeps an upstream-deleted path whose local copy is unreadable (type changed to a dir)', async () => {
@@ -1134,10 +1135,12 @@ describe('remapExtrasPull: prePostHeads delete-propagation (TDD acceptance)', ()
     });
 
     const { divergenceCheckExtras } = await import('./extras.ts');
-    divergenceCheckExtras('20260611-preview-keep', { pre, post });
+    divergenceCheckExtras('20260611-preview-keep', { pre, post }, true);
 
     const output = writes.join('\n');
     expect(output).toContain('keeping locally-edited');
+    expect(output).toContain('your copy will be backed up when you pull');
+    expect(output).not.toContain('your copy is backed up');
     expect(output).toContain('DELETE-ME.md');
     // Read-only: the local file is untouched by the preview.
     expect(readFileSync(join(projectRoot, '.planning', 'DELETE-ME.md'), 'utf8')).toBe(

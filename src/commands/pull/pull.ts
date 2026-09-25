@@ -381,7 +381,7 @@ function runPullWithBackupTs(
   // wet pull emits that WARN from remapExtrasPull, so passing heads here too
   // would double it. The return value is the both-sides-modified count,
   // carried into the wet result below for a composing caller's summary.
-  const divergedKeptLocal = divergenceCheckExtras(ts, dryRun ? prePostHeads : undefined);
+  const divergedKeptLocal = divergenceCheckExtras(ts, dryRun ? prePostHeads : undefined, dryRun);
   if (dryRun) {
     // computePreview renders the full tree including the Summary row with
     // verb='pull'; no separate emitSummary call (it would duplicate the row).

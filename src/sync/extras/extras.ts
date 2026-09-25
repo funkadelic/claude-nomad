@@ -22,7 +22,9 @@ import { keptDeletePreview, keptDeleteWarnLine } from './remap.ts';
  * (singular vs plural), and names the backup path the next pull step writes to.
  * The wording reflects the divergence-is-conflict guard: the pull KEEPS the
  * local copy on divergence rather than overwriting it, so the user pushes to
- * reconcile. The backup snapshot is still taken (defense-in-depth).
+ * reconcile. The backup snapshot is still taken (defense-in-depth). A preview
+ * writes no backup, and the real pull picks its own timestamp, so the preview
+ * wording names no path.
  */
 function divergenceWarnLine(o: {
   dirname: string;
@@ -30,13 +32,18 @@ function divergenceWarnLine(o: {
   isDir: boolean;
   count: number;
   projectBackupRoot: string;
+  dryRun: boolean;
 }): string {
   const kind = o.isDir ? 'folder' : 'file';
   const name = o.isDir ? `${o.dirname}/` : o.dirname;
   const one = o.count === 1;
   const fileCount = one ? '1 file' : `${o.count} files`;
-  const yours = one ? 'your current file is' : 'your current files are';
-  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step will keep your local copy (push to reconcile; ${yours} backed up to ${o.projectBackupRoot}/)`;
+  const yours = one ? 'your current file' : 'your current files';
+  const verb = one ? 'is' : 'are';
+  const backup = o.dryRun
+    ? 'will be backed up when you pull'
+    : `${verb} backed up to ${o.projectBackupRoot}/`;
+  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step will keep your local copy (push to reconcile; ${yours} ${backup})`;
 }
 
 /**
@@ -63,6 +70,8 @@ function divergenceWarnLine(o: {
  *   path in the WARN line.
  * @param prePostHeads - Pre/post-rebase HEADs from the `--dry-run` path;
  *   `undefined` for the WET pull and offline `nomad diff`.
+ * @param dryRun - `true` for `pull --dry-run` and `nomad diff`, which write no
+ *   backup, so the WARN does not name a backup path.
  * @returns The total count of both-sides-modified (M) files across every
  *   diverging extra (the WARN count). Existing callers that only need the
  *   side-effecting WARN output may ignore the return value.
@@ -70,6 +79,7 @@ function divergenceWarnLine(o: {
 export function divergenceCheckExtras(
   ts: string,
   prePostHeads?: { pre: string; post: string },
+  dryRun = false,
 ): number {
   const v = loadValidatedExtras({});
   if (v === null) return 0;
@@ -101,6 +111,7 @@ export function divergenceCheckExtras(
         isDir: statSync(local).isDirectory(),
         count: modified.length,
         projectBackupRoot,
+        dryRun,
       }),
     );
     for (const f of modified) warn(`  ${f}`);
@@ -109,7 +120,7 @@ export function divergenceCheckExtras(
   // Delete-vs-edit keep-local preview (dry-run only; see the JSDoc note above).
   if (prePostHeads !== undefined) {
     for (const { logical, relToLocal } of keptDeletePreview(v, prePostHeads, repo)) {
-      warn(keptDeleteWarnLine(logical, relToLocal));
+      warn(keptDeleteWarnLine(logical, relToLocal, dryRun));
     }
   }
   return divergedCount;

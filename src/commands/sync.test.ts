@@ -960,11 +960,13 @@ describe('cmdSync --dry-run: real pull half', () => {
     await cmdSync({ dryRun: true });
     expect(seams.divergenceSpy).toHaveBeenCalledTimes(1);
     // Dry mode threads the pre/post-rebase HEAD pair through so the
-    // delete-vs-edit keep-local WARN can render in the preview.
-    expect(seams.divergenceSpy).toHaveBeenCalledWith(expect.any(String), {
-      pre: 'deadbeef',
-      post: 'deadbeef',
-    });
+    // delete-vs-edit keep-local WARN can render in the preview, and flags the
+    // preview so the WARN names no backup path.
+    expect(seams.divergenceSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      { pre: 'deadbeef', post: 'deadbeef' },
+      true,
+    );
   });
 
   it('runs the handleWedge preflight: a mid-rebase repo dies before any preview renders', async () => {
