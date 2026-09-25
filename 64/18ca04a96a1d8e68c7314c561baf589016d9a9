@@ -1,0 +1,19 @@
+src/commands/doctor/compact.ts
+  s_c843855701a577::t_3256fb210c36bd 3,62-63,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6418ca04a96a1d8e68c7314c561baf589016d9a9",
+  "prompts": {},
+  "sessions": {
+    "s_c843855701a577": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1d719611-7ffa-46ef-a3b8-2fc7dc5f76d7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
