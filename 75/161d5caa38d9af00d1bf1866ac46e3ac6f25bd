@@ -1,0 +1,19 @@
+.github/workflows/docs-check.yml
+  s_3b625e9be49584::t_f49f3c7854b65d 13-14,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75161d5caa38d9af00d1bf1866ac46e3ac6f25bd",
+  "prompts": {},
+  "sessions": {
+    "s_3b625e9be49584": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1769dbea-bf7a-40de-b1ef-ac9918a5677b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
