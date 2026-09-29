@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.69.6](https://github.com/funkadelic/claude-nomad/compare/v0.69.5...v0.69.6) (2026-09-29)
+
+
+### Changed
+
+* **docs-check:** stop cancelling a running docs-sync job ([#648](https://github.com/funkadelic/claude-nomad/issues/648)) ([d9f3a61](https://github.com/funkadelic/claude-nomad/commit/d9f3a6161bc982891f1f4f3189b5517c418276ee))
+
+
+### Dependencies
+
+* bump the astro group in /docs-site with 2 updates ([#644](https://github.com/funkadelic/claude-nomad/issues/644)) ([d7ba50a](https://github.com/funkadelic/claude-nomad/commit/d7ba50a13d1b303ceb44f720b8d14a7f2d285747))
+* bump the dev-dependencies group across 1 directory with 7 updates ([#645](https://github.com/funkadelic/claude-nomad/issues/645)) ([e07db28](https://github.com/funkadelic/claude-nomad/commit/e07db28b35d22b57d0049bcad0b3133b774508b9))
+* bump undici from 8.10.0 to 8.11.2 in /docs-site ([#646](https://github.com/funkadelic/claude-nomad/issues/646)) ([b36cd9c](https://github.com/funkadelic/claude-nomad/commit/b36cd9cb56233e14c26719da1fe207b920a7765d))
+
 ## [0.69.5](https://github.com/funkadelic/claude-nomad/compare/v0.69.4...v0.69.5) (2026-09-25)
 
 
