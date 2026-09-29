@@ -10,9 +10,11 @@ on:
     types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
 
+# Never cancel a running job: a cancelled docs-sync check run on the head sha
+# blocks merge. Queued runs still collapse so the newest event runs last.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   docs-sync:
