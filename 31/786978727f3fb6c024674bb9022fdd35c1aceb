@@ -1,0 +1,19 @@
+codecov.yml
+  s_f57bce0e81f0df::t_ce275dff4d643d 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "31786978727f3fb6c024674bb9022fdd35c1aceb",
+  "prompts": {},
+  "sessions": {
+    "s_f57bce0e81f0df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0c183740-0935-4707-bcd3-ecfa77055b6e",
+        "model": "unknown"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
