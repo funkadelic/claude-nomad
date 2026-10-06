@@ -14,7 +14,7 @@ coverage:
         threshold: 0%
 
 comment:
-  layout: 'header, diff, flags, components, files, footer'
+  layout: 'header, diff, components, files, footer'
   behavior: default
   require_changes: false
 
