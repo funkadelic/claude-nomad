@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.7](https://github.com/funkadelic/claude-nomad/compare/v0.69.6...v0.69.7) (2026-10-07)
+
+
+### Testing
+
+* cover hook classifier edge cases and fix mutation testing docs ([#666](https://github.com/funkadelic/claude-nomad/issues/666)) ([0b171a6](https://github.com/funkadelic/claude-nomad/commit/0b171a66c3d8345530788a009a83f9385d6a7603))
+
 ## [0.69.6](https://github.com/funkadelic/claude-nomad/compare/v0.69.5...v0.69.6) (2026-10-07)
 
 
