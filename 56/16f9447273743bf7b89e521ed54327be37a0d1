@@ -1,0 +1,21 @@
+docs-site/src/content/docs/contributing.md
+  s_425f06d79b5340::t_95c5aed38fad87 105-107,110,119-127,131-133
+CONTRIBUTING.md
+  s_425f06d79b5340::t_95c5aed38fad87 110-113,116,125-133,137-139,152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5616f9447273743bf7b89e521ed54327be37a0d1",
+  "prompts": {},
+  "sessions": {
+    "s_425f06d79b5340": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b980c3ae-4f09-4424-803d-8c10a4141227",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
