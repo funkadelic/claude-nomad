@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { encodePath } from '../core/utils.json.ts';
 import { g, gitOut, plantLocalSession } from '../test-support/git.ts';
@@ -47,6 +47,10 @@ const hasGitleaks = ((): boolean => {
     return false;
   }
 })();
+
+// Each journey chains several real nomad, git and gitleaks subprocesses: about
+// 2s on Linux, 4s to 22s on a contended Windows runner, so past the 20s default.
+vi.setConfig({ testTimeout: 60_000 });
 
 /** The logical project name mapped across both hosts in every flow below. */
 const LOGICAL = 'myproject';
