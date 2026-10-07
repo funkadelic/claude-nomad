@@ -1098,6 +1098,47 @@ describe('isGsdHookEntry launcher chains', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Whitespace, quoting, and substitution edges
+// ---------------------------------------------------------------------------
+
+describe('isGsdHookEntry whitespace, quoting, and substitution edges', () => {
+  it('leading whitespace is trimmed before tokenizing', () => {
+    expect(isGsdHookEntry('  node /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('a run of whitespace counts as one separator', () => {
+    expect(isGsdHookEntry('node  /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('an empty quoted command word is the command, not a launcher', () => {
+    expect(isGsdHookEntry('"" /a/hooks/gsd-x.js')).toBe(false);
+  });
+
+  it('quotes strip only as a balanced matching pair', () => {
+    expect(isGsdHookEntry('"$NVM_BIN"/node /a/hooks/gsd-x.js')).toBe(true);
+    expect(isGsdHookEntry("'/opt/tools'/node /a/hooks/gsd-x.js")).toBe(true);
+    expect(isGsdHookEntry("node gsd-x.js''")).toBe(true);
+  });
+
+  it('a quoted variable prefix on a launcher-less script path reads as a path', () => {
+    expect(isGsdHookEntry('"$HOME"/.claude/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('a substitution opening mid-word is read literally', () => {
+    expect(isGsdHookEntry('node /a/hooks/gsd-$(echo x).js')).toBe(true);
+  });
+
+  it('a shell operator puts a following substitution back in launcher position', () => {
+    expect(isGsdHookEntry('node --version && $(command -v node) /a/hooks/gsd-x.js')).toBe(true);
+  });
+
+  it('a wholly consumed substitution in the script slot fails safe', () => {
+    expect(isGsdHookEntry('node $(cat /a/x) /a/hooks/gsd-x.js')).toBe(false);
+    expect(isGsdHookEntry('env node $(cat /a/x) /a/hooks/gsd-x.js')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Prototype-pollution guard: repo-supplied settings JSON reaches these walkers
 // ---------------------------------------------------------------------------
 

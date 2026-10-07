@@ -107,11 +107,13 @@ wired into CI. Run it as a hygiene exercise, not as part of the normal developme
 
 ### Running per-module
 
-The committed [`stryker.config.mjs`](stryker.config.mjs) contains the project defaults. Run one
-module at a time, always scoping both the mutate target and the test files:
+The committed [`stryker.config.mjs`](stryker.config.mjs) contains the project defaults. Run it from
+a vitest 4 checkout: under vitest 5, `@stryker-mutator/vitest-runner` 10.0.0 runs no tests per
+mutant, so every mutant reads Survived. Run one module at a time, always scoping both the mutate
+target and the test files:
 
 ```bash
-npx stryker run --incremental --force \
+npx stryker run \
   --mutate "src/<module>.ts" \
   --testFiles "src/<module>.test.ts"
 ```
@@ -120,11 +122,21 @@ The `--testFiles` scope is required. Without it Stryker runs the full suite as t
 and the dry run fails on developer machines (the full suite is not idempotent under the Stryker
 sandbox).
 
+A test only registers kills against the files in `--mutate`. A test file that mostly exercises a
+sibling module shows its tests as zero-kill in the owning module's report, so cross-reference
+candidates against the sibling's report before treating them as dead. A sibling with no test file of
+its own never gets a sweep, so mutate it alongside its parent
+(`--mutate "src/<module>.ts,src/<module>.<part>.ts"`). For example, `src/sync/hooks-filter.ts`
+re-exports `isGsdHookEntry` from `src/sync/hooks-filter.classify.ts`: mutating only
+`hooks-filter.ts` reports every `isGsdHookEntry` test as zero-kill, while adding
+`hooks-filter.classify.ts` shows them all killing.
+
 Reports land in `reports/mutation/` (gitignored). Archive each module's
 `reports/mutation/mutation.json` under a per-module name (for example
 `reports/archive/<module>.json`) before moving to the next module, or the file will be overwritten.
-The `reports/stryker-incremental.json` incremental cache accumulates across sessions so you can
-resume a multi-session sweep without re-running completed modules.
+Incremental mode is off on purpose: it folds earlier modules' results into each report, which makes
+every archive cumulative and its counts wrong. To resume a multi-session sweep, skip the modules
+that already have an archive.
 
 ### Resolved limitation: HOME-based test isolation
 
@@ -137,10 +149,7 @@ that isolate's copy while `os.homedir()` reads the real process environ and neve
 `home()` therefore reads `process.env.HOME` directly (empty string falls through to `os.homedir()`),
 pinned by a worker-thread probe test in [`src/core/config.test.ts`](src/core/config.test.ts).
 
-All HOME-swapping modules now pass the Stryker dry run and can be swept normally. One residual
-scoping caveat: a test only registers kills in sweeps whose `--testFiles` included it, so a test
-file that primarily exercises a sibling module will show up as zero-kill for the module that owns
-it. Cross-reference candidates against the sibling module's report before treating them as dead.
+All HOME-swapping modules now pass the Stryker dry run and can be swept normally.
 
 ### Triage
 
