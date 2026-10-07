@@ -1,0 +1,20 @@
+src/integration/autostash-sites.test.ts
+  s_f57bce0e81f0df::t_0ebeda74e09f66 1-10,12-43
+  s_f57bce0e81f0df::t_52410415d62dbb 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cde1310defa6ffb2f8fd4b8c7e5b6c76bf9aa197",
+  "prompts": {},
+  "sessions": {
+    "s_f57bce0e81f0df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0c183740-0935-4707-bcd3-ecfa77055b6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
