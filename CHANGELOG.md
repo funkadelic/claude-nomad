@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.69.6](https://github.com/funkadelic/claude-nomad/compare/v0.69.5...v0.69.6) (2026-10-07)
+
+
+### Changed
+
+* **codecov:** drop the flags table from the PR comment ([#661](https://github.com/funkadelic/claude-nomad/issues/661)) ([a750e88](https://github.com/funkadelic/claude-nomad/commit/a750e880cb1dc7c3562f58d7402c33f1f133a283))
+* **docs-check:** stop cancelling a running docs-sync job ([#648](https://github.com/funkadelic/claude-nomad/issues/648)) ([d9f3a61](https://github.com/funkadelic/claude-nomad/commit/d9f3a6161bc982891f1f4f3189b5517c418276ee))
+
+
+### Testing
+
+* fail when a --autostash pull skips the conflict check ([#662](https://github.com/funkadelic/claude-nomad/issues/662)) ([12dc459](https://github.com/funkadelic/claude-nomad/commit/12dc459eb998c379767c0f958676fd1ed87e0dd7))
+* give the multi-host sync flows a 60s timeout ([#663](https://github.com/funkadelic/claude-nomad/issues/663)) ([988da7f](https://github.com/funkadelic/claude-nomad/commit/988da7f76772033cff200a545a1fbd8b8023e54b))
+
+
+### Dependencies
+
+* bump devalue from 5.9.2 to 5.9.4 in /docs-site ([#656](https://github.com/funkadelic/claude-nomad/issues/656)) ([56c01f0](https://github.com/funkadelic/claude-nomad/commit/56c01f00b9959dfa85d1d00a06d97abade1cd585))
+* bump sharp from 0.35.4 to 0.35.5 in /docs-site ([#654](https://github.com/funkadelic/claude-nomad/issues/654)) ([9b105fd](https://github.com/funkadelic/claude-nomad/commit/9b105fd0055930fb6c285d8a17f38a024ac07a2e))
+* bump shell-quote from 1.10.0 to 1.12.0 ([#665](https://github.com/funkadelic/claude-nomad/issues/665)) ([ac029b7](https://github.com/funkadelic/claude-nomad/commit/ac029b70324f31ce6d17dc57272be11c51a19748))
+* bump smol-toml from 1.8.0 to 1.9.0 ([#664](https://github.com/funkadelic/claude-nomad/issues/664)) ([aa4f454](https://github.com/funkadelic/claude-nomad/commit/aa4f454d6c4f39dba50852961d9d0356fa84e4a4))
+* bump smol-toml from 1.8.0 to 1.9.0 in /docs-site ([#659](https://github.com/funkadelic/claude-nomad/issues/659)) ([ab43bda](https://github.com/funkadelic/claude-nomad/commit/ab43bda82710a2586dd236f88ea749f8313d893b))
+* bump source-map-js from 1.2.1 to 1.2.2 ([#660](https://github.com/funkadelic/claude-nomad/issues/660)) ([0ab5a3b](https://github.com/funkadelic/claude-nomad/commit/0ab5a3bc314c3310fba729d7d549dd50ff9dcf13))
+* bump source-map-js from 1.2.1 to 1.2.2 in /docs-site ([#658](https://github.com/funkadelic/claude-nomad/issues/658)) ([216330b](https://github.com/funkadelic/claude-nomad/commit/216330b85a6d33aa0ec71cd9ace28e0eb4524b6b))
+* bump the actions group across 1 directory with 3 updates ([#655](https://github.com/funkadelic/claude-nomad/issues/655)) ([6ef22c4](https://github.com/funkadelic/claude-nomad/commit/6ef22c4944130f4c5bee3b958834829f2be3c030))
+* bump the astro group in /docs-site with 2 updates ([#644](https://github.com/funkadelic/claude-nomad/issues/644)) ([d7ba50a](https://github.com/funkadelic/claude-nomad/commit/d7ba50a13d1b303ceb44f720b8d14a7f2d285747))
+* bump the astro group in /docs-site with 2 updates ([#653](https://github.com/funkadelic/claude-nomad/issues/653)) ([47dd484](https://github.com/funkadelic/claude-nomad/commit/47dd48475d7750a1ce2b0804a7d4c525040a4e73))
+* bump the dev-dependencies group across 1 directory with 5 updates ([#657](https://github.com/funkadelic/claude-nomad/issues/657)) ([ec58e92](https://github.com/funkadelic/claude-nomad/commit/ec58e92a0d46b722ef7e830d2376fc1e90515ded))
+* bump the dev-dependencies group across 1 directory with 7 updates ([#645](https://github.com/funkadelic/claude-nomad/issues/645)) ([e07db28](https://github.com/funkadelic/claude-nomad/commit/e07db28b35d22b57d0049bcad0b3133b774508b9))
+* bump undici from 8.10.0 to 8.11.2 in /docs-site ([#646](https://github.com/funkadelic/claude-nomad/issues/646)) ([b36cd9c](https://github.com/funkadelic/claude-nomad/commit/b36cd9cb56233e14c26719da1fe207b920a7765d))
+
 ## [0.69.5](https://github.com/funkadelic/claude-nomad/compare/v0.69.4...v0.69.5) (2026-09-25)
 
 
