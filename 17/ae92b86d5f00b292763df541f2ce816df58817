@@ -1,0 +1,19 @@
+src/sync/hooks-filter.test.ts
+  s_425f06d79b5340::t_1a9764ef6a915b 1100-1140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17ae92b86d5f00b292763df541f2ce816df58817",
+  "prompts": {},
+  "sessions": {
+    "s_425f06d79b5340": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b980c3ae-4f09-4424-803d-8c10a4141227",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Norman Yee <155019+funkadelic@users.noreply.github.com>"
+    }
+  }
+}
