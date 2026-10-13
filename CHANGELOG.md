@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.69.7](https://github.com/funkadelic/claude-nomad/compare/v0.69.6...v0.69.7) (2026-10-13)
+
+
+### Testing
+
+* cover hook classifier edge cases and fix mutation testing docs ([#666](https://github.com/funkadelic/claude-nomad/issues/666)) ([0b171a6](https://github.com/funkadelic/claude-nomad/commit/0b171a66c3d8345530788a009a83f9385d6a7603))
+
+
+### Dependencies
+
+* bump the actions group across 1 directory with 3 updates ([#671](https://github.com/funkadelic/claude-nomad/issues/671)) ([2bc3d2b](https://github.com/funkadelic/claude-nomad/commit/2bc3d2b412e8144f26158b78a0a3031afcfd7b12))
+* bump the astro group in /docs-site with 2 updates ([#670](https://github.com/funkadelic/claude-nomad/issues/670)) ([d0d3df0](https://github.com/funkadelic/claude-nomad/commit/d0d3df08020864bb3a2880b5e787bb280a5da171))
+* bump the dev-dependencies group across 1 directory with 5 updates ([#668](https://github.com/funkadelic/claude-nomad/issues/668)) ([2946e81](https://github.com/funkadelic/claude-nomad/commit/2946e8142e732cb42e8666e55b20ce824a1fc1c7))
+
 ## [0.69.6](https://github.com/funkadelic/claude-nomad/compare/v0.69.5...v0.69.6) (2026-10-07)
 
 
