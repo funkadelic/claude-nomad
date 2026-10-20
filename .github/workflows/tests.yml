@@ -40,7 +40,7 @@ jobs:
         # leg guards platform behavior, which does not vary by node line.
         # One windows leg (24, the recommended runtime) keeps the platform
         # signal at a third of the flake surface. Branch protection requires
-        # the 22 and 24 legs; update it in the same change if this list
+        # all four remaining legs; update it in the same change if this list
         # moves again.
         exclude:
           - os: windows-latest
