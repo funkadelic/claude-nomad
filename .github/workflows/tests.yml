@@ -29,7 +29,7 @@ jobs:
       matrix:
         # Bracket the supported range: 22.x covers the install.sh minimum
         # (22.22.1+), 24.x is the recommended runtime, 26.x is current.
-        # If the floor moves, bump both.
+        # If the floor moves, bump the '22' entry here and in the exclude list.
         node-version: ['22', '24', '26']
         # windows-latest is the only win32 verification channel for this
         # project (no local Windows host); it runs the same suite as
