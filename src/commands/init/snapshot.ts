@@ -1,4 +1,4 @@
-import { copyFileSync, cpSync, existsSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, rmdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { allSharedLinks, claudeHome, HOST, repoHome, type PathMap } from '../../core/config.ts';
@@ -12,7 +12,7 @@ import { readJson } from '../../core/utils.json.ts';
  * freshly-written scaffold under `REPO_HOME/shared/`. Regular files
  * (`CLAUDE.md`, `my-statusline.cjs`) go through `copyFileSync` so the
  * placeholder is overwritten; directories (`agents`, `skills`, `commands`,
- * `rules`) drop their just-written `.gitkeep` marker first and then go through
+ * `rules`) drop their just-written `.gitkeep` marker and the emptied directory, then go through
  * `cpSync` with `force: false`, so any unexpected pre-existing destination
  * content surfaces as an error. Also translates `~/.claude/settings.json`
  * (when present) into `hosts/<HOST>.json` via `writeJsonAtomic`. Does NOT
@@ -28,13 +28,13 @@ export function snapshotIntoShared(map: PathMap): void {
     if (!existsSync(src)) continue;
     const dst = join(repo, 'shared', name);
     if (statSync(src).isDirectory()) {
-      // Remove the .gitkeep first so cpSync starts against an empty dst.
-      // Force is false so existing files are not overwritten; errorOnExist
-      // is true because cpSync silently ignores destination collisions when
-      // it is omitted, defeating the intent of surfacing unexpected content
-      // (e.g. an out-of-band write between the preflight check and here).
+      // Drop the .gitkeep, then the emptied dst itself: Node 24.22+ makes
+      // errorOnExist reject an existing destination dir even when empty.
+      // rmdirSync throws ENOTEMPTY on unexpected content (e.g. an out-of-band
+      // write since the preflight), and errorOnExist still guards the copy.
       const gk = join(dst, '.gitkeep');
       if (existsSync(gk)) rmSync(gk);
+      if (existsSync(dst)) rmdirSync(dst);
       cpSync(src, dst, { recursive: true, force: false, errorOnExist: true });
     } else {
       copyFileSync(src, dst);

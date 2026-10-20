@@ -130,4 +130,14 @@ describe('snapshotIntoShared: file vs directory routing (L30) and .gitkeep remov
     expect(() => snapshotIntoShared({ projects: {} })).not.toThrow();
     expect(existsSync(join(repoHome, 'shared', 'commands', 'my-cmd.md'))).toBe(true);
   });
+
+  it('throws when the scaffolded dst dir holds unexpected content', async () => {
+    const commandsDir = join(claudeDir, 'commands');
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(join(commandsDir, 'my-cmd.md'), '# cmd\n');
+    writeFileSync(join(repoHome, 'shared', 'commands', 'stray.md'), 'x');
+
+    const { snapshotIntoShared } = await import('./snapshot.ts');
+    expect(() => snapshotIntoShared({ projects: {} })).toThrow(/ENOTEMPTY/);
+  });
 });
