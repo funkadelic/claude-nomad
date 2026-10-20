@@ -28,8 +28,9 @@ jobs:
       fail-fast: false
       matrix:
         # Bracket the supported range: 22.x covers the install.sh minimum
-        # (22.22.1+), 24.x is current LTS. If the floor moves, bump both.
-        node-version: ['22', '24']
+        # (22.22.1+), 24.x is the recommended runtime, 26.x is current.
+        # If the floor moves, bump the '22' entry here and in the exclude list.
+        node-version: ['22', '24', '26']
         # windows-latest is the only win32 verification channel for this
         # project (no local Windows host); it runs the same suite as
         # ubuntu-latest, minus coverage/Sonar/Codecov (see the OS-gated
@@ -38,12 +39,14 @@ jobs:
         # Node-version regressions surface on the ubuntu legs; the windows
         # leg guards platform behavior, which does not vary by node line.
         # One windows leg (24, the recommended runtime) keeps the platform
-        # signal at half the flake surface. Branch protection requires the
-        # three remaining legs; update it in the same change if this list
+        # signal at a third of the flake surface. Branch protection requires
+        # all four remaining legs; update it in the same change if this list
         # moves again.
         exclude:
           - os: windows-latest
             node-version: '22'
+          - os: windows-latest
+            node-version: '26'
     env:
       # Surfaced at job level so the SonarCloud step's `if:` can detect
       # an unset secret (e.g. on fork PRs) and skip cleanly.
