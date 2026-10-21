@@ -3,6 +3,12 @@
 ## [0.69.7](https://github.com/funkadelic/claude-nomad/compare/v0.69.6...v0.69.7) (2026-10-20)
 
 
+### What's new
+
+* `nomad init` no longer crashes on Node.js 24.22 or newer, or on Node.js 26, when it copies your existing `~/.claude` folders into a new sync repo. If `init` failed for you with "Target already exists", upgrade with `nomad update` and run it again.
+* claude-nomad is now tested on Node.js 26 as well as 22 and 24.
+
+
 ### Fixed
 
 * **init:** snapshot copy no longer fails on Node 24.22+ ([#678](https://github.com/funkadelic/claude-nomad/issues/678)) ([020d1eb](https://github.com/funkadelic/claude-nomad/commit/020d1eb2e9a1e1f0b3d5a98259353a7e7166179a))
