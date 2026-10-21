@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.69.7](https://github.com/funkadelic/claude-nomad/compare/v0.69.6...v0.69.7) (2026-10-20)
+
+
+### What's new
+
+* `nomad init` no longer crashes on Node.js 24.22 or newer, or on Node.js 26, when it copies your existing `~/.claude` folders into a new sync repo. If `init` failed for you with "Target already exists", upgrade with `nomad update` and run it again.
+* claude-nomad is now tested on Node.js 26 as well as 22 and 24.
+
+
+### Fixed
+
+* **init:** snapshot copy no longer fails on Node 24.22+ ([#678](https://github.com/funkadelic/claude-nomad/issues/678)) ([020d1eb](https://github.com/funkadelic/claude-nomad/commit/020d1eb2e9a1e1f0b3d5a98259353a7e7166179a))
+
+
+### Changed
+
+* test on Node 26 ([#679](https://github.com/funkadelic/claude-nomad/issues/679)) ([f309b2a](https://github.com/funkadelic/claude-nomad/commit/f309b2adf11d65ff2612d3eab397812c434feed7))
+
+
+### Testing
+
+* cover hook classifier edge cases and fix mutation testing docs ([#666](https://github.com/funkadelic/claude-nomad/issues/666)) ([0b171a6](https://github.com/funkadelic/claude-nomad/commit/0b171a66c3d8345530788a009a83f9385d6a7603))
+
+
+### Dependencies
+
+* bump starlight-links-validator from 0.26.0 to 0.27.0 in /docs-site in the dev-dependencies group across 1 directory ([#674](https://github.com/funkadelic/claude-nomad/issues/674)) ([6d27e07](https://github.com/funkadelic/claude-nomad/commit/6d27e074ecff93641c2a32ded697f032dd026e42))
+* bump the actions group across 1 directory with 3 updates ([#671](https://github.com/funkadelic/claude-nomad/issues/671)) ([2bc3d2b](https://github.com/funkadelic/claude-nomad/commit/2bc3d2b412e8144f26158b78a0a3031afcfd7b12))
+* bump the actions group across 1 directory with 3 updates ([#681](https://github.com/funkadelic/claude-nomad/issues/681)) ([0db0fc3](https://github.com/funkadelic/claude-nomad/commit/0db0fc350ffcc4ac91680b9a257fc13c7762c881))
+* bump the astro group in /docs-site with 2 updates ([#670](https://github.com/funkadelic/claude-nomad/issues/670)) ([d0d3df0](https://github.com/funkadelic/claude-nomad/commit/d0d3df08020864bb3a2880b5e787bb280a5da171))
+* bump the astro group in /docs-site with 2 updates ([#676](https://github.com/funkadelic/claude-nomad/issues/676)) ([162bada](https://github.com/funkadelic/claude-nomad/commit/162bada571cca524f7c9824991fe8b43ccec2e32))
+* bump the dev-dependencies group across 1 directory with 4 updates ([#677](https://github.com/funkadelic/claude-nomad/issues/677)) ([3e40990](https://github.com/funkadelic/claude-nomad/commit/3e4099028ddc61594bb14e3510676206b98183dc))
+* bump the dev-dependencies group across 1 directory with 5 updates ([#668](https://github.com/funkadelic/claude-nomad/issues/668)) ([2946e81](https://github.com/funkadelic/claude-nomad/commit/2946e8142e732cb42e8666e55b20ce824a1fc1c7))
+* override markdown-it to 15.0.3 ([#680](https://github.com/funkadelic/claude-nomad/issues/680)) ([b18a4fc](https://github.com/funkadelic/claude-nomad/commit/b18a4fc9f04e04010deaed4ca150b821d7e70add))
+
 ## [0.69.6](https://github.com/funkadelic/claude-nomad/compare/v0.69.5...v0.69.6) (2026-10-07)
 
 
