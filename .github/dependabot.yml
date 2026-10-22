@@ -59,8 +59,8 @@ updates:
   # above does not see it. Same grouping and prefixes. Note the group
   # filters below only decide how updates are BATCHED; they never gate
   # which updates open a PR, so an update no group matches still arrives,
-  # just on its own. Monthly: the docs site ships nothing to users, so weekly
-  # bumps are churn.
+  # just on its own. Monthly: the docs site is not part of the published CLI,
+  # so its bumps can wait.
   - package-ecosystem: npm
     directory: /docs-site
     schedule:
