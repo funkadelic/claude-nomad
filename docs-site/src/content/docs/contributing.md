@@ -66,10 +66,11 @@ not have to be reverse-engineered from them.
   single source of reproducible installs. CI and the documented setup use `npm ci`, which installs
   the locked tree exactly and fails if the lockfile and manifest disagree. Always commit the
   lockfile changes that an install produces.
-- **Dependabot drives updates.** `.github/dependabot.yml` opens weekly update PRs for both the
-  `npm` and `github-actions` ecosystems, so bumps are reviewed rather than applied by hand. To
-  keep the noise down it batches updates into grouped PRs and routes the commit prefixes (`deps` /
-  `deps-dev`) through release-please so the bumps land under the changelog's Dependencies section.
+- **Dependabot drives updates.** `.github/dependabot.yml` opens update PRs for both the `npm` and
+  `github-actions` ecosystems (weekly, monthly for the docs site), so bumps are reviewed rather than
+  applied by hand. To keep the noise down it batches updates into grouped PRs and routes the commit
+  prefixes (`deps` / `deps-dev`) through release-please so the bumps land under the changelog's
+  Dependencies section.
 - **`@types/node` majors are held back on purpose.** The config ignores `@types/node` major bumps
   so the type surface stays pinned to the lowest supported runtime. Letting it float would let a
   newer-Node-only API typecheck cleanly and then crash at runtime on the supported floor.
