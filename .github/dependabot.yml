@@ -22,19 +22,21 @@ updates:
       # (`peer @stryker-mutator/core@"<version>"`), so a major split across two
       # PRs leaves BOTH unable to `npm ci` and neither can ever go green. Same
       # reason codeql-action is grouped below. Listed first because the first
-      # matching group wins, and carries no update-types filter so majors group
-      # too, unlike dev-dependencies.
+      # matching group wins. Majors only: minor and patch bumps fall through to
+      # dev-dependencies, which still moves the pair together in one PR instead
+      # of opening a second PR that supersedes it.
       stryker:
         patterns:
           - '@stryker-mutator/*'
+        update-types: [major]
       # @vitest/coverage-v8 pins vitest with an EXACT peer dep
       # (`peer vitest@"5.0.0"`), so a major split across two PRs leaves BOTH
-      # unable to `npm ci`. Same reason as stryker above, and likewise no
-      # update-types filter so majors group too.
+      # unable to `npm ci`. Majors only, same as stryker above.
       vitest:
         patterns:
           - 'vitest'
           - '@vitest/*'
+        update-types: [major]
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
@@ -57,12 +59,12 @@ updates:
   # above does not see it. Same grouping and prefixes. Note the group
   # filters below only decide how updates are BATCHED; they never gate
   # which updates open a PR, so an update no group matches still arrives,
-  # just on its own.
+  # just on its own. Monthly: the docs site ships nothing to users, so weekly
+  # bumps are churn.
   - package-ecosystem: npm
     directory: /docs-site
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '06:00'
       timezone: Etc/UTC
     open-pull-requests-limit: 3
