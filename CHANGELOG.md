@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.69.8](https://github.com/funkadelic/claude-nomad/compare/v0.69.7...v0.69.8) (2026-10-23)
+
+
+### Changed
+
+* **dependabot:** route vitest and stryker minors through dev-dependencies ([#682](https://github.com/funkadelic/claude-nomad/issues/682)) ([868c3fa](https://github.com/funkadelic/claude-nomad/commit/868c3fa00fcb506c4e99b77f6d398ef85ccfc6a9))
+
+
+### Dependencies
+
+* bump astro from 7.3.8 to 7.4.0 in /docs-site in the astro group ([#684](https://github.com/funkadelic/claude-nomad/issues/684)) ([fa120b8](https://github.com/funkadelic/claude-nomad/commit/fa120b81a1c037d84e263812a8a598655bc22aac))
+* bump eslint from 10.12.0 to 10.13.0 in the dev-dependencies group across 1 directory ([#685](https://github.com/funkadelic/claude-nomad/issues/685)) ([07036f1](https://github.com/funkadelic/claude-nomad/commit/07036f19cf0b0deacff16b5b4f3f673133529f98))
+* bump stryker to 10.1.1 ([#686](https://github.com/funkadelic/claude-nomad/issues/686)) ([d58a177](https://github.com/funkadelic/claude-nomad/commit/d58a177c2c1a8c5f843473824c10e246b70b8a7f))
+
 ## [0.69.7](https://github.com/funkadelic/claude-nomad/compare/v0.69.6...v0.69.7) (2026-10-20)
 
 
