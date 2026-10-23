@@ -107,10 +107,8 @@ wired into CI. Run it as a hygiene exercise, not as part of the normal developme
 
 ### Running per-module
 
-The committed [`stryker.config.mjs`](stryker.config.mjs) contains the project defaults. Run it from
-a vitest 4 checkout: under vitest 5, `@stryker-mutator/vitest-runner` 10.0.0 runs no tests per
-mutant, so every mutant reads Survived. Run one module at a time, always scoping both the mutate
-target and the test files:
+The committed [`stryker.config.mjs`](stryker.config.mjs) contains the project defaults. Run one
+module at a time, scoping the mutate target (and ideally the test files):
 
 ```bash
 npx stryker run \
@@ -118,9 +116,8 @@ npx stryker run \
   --testFiles "src/<module>.test.ts"
 ```
 
-The `--testFiles` scope is required. Without it Stryker runs the full suite as the dry-run baseline
-and the dry run fails on developer machines (the full suite is not idempotent under the Stryker
-sandbox).
+`--testFiles` is optional but recommended: without it Stryker pulls in every test related to the
+mutated module, which makes the dry run and each mutant slower.
 
 A test only registers kills against the files in `--mutate`. A test file that mostly exercises a
 sibling module shows its tests as zero-kill in the owning module's report, so cross-reference
