@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.69.9](https://github.com/funkadelic/claude-nomad/compare/v0.69.8...v0.69.9) (2026-10-27)
+
+
+### Dependencies
+
+* bump the actions group with 2 updates ([#689](https://github.com/funkadelic/claude-nomad/issues/689)) ([a3a4e51](https://github.com/funkadelic/claude-nomad/commit/a3a4e51e1dbe59c9154a20d3cd983beccfc5b898))
+* bump the dev-dependencies group across 1 directory with 5 updates ([#690](https://github.com/funkadelic/claude-nomad/issues/690)) ([a072cd4](https://github.com/funkadelic/claude-nomad/commit/a072cd4988081ab4df711a545ea150ecb6c2d6b2))
+
 ## [0.69.8](https://github.com/funkadelic/claude-nomad/compare/v0.69.7...v0.69.8) (2026-10-23)
 
 
