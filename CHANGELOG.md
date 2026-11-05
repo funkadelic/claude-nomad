@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.69.9](https://github.com/funkadelic/claude-nomad/compare/v0.69.8...v0.69.9) (2026-11-04)
+
+
+### What's new
+
+* No changes to how claude-nomad works. This release updates the tools used to build and test it, including a security fix for a package the Markdown linter uses. That package is not part of what `nomad update` installs.
+
+
+### Fixed
+
+* **deps:** override re2js to ^2.8.7 for lookbehind DoS advisory ([#696](https://github.com/funkadelic/claude-nomad/issues/696)) ([7373f1e](https://github.com/funkadelic/claude-nomad/commit/7373f1e37767212cc3053c26d2f38f8a99b0e5a7))
+
+
+### Dependencies
+
+* bump postcss-selector-parser from 6.1.4 to 6.1.5 in /docs-site ([#692](https://github.com/funkadelic/claude-nomad/issues/692)) ([c3632b1](https://github.com/funkadelic/claude-nomad/commit/c3632b1d968ce2cea4a1da701bf9d25199cfbeba))
+* bump SonarSource/sonarqube-scan-action from 8.3.0 to 8.4.0 in the actions group ([#695](https://github.com/funkadelic/claude-nomad/issues/695)) ([3cc8222](https://github.com/funkadelic/claude-nomad/commit/3cc8222e82cca42cf1075095116ecc06abcbca6a))
+* bump the actions group with 2 updates ([#689](https://github.com/funkadelic/claude-nomad/issues/689)) ([a3a4e51](https://github.com/funkadelic/claude-nomad/commit/a3a4e51e1dbe59c9154a20d3cd983beccfc5b898))
+* bump the astro group in /docs-site with 2 updates ([#693](https://github.com/funkadelic/claude-nomad/issues/693)) ([351f957](https://github.com/funkadelic/claude-nomad/commit/351f957c3ac8a2e1d73726be2f56f00a694f2dcc))
+* bump the dev-dependencies group across 1 directory with 5 updates ([#690](https://github.com/funkadelic/claude-nomad/issues/690)) ([a072cd4](https://github.com/funkadelic/claude-nomad/commit/a072cd4988081ab4df711a545ea150ecb6c2d6b2))
+* bump typescript-eslint from 8.72.0 to 8.72.1 in the dev-dependencies group ([#694](https://github.com/funkadelic/claude-nomad/issues/694)) ([3510ff8](https://github.com/funkadelic/claude-nomad/commit/3510ff82ac5a94aa25c0bac9abb4ba4f3bf90a07))
+
 ## [0.69.8](https://github.com/funkadelic/claude-nomad/compare/v0.69.7...v0.69.8) (2026-10-23)
 
 
