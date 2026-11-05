@@ -3,6 +3,11 @@
 ## [0.69.9](https://github.com/funkadelic/claude-nomad/compare/v0.69.8...v0.69.9) (2026-11-04)
 
 
+### What's new
+
+* No changes to how claude-nomad works. This release updates the tools used to build and test it, including a security fix for a package the Markdown linter uses. That package is not part of what `nomad update` installs.
+
+
 ### Fixed
 
 * **deps:** override re2js to ^2.8.7 for lookbehind DoS advisory ([#696](https://github.com/funkadelic/claude-nomad/issues/696)) ([7373f1e](https://github.com/funkadelic/claude-nomad/commit/7373f1e37767212cc3053c26d2f38f8a99b0e5a7))
