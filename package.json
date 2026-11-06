@@ -66,11 +66,6 @@
     ]
   },
   "overrides": {
-    "@conventional-changelog/git-client": {
-      "conventional-commits-parser": "^7.0.0"
-    },
-    "smol-toml": "^1.9.0",
-    "markdown-it": "15.0.3",
     "re2js": "^2.8.7"
   },
   "devDependencies": {

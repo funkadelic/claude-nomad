@@ -1,0 +1,35 @@
+name: Overrides
+permissions:
+  contents: read
+
+on:
+  # Mondays. A failed run is the reminder that an override can go.
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No npm cache: stale metadata fails the trial installs and hides the real verdicts.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version-file: '.nvmrc'
+
+      # Exits 1 when an override is removable. It exits 0 when trial installs fail, so check for that too.
+      - name: Check for removable overrides
+        run: |
+          set -euo pipefail
+          npx --yes prune-overrides@0.3.1 | tee report.txt
+          grep -Eq 'Unknown:[[:space:]]+0' report.txt
+          if grep -q 'cannot resolve the dependency tree' report.txt; then exit 1; fi
