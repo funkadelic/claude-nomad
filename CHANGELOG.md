@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.10](https://github.com/funkadelic/claude-nomad/compare/v0.69.9...v0.69.10) (2026-11-06)
+
+
+### Changed
+
+* add weekly check for removable overrides ([#697](https://github.com/funkadelic/claude-nomad/issues/697)) ([f1a6772](https://github.com/funkadelic/claude-nomad/commit/f1a6772d6828d1e0459f251c1d1ea0e81718a438))
+
 ## [0.69.9](https://github.com/funkadelic/claude-nomad/compare/v0.69.8...v0.69.9) (2026-11-04)
 
 
