@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.69.10](https://github.com/funkadelic/claude-nomad/compare/v0.69.9...v0.69.10) (2026-11-14)
+
+
+### Changed
+
+* add weekly check for removable overrides ([#697](https://github.com/funkadelic/claude-nomad/issues/697)) ([f1a6772](https://github.com/funkadelic/claude-nomad/commit/f1a6772d6828d1e0459f251c1d1ea0e81718a438))
+* auto-merge Dependabot PRs with the App token so release-please runs ([82dee39](https://github.com/funkadelic/claude-nomad/commit/82dee39d49fc0386a24074cf76e758c84347793f))
+* let auto-merged Dependabot updates reach the release PR ([#702](https://github.com/funkadelic/claude-nomad/issues/702)) ([82dee39](https://github.com/funkadelic/claude-nomad/commit/82dee39d49fc0386a24074cf76e758c84347793f))
+
+
+### Dependencies
+
+* bump astro from 7.4.2 to 7.4.12 in /docs-site ([#701](https://github.com/funkadelic/claude-nomad/issues/701)) ([4f036e5](https://github.com/funkadelic/claude-nomad/commit/4f036e5e8af2bd95acf81e663146f7094cd8854c))
+* bump the actions group across 1 directory with 3 updates ([#700](https://github.com/funkadelic/claude-nomad/issues/700)) ([d9774fc](https://github.com/funkadelic/claude-nomad/commit/d9774fc1ca9dc80b5e4d7880c897be5faa8e66b5))
+* bump the dev-dependencies group with 4 updates ([#699](https://github.com/funkadelic/claude-nomad/issues/699)) ([b3315c5](https://github.com/funkadelic/claude-nomad/commit/b3315c5d9ba5b3de359d758799fcc8583824ec89))
+
 ## [0.69.9](https://github.com/funkadelic/claude-nomad/compare/v0.69.8...v0.69.9) (2026-11-04)
 
 
