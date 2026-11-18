@@ -873,6 +873,7 @@ describe('cmdCaptureSettings', () => {
       await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
       expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
       expect(errs.join('\n')).toContain('not saving new mk entries');
+      expect(errs.join('\n')).toContain("run 'nomad capture-settings --host'");
 
       await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
       const host = JSON.parse(readFileSync(join(env.hostsDir, 'test-host.json'), 'utf8')) as {
@@ -898,6 +899,44 @@ describe('cmdCaptureSettings', () => {
       expect(base).toEqual({ mk: null, other: { a: 1, c: 3 } });
       expect(readFileSync(env.settingsPath, 'utf8')).toBe(liveText);
       expect(errs.join('\n')).toContain('settings.json left unchanged so the unsaved entries stay');
+    });
+
+    it('sends a new entry under a host-only key to --host instead of the base', async () => {
+      const baseText = JSON.stringify({ model: 'x' }) + '\n';
+      writeFileSync(env.basePath, baseText);
+      writeFileSync(join(env.hostsDir, 'test-host.json'), JSON.stringify({ mk: { a: 1 } }));
+      writeFileSync(env.settingsPath, JSON.stringify({ model: 'x', mk: { a: 1, b: 2 } }) + '\n');
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
+      expect(errs.join('\n')).toContain('only hosts/test-host.json has mk');
+    });
+
+    it('names a dropped nested entry the resync removes', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+      const recorded = { mk: { a: 1, b: 2 } };
+      writeFileSync(env.settingsPath, JSON.stringify({ ...recorded, theme: 'dark' }) + '\n');
+      const { recordWrittenSettingsKeys } = await import('../../sync/settings-written.ts');
+      recordWrittenSettingsKeys(recorded);
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const live = JSON.parse(readFileSync(env.settingsPath, 'utf8')) as Record<string, unknown>;
+      expect(live).toEqual({ mk: { a: 1 }, theme: 'dark' });
+      const out = errs.join('\n');
+      expect(out).toContain('this capture also removed');
+      expect(out).toContain('mk.b');
     });
 
     it('captures nothing for a changed sub-value or a new env entry', async () => {

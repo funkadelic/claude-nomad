@@ -5,13 +5,18 @@ import { createInterface } from 'node:readline/promises';
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
 import {
   buildCaptureSubset,
+  describeSettings,
   normalizeNodePathsDeep,
   type NestedEntry,
 } from '../../sync/settings-classify.ts';
 import { asPlainObject } from '../../sync/hooks-filter.ts';
 import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
-import { blockedHookEntries, blockedNestedEntries } from '../../sync/settings-guard.ts';
+import {
+  blockedHookEntries,
+  blockedNestedEntries,
+  removedSettingsKeys,
+} from '../../sync/settings-guard.ts';
 import { readWrittenHookIds, readWrittenSettingsKeys } from '../../sync/settings-written.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
 import { deepMerge, readJson } from '../../core/utils.json.ts';
@@ -94,25 +99,30 @@ type CaptureSources = {
 };
 
 /**
- * New entries under a shared object key to capture, leaving out any whose key
- * the destination file holds as a non-object: deepMerge would replace that
- * value with just these entries, so warn instead. `clashed` reports any left out.
+ * New entries under a shared object key to capture. A base capture leaves out
+ * any whose key the base does not hold as an object (it would replace that value,
+ * or add a key only the host file has for every host) and points at `--host`;
+ * `clashed` reports any left out.
  */
 function nestedCaptureEntries(
   sources: CaptureSources,
   useHost: boolean,
   written: ReturnType<typeof readWrittenSettingsKeys>,
 ): { entries: NestedEntry[]; clashed: boolean } {
-  const dest = useHost ? sources.overrides : sources.base;
-  const destLabel = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
-  const clashes = (key: string): boolean =>
-    Object.hasOwn(dest, key) && asPlainObject(dest[key]) === null;
   const all = blockedNestedEntries(sources.merged, sources.settings, {}, written);
+  // With --host the merge holds each key as an object, so the host file cannot clash.
+  if (useHost) return { entries: all, clashed: false };
+  const { base } = sources;
+  const clashes = (key: string): boolean =>
+    !Object.hasOwn(base, key) || asPlainObject(base[key]) === null;
   const clashing = new Set(all.map((e) => e.key).filter(clashes));
   for (const key of clashing) {
+    const why = Object.hasOwn(base, key)
+      ? `it sets ${key} to a value that is not an object, which saving would replace`
+      : `only hosts/${HOST}.json has ${key}, so saving would add it for every host`;
     warn(
-      `not saving new ${key} entries: ${destLabel} sets ${key} to a value that is not an ` +
-        `object, which saving would replace; edit ${destLabel} by hand`,
+      `not saving new ${key} entries to shared/settings.base.json: ${why}; run ` +
+        `'nomad capture-settings --host' to save them there`,
     );
   }
   return { entries: all.filter((e) => !clashes(e.key)), clashed: clashing.size > 0 };
@@ -127,19 +137,20 @@ function nestedCaptureEntries(
 function collectCapture(
   sources: CaptureSources,
   useHost: boolean,
-): { subset: Record<string, unknown>; keys: string[]; skipped: string[]; clashed: boolean } {
+): {
+  subset: Record<string, unknown>;
+  keys: string[];
+  skipped: string[];
+  clashed: boolean;
+  removed: string[];
+} {
   const topSubset = buildCaptureSubset(sources.merged, sources.settings, {
     normalizeNodePath: !useHost,
   });
   // Leave out entries a pull deletes as removed upstream, so capture never undoes that removal.
   const written = readWrittenSettingsKeys();
-  const entries = blockedHookEntries(
-    sources.merged,
-    sources.settings,
-    {},
-    written,
-    readWrittenHookIds(),
-  );
+  const hookIds = readWrittenHookIds();
+  const entries = blockedHookEntries(sources.merged, sources.settings, {}, written, hookIds);
   const { entries: nested, clashed } = nestedCaptureEntries(sources, useHost, written);
   const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
@@ -179,14 +190,17 @@ function collectCapture(
     ...nested.map((e) => e.label),
   ].sort((a, b) => a.localeCompare(b, 'en'));
 
-  return { subset, keys, skipped, clashed };
+  // Entries the repo dropped that this capture does not save back; the resync deletes them.
+  const captured = new Set(keys);
+  const removed = removedSettingsKeys(sources.merged, sources.settings, {}, written, hookIds);
+  return { subset, keys, skipped, clashed, removed: removed.filter((k) => !captured.has(k)) };
 }
 
 /**
  * Regenerate the live settings.json from the updated repo, unless something was
  * left unsaved: a regenerate would delete it before it is saved.
  */
-function resyncLive(ts: string, skipped: string[], clashed: boolean): void {
+function resyncLive(ts: string, skipped: string[], clashed: boolean, removed: string[]): void {
   if (skipped.length > 0) {
     // A regenerate would delete the skipped hooks from the live file before they are saved.
     warn(
@@ -201,6 +215,13 @@ function resyncLive(ts: string, skipped: string[], clashed: boolean): void {
     // pull-side drift WARN: re-advising 'nomad capture-settings' in the run
     // that just captured would be contradictory.
     regenerateSettings(ts, { suppressDriftWarn: true });
+    if (removed.length > 0) {
+      const { phrase, pronoun } = describeSettings(removed);
+      warn(
+        `this capture also removed ${phrase} from settings.json because the repo no longer ` +
+          `carries ${pronoun}; the previous file is at ~/.cache/claude-nomad/backup/${ts}/settings.json.`,
+      );
+    }
   }
 }
 
@@ -250,7 +271,7 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     const merged = deepMerge(base, overrides);
 
     const settings = readJson<Record<string, unknown>>(settingsPath);
-    const { subset, keys, skipped, clashed } = collectCapture(
+    const { subset, keys, skipped, clashed, removed } = collectCapture(
       { base, overrides, merged, settings },
       useHost,
     );
@@ -282,7 +303,7 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     backupRepoWrite(destPath, ts, repo);
     writeJsonAtomic(destPath, newContent);
 
-    resyncLive(ts, skipped, clashed);
+    resyncLive(ts, skipped, clashed, removed);
     log(`captured ${keys.length} key(s) into ${dest} (backup: ${ts})`);
   } finally {
     // Release the lock on every exit path. Any NomadFatal propagates to the
