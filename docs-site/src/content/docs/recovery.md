@@ -460,6 +460,9 @@ Three rules:
   `nomad doctor --check-shared` stop with an error instead. A block that also has `regexes` must
   set `condition = "AND"`, as in the example below: without it gitleaks ignores every finding in
   the listed files, not just the ones your `regexes` describe, so nomad stops on that too.
+  Write `paths` patterns in syntax JavaScript also accepts: nomad checks each one and stops on a
+  pattern it cannot read, such as Go's `(?P<name>...)` groups. Keys with a dot inside quotes
+  (`"allowlist.regexes"`) are refused too; use a `[[allowlists]]` header.
 
 Example `<REPO_HOME>/.gitleaks.overlay.toml` (note: no `[extend]` block, and `paths` limits it to
 synced session transcripts):

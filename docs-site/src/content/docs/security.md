@@ -37,9 +37,10 @@ documented here as accepted trade-offs rather than defended in code.
   inherent to letting users curate their own allowlist (and layer extra entries via the overlay)
   and "Allow" individual findings; keep write access to the repo as tightly held as the secrets
   the scan is meant to protect. The overlay is the one part that is constrained: each of its
-  allowlist blocks must be path-scoped (a block with no `paths`, or a catch-all `.*`/`.+` pattern,
-  is rejected on push), so it can add narrow exceptions but cannot be used to silently turn
-  scanning off fleet-wide. `.gitleaks.toml` and `.gitleaksignore` remain fully trusted.
+  allowlist blocks must be path-scoped (a block with no `paths`, a path pattern that matches any
+  file, or `regexes` without `condition = "AND"` stops `nomad push` and
+  `nomad doctor --check-shared` with an error), so it can add narrow exceptions but cannot be used
+  to silently turn scanning off fleet-wide. `.gitleaks.toml` and `.gitleaksignore` remain fully trusted.
 
 - **`nomad update` runs `npm install` in the local checkout.** Updating executes the dependency
   tree's lifecycle scripts, so a compromised upstream repo (or a malicious dependency) can run
