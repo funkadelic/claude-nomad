@@ -13,6 +13,9 @@ type Table = Record<string, unknown>;
 /** A pattern that matches anything (`.*`, `.+`, `^.*$`, `(.*)`, ...). */
 const CATCH_ALL_RE = /^\^?\(?\.[*+]\)?\$?$/;
 
+/** Paths no scoped pattern should match: one that does allows every file. */
+const CANARY_PATHS = ['nomad-canary-q7z/zz9.qk', 'zz9q7.qk'];
+
 /** Keys that narrow an allowlist to specific matches rather than whole files. */
 const MATCHER_KEYS = ['regexes', 'stopwords', 'commits'];
 
@@ -44,12 +47,52 @@ function lowerKeys(table: Table): Table {
 }
 
 /**
+ * Reject a quoted key containing a dot anywhere in the overlay: gitleaks' config
+ * loader splits `"allowlist.regexes"` into nested tables, past these checks.
+ * @param value A parsed TOML value.
+ */
+function assertNoDottedKeys(value: unknown): void {
+  if (Array.isArray(value)) {
+    value.forEach(assertNoDottedKeys);
+    return;
+  }
+  if (!isTable(value)) return;
+  for (const [key, child] of Object.entries(value)) {
+    if (key.includes('.')) {
+      throw new NomadFatal(
+        `.gitleaks.overlay.toml key "${key}" contains a dot, which gitleaks splits into nested tables. Use a [table] header instead.`,
+      );
+    }
+    assertNoDottedKeys(child);
+  }
+}
+
+/**
+ * True when a `paths` pattern matches an unrelated canary path, or is not a
+ * string or not compilable as a JS regex (so it cannot be checked).
+ * @param pattern One `paths` entry (a Go regex; a leading `(?flags)` maps to JS flags).
+ */
+function isBroadPath(pattern: unknown): boolean {
+  if (typeof pattern !== 'string') return true;
+  const [prefix = '', flags = ''] = /^\(\?([imsU]+)\)/.exec(pattern) ?? [];
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern.slice(prefix.length), flags.replace('U', ''));
+  } catch {
+    return true;
+  }
+  return CANARY_PATHS.some((path) => re.test(path));
+}
+
+/**
  * Parse the overlay, turning a syntax error into a `NomadFatal`.
  * @param overlayBody The overlay file contents.
  */
 function parseOverlay(overlayBody: string): Table {
   try {
-    return lowerKeys(parse(overlayBody));
+    const doc = parse(overlayBody);
+    assertNoDottedKeys(doc);
+    return lowerKeys(doc);
   } catch (err) {
     if (err instanceof NomadFatal) throw err;
     throw new NomadFatal(`.gitleaks.overlay.toml is not valid TOML: ${(err as Error).message}`);
@@ -76,8 +119,8 @@ function allowlistTables(doc: Table): Table[] {
  * @param allowlist One allowlist table with lowercased keys.
  */
 function assertAllowlistScoped(allowlist: Table): void {
-  const patterns = [allowlist.regexes, allowlist.paths].flat();
-  if (patterns.some((p) => typeof p === 'string' && CATCH_ALL_RE.test(p))) {
+  const regexes = [allowlist.regexes].flat();
+  if (regexes.some((p) => typeof p === 'string' && CATCH_ALL_RE.test(p))) {
     throw new NomadFatal(
       '.gitleaks.overlay.toml allowlist contains a catch-all pattern (.* or .+) that would suppress every finding. Replace it with a specific, anchored pattern.',
     );
@@ -85,6 +128,12 @@ function assertAllowlistScoped(allowlist: Table): void {
   if (!Array.isArray(allowlist.paths) || allowlist.paths.length === 0) {
     throw new NomadFatal(
       '.gitleaks.overlay.toml allowlist must be path-scoped: every [[allowlists]] block needs a `paths` entry so it cannot suppress findings repo-wide. Anchor `paths` to the files you intend to allow (e.g. shared/projects/<logical>/...jsonl).',
+    );
+  }
+  const broad: unknown = allowlist.paths.find(isBroadPath);
+  if (broad !== undefined) {
+    throw new NomadFatal(
+      `.gitleaks.overlay.toml allowlist path ${JSON.stringify(broad)} is a catch-all: it matches unrelated files, or nomad cannot check its regex syntax. Anchor it to the files you intend to allow.`,
     );
   }
   const isAnd = String(allowlist.condition).toUpperCase() === 'AND';
