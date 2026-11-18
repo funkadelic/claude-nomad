@@ -137,3 +137,20 @@ paths = [
     '''^shared/skills/[^/]+/.*$''',
 ]
 condition = "AND"
+
+# Path-scoped: Claude Code records the request's beta flags in every transcript
+# turn (`"betas":["claude-code-20250219","oauth-2025-04-20","interleaved-thinking-2025-05-14"]`).
+# generic-api-key reads the `auth` inside `oauth` as a key name and the NEXT flag
+# as its secret, so each turn yields one false positive. The match-target regex
+# requires the whole `oauth-<date>","<flag>-<date>"` pair, with a lowercase
+# flag body, so a real token after `oauth-...` still fires.
+[[allowlists]]
+description = "claude-nomad: oauth beta-flag list (oauth-<date>, <flag>-<date>) in synced session transcripts"
+regexTarget = "match"
+regexes = [
+    '''oauth-\d{4}-\d{2}-\d{2}","[a-z][a-z0-9-]*-\d{4}-\d{2}-\d{2}"''',
+]
+paths = [
+    '''^shared/projects/[^/]+/.*\.jsonl$''',
+]
+condition = "AND"
