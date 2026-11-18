@@ -89,7 +89,9 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
           if (s.endsWith('.gitleaks.overlay.toml')) return true; // overlay present
           return true; // bundled present
         }),
-        readFileSync: vi.fn(() => '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\n'),
+        readFileSync: vi.fn(
+          () => '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\ncondition = "AND"\n',
+        ),
         mkdtempSync: vi.fn((prefix: unknown) => `${String(prefix)}AbCdEf`),
         writeFileSync: vi.fn((p: unknown, body: unknown, opts: unknown) => {
           writtenPath = String(p);
@@ -165,7 +167,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
         }),
         readFileSync: vi.fn(
           () =>
-            '[[allowlists]]\ndescription = "extended coverage"\nregexes = ["X"]\npaths = ["x.txt"]\n',
+            '[[allowlists]]\ndescription = "extended coverage"\nregexes = ["X"]\npaths = ["x.txt"]\ncondition = "AND"\n',
         ),
         mkdtempSync: vi.fn((prefix: unknown) => `${String(prefix)}GhIjKl`),
         writeFileSync: vi.fn(),
@@ -193,6 +195,11 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     ['single-quoted header', "[[ 'allowlists' ]]\nregexes = ['''X''']\n"],
     ['quoted legacy header', '["allowlist"]\nregexes = ["X"]\n'],
     ['quoted dotted-key form', '"allowlist".regexes = ["X"]\n'],
+    ['regexes and paths without AND', '[[allowlists]]\nregexes = ["X"]\npaths = ["x.txt"]\n'],
+    [
+      'stopwords and paths with OR',
+      '[[allowlists]]\nstopwords = ["X"]\npaths = ["x.txt"]\ncondition = "OR"\n',
+    ],
   ])(
     'rejects an unscoped overlay allowlist (%s) with NomadFatal and no temp write',
     async (_label, overlayBody) => {
@@ -251,7 +258,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     writeFileSync(join(repoHome, '.gitleaks.toml'), '[extend]\nuseDefault = true\n');
     writeFileSync(
       join(repoHome, '.gitleaks.overlay.toml'),
-      '[[allowlists]]\nregexes = ["X"]\npaths = ["x.txt"]\n',
+      '[[allowlists]]\nregexes = ["X"]\npaths = ["x.txt"]\ncondition = "AND"\n',
     );
     const writeSpy = vi.fn();
     vi.doMock('node:fs', async (importOriginal) => {
@@ -301,7 +308,9 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
           if (s.endsWith('.gitleaks.overlay.toml')) return true; // overlay present
           return true; // bundled present
         }),
-        readFileSync: vi.fn(() => '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\n'),
+        readFileSync: vi.fn(
+          () => '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\ncondition = "AND"\n',
+        ),
         writeFileSync: vi.fn(() => {
           const err = new Error('ENOSPC: no space left on device') as NodeJS.ErrnoException;
           err.code = 'ENOSPC';

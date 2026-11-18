@@ -88,8 +88,8 @@ const OVERLAY_EXTEND_HEADER_RE = /^[ \t]*\[[ \t]*["']?extend["']?[ \t]*\]/m;
 /** The dotted-key and inline-table `extend` forms; see `OVERLAY_EXTEND_HEADER_RE`. */
 const OVERLAY_EXTEND_KEY_RE = /^[ \t]*["']?extend["']?[ \t]*[.=]/m;
 
-/** Any TOML table or array-of-tables header at the start of a line. */
-const TABLE_HEADER_RE = /^\s*\[/;
+/** Split point before each line opening a TOML table or array-of-tables header. */
+const TABLE_HEADER_SPLIT_RE = /^(?=[ \t]*\[)/m;
 
 /** An allowlist table header: `[allowlist]` or `[[allowlists]]`, bare or quoted. */
 const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*(["']?)allowlists?\1\s*\]\]?/;
@@ -106,7 +106,13 @@ const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*(["']?)allowlists?\1\s*\]\]?/;
 const OVERLAY_INLINE_ALLOWLIST_RE = /^[ \t]*(["']?)allowlists?\1[ \t]*[.=]/m;
 
 /** A `paths = ...` key at the start of a line (inside an allowlist block). */
-const PATHS_KEY_RE = /^\s*paths\s*=/;
+const PATHS_KEY_RE = /^[ \t]*paths[ \t]*=/m;
+
+/** A key that narrows an allowlist to specific matches rather than whole files. */
+const MATCHER_KEY_RE = /^[ \t]*(?:regexes|stopwords|commits)[ \t]*=/m;
+
+/** `condition = "AND"`, which makes `paths` narrow the matchers instead of replacing them. */
+const CONDITION_AND_RE = /^[ \t]*condition[ \t]*=[ \t]*(["'])AND\1/im;
 
 /**
  * A quoted catch-all pattern (`.*`, `.+`, `^.*$`, etc.) in any TOML quote
@@ -114,6 +120,29 @@ const PATHS_KEY_RE = /^\s*paths\s*=/;
  * suppress every finding, defeating the path scoping.
  */
 const CATCH_ALL_RE = /('''|"""|'|")\^?\(?\.[*+]\)?\$?\1/;
+
+/**
+ * Reject one allowlist chunk with a catch-all, no `paths`, or matchers without
+ * `condition = "AND"` (without AND, a path match alone allows a finding).
+ * @param block One allowlist table chunk of the overlay.
+ */
+function assertAllowlistBlockScoped(block: string): void {
+  if (CATCH_ALL_RE.test(block)) {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml allowlist contains a catch-all pattern (.* or .+) that would suppress every finding. Replace it with a specific, anchored pattern.',
+    );
+  }
+  if (!PATHS_KEY_RE.test(block)) {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml allowlist must be path-scoped: every [[allowlists]] block needs a `paths` entry so it cannot suppress findings repo-wide. Anchor `paths` to the files you intend to allow (e.g. shared/projects/<logical>/...jsonl).',
+    );
+  }
+  if (MATCHER_KEY_RE.test(block) && !CONDITION_AND_RE.test(block)) {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml allowlist with both `paths` and `regexes` (or `stopwords`/`commits`) needs `condition = "AND"`; without it every finding in the listed files is ignored, not just the matching ones.',
+    );
+  }
+}
 
 /**
  * Reject an overlay whose allowlist blocks are not path-scoped. The overlay is
@@ -126,9 +155,8 @@ const CATCH_ALL_RE = /('''|"""|'|")\^?\(?\.[*+]\)?\$?\1/;
  * pattern; the dotted-key and inline-table allowlist forms are rejected outright
  * (they would bypass the line-based walk), forcing the table form. Throws
  * `NomadFatal` so a dangerous overlay fails LOUD, mirroring the `[extend]`
- * guard. The walk is line-based (no TOML parser dependency): it
- * tracks whether the current table is an allowlist and whether it has seen a
- * `paths` key before the next table header closes the block.
+ * guard. The check is text-based (no TOML parser dependency): the overlay is
+ * split at table headers and each allowlist chunk is checked on its own.
  *
  * @param overlayBody The already-read overlay file contents.
  */
@@ -138,30 +166,9 @@ function assertOverlayAllowlistsScoped(overlayBody: string): void {
       '.gitleaks.overlay.toml must declare allowlists as [[allowlists]] table blocks, not the dotted-key (allowlist.x = ...) or inline-table (allowlist = { ... }) form, which bypasses path-scope validation. Use a [[allowlists]] block with a `paths` entry.',
     );
   }
-  let inAllowlist = false;
-  let hasPaths = false;
-  const closeBlock = (): void => {
-    if (inAllowlist && !hasPaths) {
-      throw new NomadFatal(
-        '.gitleaks.overlay.toml allowlist must be path-scoped: every [[allowlists]] block needs a `paths` entry so it cannot suppress findings repo-wide. Anchor `paths` to the files you intend to allow (e.g. shared/projects/<logical>/...jsonl).',
-      );
-    }
-  };
-  for (const line of overlayBody.split('\n')) {
-    if (TABLE_HEADER_RE.test(line)) {
-      closeBlock();
-      inAllowlist = OVERLAY_ALLOWLIST_HEADER_RE.test(line);
-      hasPaths = false;
-    } else if (inAllowlist) {
-      if (PATHS_KEY_RE.test(line)) hasPaths = true;
-      if (CATCH_ALL_RE.test(line)) {
-        throw new NomadFatal(
-          '.gitleaks.overlay.toml allowlist contains a catch-all pattern (.* or .+) that would suppress every finding. Replace it with a specific, anchored pattern.',
-        );
-      }
-    }
+  for (const block of overlayBody.split(TABLE_HEADER_SPLIT_RE)) {
+    if (OVERLAY_ALLOWLIST_HEADER_RE.test(block)) assertAllowlistBlockScoped(block);
   }
-  closeBlock();
 }
 
 /** A `targetRules = ...` key line (not a comment mention). */
