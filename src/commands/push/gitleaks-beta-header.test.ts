@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { scanStagedTree } from './gitleaks.scan.ts';
+import { scanFile, scanStagedTree } from './gitleaks.scan.ts';
 
 /**
- * Real-binary suite for two `scanStagedTree` regressions: the bundled
- * oauth beta-flag allowlist, and a findings count large enough that verbose
+ * Real-binary suite for the bundled oauth beta-flag allowlist (push scan and
+ * the redact re-scan) and for a findings count large enough that verbose
  * stdout would overflow the 1 MB `execFileSync` buffer. Hermetic setup mirrors
  * `gitleaks-memory-allowlist.test.ts`.
  */
@@ -23,6 +23,11 @@ const hasGitleaks = ((): boolean => {
     return false;
   }
 })();
+
+/** Fixed tokens, split so no contiguous secret-shaped literal is committed. */
+const realToken = ['Qm7Vt2Kp9X', 'w4Zr8Ln3Hj', '6Bd1Fs5Gc0Ty'].join('');
+const upperDated = ['Ab3xQ9Zr7Kp2', '-2025-05-14'].join('');
+const flag = 'interleaved-thinking-2025-05-14';
 
 /** A transcript line carrying the beta-flag list, with `next` after the oauth flag. */
 const betasLine = (next: string): string =>
@@ -71,18 +76,33 @@ describe.skipIf(!hasGitleaks)(
     const transcript = 'shared/projects/testproj/s.jsonl';
 
     it('suppresses the oauth beta-flag list in a synced transcript', () => {
-      write(transcript, betasLine('interleaved-thinking-2025-05-14').repeat(20));
+      write(transcript, betasLine(flag).repeat(20));
       expect(scanStagedTree(scanRoot)).toEqual([]);
     });
 
-    it('still fires on a real token after the oauth flag', () => {
-      write(transcript, betasLine(randomBytes(24).toString('base64url')));
+    it.each([
+      ['a real token', realToken],
+      ['an uppercase date-suffixed token', upperDated],
+    ])('still fires on %s after the oauth flag', (_label, next) => {
+      write(transcript, betasLine(next));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
     });
 
     it('still fires on the beta-flag list outside a synced transcript', () => {
-      write('shared/skills/demo/notes.md', betasLine('interleaved-thinking-2025-05-14'));
+      write('shared/skills/demo/notes.md', betasLine(flag));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
+    });
+
+    it('suppresses the beta-flag list in the redact re-scan of a local transcript', () => {
+      const local = join(testHome, '.claude', 'projects', '-enc', 's.jsonl');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, betasLine(flag) + betasLine(realToken));
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([realToken]);
+    });
+
+    it('still fires in the redact re-scan outside ~/.claude/projects', () => {
+      write('elsewhere/s.jsonl', betasLine(flag));
+      expect(scanFile(join(scanRoot, 'elsewhere', 's.jsonl'))?.length).toBe(1);
     });
 
     it('returns every finding when the report is large', () => {
