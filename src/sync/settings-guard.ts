@@ -171,8 +171,8 @@ function hookLabels(entries: HookEntry[]): string[] {
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
  * named), then one `key.sub` label per blocked live-only entry inside an object
  * key the merge also carries, then one label per blocked live-only hook entry
- * under a `hooks` key the merge also carries. A key `preMerged` or `written` holds
- * with the live value unchanged was removed upstream, so it is not blocked;
+ * under a `hooks` key the merge also carries. A key `preMerged` or `written`
+ * holds with the live value unchanged was removed upstream, so it is not blocked;
  * an edited value stays blocked.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
@@ -200,8 +200,8 @@ export function blockedSettingsKeys(
 /**
  * Promotable live-only keys a pull deletes because the repo dropped them (the
  * complement of `blockedSettingsKeys`), then one `key.sub` label per nested
- * entry and one label per hook entry it deletes for the same reason. Credential keys are left to
- * `credentialOverwriteCount`.
+ * entry and one label per hook entry it deletes for the same reason.
+ * Credential keys are left to `credentialOverwriteCount`.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD.

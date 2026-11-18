@@ -90,8 +90,9 @@ type CaptureSources = {
 
 /**
  * Compose the top-level `ahead`-key capture with the hook-entry capture and new
- * entries inside an object key the repo already has, warning about skipped/shadowed hook events before the caller decides
- * whether there is anything to write.
+ * entries inside an object key the repo already has, warning about
+ * skipped/shadowed hook events before the caller decides whether there is
+ * anything to write.
  */
 function collectCapture(
   sources: CaptureSources,
