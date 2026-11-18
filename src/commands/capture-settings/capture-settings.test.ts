@@ -881,6 +881,25 @@ describe('cmdCaptureSettings', () => {
       expect(host.mk).toEqual({ a: 1, b: 2 });
     });
 
+    it('saves the other entries but leaves settings.json unchanged when one key clashes', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: null, other: { a: 1 } }) + '\n');
+      writeFileSync(join(env.hostsDir, 'test-host.json'), JSON.stringify({ mk: { a: 1 } }));
+      const liveText = JSON.stringify({ mk: { a: 1, b: 2 }, other: { a: 1, c: 3 } }) + '\n';
+      writeFileSync(env.settingsPath, liveText);
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
+      expect(base).toEqual({ mk: null, other: { a: 1, c: 3 } });
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(liveText);
+      expect(errs.join('\n')).toContain('settings.json left unchanged so the unsaved entries stay');
+    });
+
     it('captures nothing for a changed sub-value or a new env entry', async () => {
       const baseText = JSON.stringify({ mk: { a: 1 }, env: { A: '1' } }) + '\n';
       writeFileSync(env.basePath, baseText);
