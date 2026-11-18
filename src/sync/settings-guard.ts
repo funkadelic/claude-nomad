@@ -73,6 +73,18 @@ function unchangedSincePreMerge(
 }
 
 /**
+ * Split `items` in one pass: `removed` where `removedUpstream` holds, else `blocked`.
+ */
+function partition<T>(
+  items: T[],
+  removedUpstream: (item: T) => boolean,
+): { blocked: T[]; removed: T[] } {
+  const split: { blocked: T[]; removed: T[] } = { blocked: [], removed: [] };
+  for (const item of items) (removedUpstream(item) ? split.removed : split.blocked).push(item);
+  return split;
+}
+
+/**
  * Split live-only hook entries under a `hooks` key the merge also carries
  * into those a pull refuses (`blocked`) and those it deletes as removed
  * upstream (`removed`): `preMerged` had the entry, the last write produced it,
@@ -91,10 +103,7 @@ function splitHookEntries(
   const preMergedContents = hookEntryContents(preMerged);
   const removedUpstream = (e: HookEntry): boolean =>
     preMergedContents.has(e.content) || writtenHookIds.has(settingValueHash(e.content));
-  return {
-    blocked: live.filter((e) => !removedUpstream(e)),
-    removed: live.filter(removedUpstream),
-  };
+  return partition(live, removedUpstream);
 }
 
 /**
@@ -134,11 +143,7 @@ function splitNestedEntries(
       normalizeNodePathsDeep(asPlainObject(pre[e.key])?.[e.sub]),
       normalizeNodePathsDeep(e.value),
     );
-  const live = liveOnlyNestedEntries(merged, existing);
-  return {
-    blocked: live.filter((e) => !removedUpstream(e)),
-    removed: live.filter(removedUpstream),
-  };
+  return partition(liveOnlyNestedEntries(merged, existing), removedUpstream);
 }
 
 /**
@@ -239,10 +244,7 @@ function splitAheadKeys(
   const live = stripGsdHookEntries(existing);
   const removedUpstream = (key: string): boolean =>
     unchangedSincePreMerge(pre, live, key) || stillAsWritten(written, existing, key);
-  return {
-    blocked: promotable.filter((key) => !removedUpstream(key)),
-    removed: promotable.filter(removedUpstream),
-  };
+  return partition(promotable, removedUpstream);
 }
 
 /**

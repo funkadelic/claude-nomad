@@ -5,7 +5,7 @@
  * top-level-key drift classifier.
  */
 
-import { stripGsdHookEntries } from './hooks-filter.ts';
+import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
 import { normalizeNodePathsDeep } from './settings-classify.ts';
 import { sortKeysDeep } from '../core/utils.json.ts';
 
@@ -176,16 +176,11 @@ export type HookCaptureResult = {
   skipped: string[];
 };
 
-/** True for a non-null, non-array object. */
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
-
 /**
  * The plain-object `hooks` value of `settings`, or `{}` for any other shape.
  */
 function hooksBlockOf(settings: Record<string, unknown>): Record<string, unknown> {
-  return isPlainObject(settings.hooks) ? settings.hooks : {};
+  return asPlainObject(settings.hooks) ?? {};
 }
 
 /**
@@ -194,7 +189,7 @@ function hooksBlockOf(settings: Record<string, unknown>): Record<string, unknown
  * @param overrides - `hosts/<HOST>.json`, or `{}` when absent.
  */
 export function hostReplacesHooks(overrides: Record<string, unknown>): boolean {
-  return Object.hasOwn(overrides, 'hooks') && !isPlainObject(overrides.hooks);
+  return Object.hasOwn(overrides, 'hooks') && asPlainObject(overrides.hooks) === null;
 }
 
 /**
