@@ -308,13 +308,13 @@ specific problem and points at the right fix.
 If an external tool (such as Claude Code or GSD) wrote new keys into your `~/.claude/settings.json`
 that are not yet in your shared repo, run `nomad capture-settings` to promote them, or to save a
 hook or other entry it added inside a setting your repo already tracks (such as a plugin
-marketplace), before the next `nomad pull` overwrites them. With `--host`, the keys land in
-`hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json` (useful for machine-specific values
-such as absolute paths). `--dry-run` shows what would be written without touching anything. Before
-it writes, `capture-settings` shows the destination and the keys and asks you to confirm; pass
-`--yes` (or `-y`) to skip the prompt, which is required when running without an interactive
-terminal. `nomad push` also warns when it detects ahead-drift so you have a prompt to act before the
-push completes.
+marketplace). Until you do, `nomad pull` leaves `settings.json` unchanged rather than drop them.
+With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json`
+(useful for machine-specific values such as absolute paths). `--dry-run` shows what would be written
+without touching anything. Before it writes, `capture-settings` shows the destination and the keys
+and asks you to confirm; pass `--yes` (or `-y`) to skip the prompt, which is required when running
+without an interactive terminal. `nomad push` also warns when it detects ahead-drift so you have a
+prompt to act before the push completes.
 
 ## Claude Code plugin
 
