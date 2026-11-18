@@ -458,7 +458,7 @@ Three rules:
   not use a pattern that matches anything (such as `.*`) or every file of a common synced type
   (such as `\.md$` or `\.jsonl$`). The overlay syncs to every host, so an allowlist without that
   limit would hide real secrets on all of them; `nomad push` stops with an error instead, and so
-  does `nomad doctor --check-shared` when it scans this host's sessions. A block that also has `regexes` must
+  does `nomad doctor --check-shared`. A block that also has `regexes` must
   set `condition = "AND"`, as in the example below: without it gitleaks ignores every finding in
   the listed files, not just the ones your `regexes` describe, so nomad stops on that too.
   Write `paths` and `regexes` patterns in syntax JavaScript also accepts: nomad checks each one

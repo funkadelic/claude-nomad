@@ -37,6 +37,7 @@ import { reportCommittedSkills } from './shared.skills.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome, type PathMap } from '../../../core/config.ts';
 import { copyDirJsonlOnly } from '../../../sync/remap.ts';
+import { resolveTomlConfig } from '../../push/gitleaks.config.ts';
 import { nowTimestamp } from '../../../core/utils.fs.ts';
 import { encodePath, readJson } from '../../../core/utils.json.ts';
 
@@ -134,6 +135,23 @@ function ensureGitleaksReady(section: DoctorSection, gitleaksReady?: boolean): b
 }
 
 /**
+ * Validate `.gitleaks.overlay.toml` the way every push scan does, before
+ * anything is staged, so an unsafe overlay FAILs doctor even on a host with
+ * nothing to scan. Returns false after emitting the FAIL row.
+ */
+function ensureOverlaySafe(section: DoctorSection): boolean {
+  try {
+    const { tempPath } = resolveTomlConfig();
+    if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
+    return true;
+  } catch (err) {
+    addItem(section, `${red(failGlyph)} gitleaks overlay rejected: ${(err as Error).message}`);
+    process.exitCode = 1;
+    return false;
+  }
+}
+
+/**
  * Run the local-preview half of `--check-shared`: stage a temp copy of this-host
  * mapped session dirs (a malformed `path-map.json` -> FAIL row, no crash) and
  * scan it through the same mechanism push uses. Split out of `reportCheckShared`
@@ -185,8 +203,9 @@ function runLocalPreviewScan(section: DoctorSection): void {
  * Run the `--check-shared` preflight and append its rows to `section`.
  *
  * Thin orchestrator: `ensureGitleaksReady` gates entry (a missing binary
- * WARN-skips, a probe failure FAILs) -- this is the ONLY path that skips the
- * rest of the function. `runLocalPreviewScan` runs the local, not-yet-pushed
+ * WARN-skips, a probe failure FAILs) -- this and an unsafe overlay
+ * (`ensureOverlaySafe`, which every scan below would reject anyway) are the
+ * only paths that skip the rest of the function. `runLocalPreviewScan` runs the local, not-yet-pushed
  * transcript preflight (FAIL semantics, unchanged) guarded by a `try/catch`:
  * its own `mkdirSync`/`finally rmSync` are unguarded, so a throw there is
  * caught here, reported as a FAIL row, and `process.exitCode` is set, rather
@@ -207,6 +226,7 @@ function runLocalPreviewScan(section: DoctorSection): void {
  */
 export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolean): void {
   if (!ensureGitleaksReady(section, gitleaksReady)) return;
+  if (!ensureOverlaySafe(section)) return;
   try {
     runLocalPreviewScan(section);
   } catch (err) {
