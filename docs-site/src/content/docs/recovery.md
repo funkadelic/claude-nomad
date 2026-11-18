@@ -102,11 +102,13 @@ in pushed history.
 ## nomad redact
 
 Rewrites the secret span in the local source transcripts for a session in place, replacing each
-flagged secret value with `[REDACTED:<rule>]`. This covers the whole session subtree: the main
-transcript at `~/.claude/projects/<encoded>/<session-id>.jsonl` and every nested file under
-`~/.claude/projects/<encoded>/<session-id>/` (subagent transcripts, tool results), so a secret that
-lives only in a subagent transcript is redacted too. Before rewriting, the original files are backed
-up to `~/.cache/claude-nomad/backup/<timestamp>/`.
+flagged secret value with `[REDACTED:<rule>]`. If gitleaks does not report the value on its own, or
+it appears more than once in the flagged text, the whole flagged text is replaced, which can also
+remove the key name and quotes around it (the backup below lets you restore the file). This covers
+the whole session subtree: the main transcript at `~/.claude/projects/<encoded>/<session-id>.jsonl`
+and every nested file under `~/.claude/projects/<encoded>/<session-id>/` (subagent transcripts, tool
+results), so a secret that lives only in a subagent transcript is redacted too. Before rewriting,
+the original files are backed up to `~/.cache/claude-nomad/backup/<timestamp>/`.
 
 ```bash
 $ nomad redact <session-id>
@@ -132,9 +134,10 @@ Safety checks:
   the session to end.
 - Before every rewrite, a backup is written to `~/.cache/claude-nomad/backup/<timestamp>/`, so
   the original content is recoverable.
-- If a finding's secret value cannot be located verbatim in the file (for example the scanner
+- If a finding's flagged text cannot be located verbatim in the file (for example the scanner
   reported a truncated or normalized span), the file is left unchanged and a `no redaction applied`
-  warning is printed instead of a silent success. Inspect it by hand; the push re-scan still blocks
+  warning is printed instead of a silent success. This differs from a missing secret value, which
+  falls back to replacing the whole flagged text as described above. Inspect it by hand; the push re-scan still blocks
   a real leak.
 - `--dry-run` prints the planned redactions and writes nothing.
 
@@ -361,7 +364,9 @@ Transcript-only suppressions, scoped to synced session transcripts
   transcripts whenever a conversation touches the docs that quote them.
 - Claude Code's beta-flag list (`oauth-<date>` followed by another dated flag such as
   `interleaved-thinking-2025-05-14`), recorded on every turn, which `generic-api-key` reads as a key
-  name and a secret. Because it also covers local transcripts, Redact leaves those lines alone too.
+  name and a secret. A second copy covers local transcripts so Redact leaves those lines alone too,
+  unless you use a `.gitleaks.overlay.toml`: gitleaks drops that copy when an overlay is present,
+  and Redact then also replaces those flag values (harmless, the line stays valid).
 
 Structurally anchored suppressions, scoped to both synced transcripts and committed skill content
 (`shared/skills/<name>/...`, any nesting depth). Each carries surrounding structure a bare

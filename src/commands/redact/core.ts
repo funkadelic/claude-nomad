@@ -6,7 +6,7 @@ export type RedactFinding = {
   StartLine: number;
   Match: string;
   RuleID: string;
-  /** Secret span inside `Match`; when present only it is replaced, so the key name and quotes survive. */
+  /** Secret inside `Match`. Only a nonempty `Secret` found exactly once in `Match` narrows the replacement; otherwise the whole `Match` (key name and quotes included) is replaced. */
   Secret?: string;
 };
 
