@@ -5,7 +5,7 @@
  */
 
 import { isProtoPollutionKey } from '../core/utils.json.ts';
-import { stripGsdHookEntries } from './hooks-filter.ts';
+import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
 
 // ---------------------------------------------------------------------------
 // Deep-equality helpers (dep-free). This module owns the single drift
@@ -361,4 +361,36 @@ export function buildCaptureSubset(
     out[key] = opts.normalizeNodePath ? normalizeNodePathsDeep(raw) : raw;
   }
   return out;
+}
+
+/** A live-only entry inside a top-level object key the merge also carries. */
+export type NestedEntry = { key: string; sub: string; label: string; value: unknown };
+
+/**
+ * Live-only entries inside a top-level object key present on both sides, such
+ * as a marketplace under `extraKnownMarketplaces`. Skips `hooks` (handled per
+ * entry elsewhere), credential keys, prototype-pollution names, and any sub-key
+ * the merge already has, so a changed value is never listed.
+ *
+ * @param merged - Recomputed `deepMerge(base, host)` object.
+ * @param settings - Parsed `~/.claude/settings.json` object.
+ * @returns Entries sorted by `key.sub` label.
+ */
+export function liveOnlyNestedEntries(
+  merged: Record<string, unknown>,
+  settings: Record<string, unknown>,
+): NestedEntry[] {
+  const mergedObj = stripGsdHookEntries(merged);
+  const out: NestedEntry[] = [];
+  for (const [key, liveVal] of Object.entries(stripGsdHookEntries(settings))) {
+    if (key === 'hooks' || CAPTURE_EXCLUDED_KEYS.has(key)) continue;
+    const mergedSub = asPlainObject(mergedObj[key]);
+    const liveSub = asPlainObject(liveVal);
+    if (mergedSub === null || liveSub === null) continue;
+    for (const [sub, value] of Object.entries(liveSub)) {
+      if (isProtoPollutionKey(sub) || Object.hasOwn(mergedSub, sub)) continue;
+      out.push({ key, sub, label: `${key}.${sub}`, value });
+    }
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label, 'en'));
 }

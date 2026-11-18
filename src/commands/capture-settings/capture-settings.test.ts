@@ -768,4 +768,47 @@ describe('cmdCaptureSettings', () => {
       expect(Object.hasOwn(base, 'env')).toBe(false);
     });
   });
+
+  describe('nested-entry capture', () => {
+    const mkt = (repo: string) => ({ source: { source: 'github', repo } });
+    const baseMkts = { 'claude-nomad': mkt('a/nomad'), ponytail: mkt('a/ponytail') };
+    const liveMkts = {
+      ...baseMkts,
+      googlechrome: mkt('x/chrome'),
+      'claude-code-mods': mkt('x/mods'),
+      'claude-kit': mkt('x/kit'),
+    };
+    const labels = [
+      'extraKnownMarketplaces.claude-code-mods',
+      'extraKnownMarketplaces.claude-kit',
+      'extraKnownMarketplaces.googlechrome',
+    ];
+
+    it('refuses a pull, then saves new entries under an existing key and keeps them live', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ extraKnownMarketplaces: baseMkts }) + '\n');
+      const liveText = JSON.stringify({ extraKnownMarketplaces: liveMkts }) + '\n';
+      writeFileSync(env.settingsPath, liveText);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      expect(regenerateSettings('20261118-000000').blocked).toEqual(labels);
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(liveText);
+
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+        logs.push(a.map(String).join(' '));
+      });
+      const baseBefore = readFileSync(env.basePath, 'utf8');
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: true });
+      for (const l of labels) expect(logs.join('\n')).toContain(l);
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseBefore);
+
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const read = (p: string) =>
+        JSON.parse(readFileSync(p, 'utf8')) as { extraKnownMarketplaces: object };
+      expect(read(env.basePath).extraKnownMarketplaces).toEqual(liveMkts);
+      expect(read(env.settingsPath).extraKnownMarketplaces).toEqual(liveMkts);
+    });
+  });
 });

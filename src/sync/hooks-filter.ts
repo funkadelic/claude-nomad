@@ -205,14 +205,12 @@ export function keepGsdHookEntries(settings: Record<string, unknown>): Record<st
 // ---------------------------------------------------------------------------
 
 /**
- * Narrow a value to a plain hooks-block object (non-null, non-array object), or
- * return `null` for any other shape. Lets `graftGsdHookEntries` fail-safe both
- * the base and gsd-only `hooks` blocks without throwing.
+ * Narrow a value to a plain object (non-null, non-array), or `null`.
  *
- * @param value - Any candidate `hooks` value.
+ * @param value - Any candidate value.
  * @returns The value as a record, or `null` when it is not a plain object.
  */
-function asPlainObject(value: unknown): Record<string, unknown> | null {
+export function asPlainObject(value: unknown): Record<string, unknown> | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 }

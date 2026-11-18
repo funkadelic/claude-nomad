@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
-import { buildCaptureSubset } from '../../sync/settings-classify.ts';
+import { buildCaptureSubset, normalizeNodePathsDeep } from '../../sync/settings-classify.ts';
 import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
-import { blockedHookEntries } from '../../sync/settings-guard.ts';
+import { blockedHookEntries, blockedNestedEntries } from '../../sync/settings-guard.ts';
 import { readWrittenHookIds, readWrittenSettingsKeys } from '../../sync/settings-written.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
 import { deepMerge, readJson } from '../../core/utils.json.ts';
@@ -89,8 +89,8 @@ type CaptureSources = {
 };
 
 /**
- * Compose the top-level `ahead`-key capture with the hook-entry capture,
- * warning about skipped/shadowed hook events before the caller decides
+ * Compose the top-level `ahead`-key capture with the hook-entry capture and new
+ * entries inside an object key the repo already has, warning about skipped/shadowed hook events before the caller decides
  * whether there is anything to write.
  */
 function collectCapture(
@@ -101,13 +101,15 @@ function collectCapture(
     normalizeNodePath: !useHost,
   });
   // Leave out entries a pull deletes as removed upstream, so capture never undoes that removal.
+  const written = readWrittenSettingsKeys();
   const entries = blockedHookEntries(
     sources.merged,
     sources.settings,
     {},
-    readWrittenSettingsKeys(),
+    written,
     readWrittenHookIds(),
   );
+  const nested = blockedNestedEntries(sources.merged, sources.settings, {}, written);
   const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
   for (const event of skipped) {
@@ -134,10 +136,17 @@ function collectCapture(
   }
   const subset: Record<string, unknown> = { ...topSubset };
   if (hookEventKeys.length > 0) subset.hooks = hooks;
+  for (const e of nested) {
+    subset[e.key] ??= {};
+    const group = subset[e.key] as Record<string, unknown>;
+    group[e.sub] = useHost ? e.value : normalizeNodePathsDeep(e.value);
+  }
 
-  const keys = [...Object.keys(topSubset), ...hookEventKeys.map((e) => `hooks.${e}`)].sort((a, b) =>
-    a.localeCompare(b, 'en'),
-  );
+  const keys = [
+    ...Object.keys(topSubset),
+    ...hookEventKeys.map((e) => `hooks.${e}`),
+    ...nested.map((e) => e.label),
+  ].sort((a, b) => a.localeCompare(b, 'en'));
 
   return { subset, keys, skipped };
 }
@@ -147,7 +156,8 @@ function collectCapture(
  *
  * Reads `shared/settings.base.json`, `hosts/<HOST>.json` (when present), and
  * `~/.claude/settings.json`. Computes the ahead-only key capture plus any
- * live-only hook entries under a `hooks` key the repo already carries. When
+ * live-only hook entries under a `hooks` key the repo already carries and any
+ * new entries inside an object key the repo already has. When
  * non-empty, merges the subset into the destination repo file (base by
  * default, host with `--host`), backs up the destination via
  * `backupRepoWrite`, writes atomically, then calls `regenerateSettings` so

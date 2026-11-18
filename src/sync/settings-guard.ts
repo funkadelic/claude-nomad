@@ -10,10 +10,12 @@ import {
   classifySettingsDrift,
   deepEqual,
   describeSettings,
+  liveOnlyNestedEntries,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
+  type NestedEntry,
 } from './settings-classify.ts';
-import { stripGsdHookEntries } from './hooks-filter.ts';
+import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
 import {
   hookEntryContents,
   hookEntryLabel,
@@ -114,6 +116,49 @@ export function blockedHookEntries(
 }
 
 /**
+ * Split live-only entries under a shared object key into those a pull refuses
+ * (`blocked`) and those it deletes as removed upstream (`removed`): `preMerged`
+ * held the same value, or the whole key still matches the write record.
+ */
+function splitNestedEntries(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+  written: WrittenSettings | null,
+): { blocked: NestedEntry[]; removed: NestedEntry[] } {
+  const pre = stripGsdHookEntries(preMerged);
+  // The record is whole-key: once the key is also edited locally, an entry dropped upstream reads as local.
+  const removedUpstream = (e: NestedEntry): boolean =>
+    stillAsWritten(written, existing, e.key) ||
+    deepEqual(
+      normalizeNodePathsDeep(asPlainObject(pre[e.key])?.[e.sub]),
+      normalizeNodePathsDeep(e.value),
+    );
+  const live = liveOnlyNestedEntries(merged, existing);
+  return {
+    blocked: live.filter((e) => !removedUpstream(e)),
+    removed: live.filter(removedUpstream),
+  };
+}
+
+/**
+ * Live-only entries under a shared object key that a pull refuses; see
+ * `splitNestedEntries`.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
+ * @param written - The written-settings record, or `null`.
+ */
+export function blockedNestedEntries(
+  merged: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  preMerged: Record<string, unknown>,
+  written: WrittenSettings | null,
+): NestedEntry[] {
+  return splitNestedEntries(merged, existing, preMerged, written).blocked;
+}
+
+/**
  * Sorted labels, one per distinct hook (by id, not by label, so two hooks
  * sharing a label still count as two).
  */
@@ -124,8 +169,9 @@ function hookLabels(entries: HookEntry[]): string[] {
 
 /**
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
- * named), followed by one label per blocked live-only hook entry under a
- * `hooks` key the merge also carries. A key `preMerged` or `written` holds
+ * named), then one `key.sub` label per blocked live-only entry inside an object
+ * key the merge also carries, then one label per blocked live-only hook entry
+ * under a `hooks` key the merge also carries. A key `preMerged` or `written` holds
  * with the live value unchanged was removed upstream, so it is not blocked;
  * an edited value stays blocked.
  * @param merged - The base + host merge about to be written.
@@ -134,8 +180,8 @@ function hookLabels(entries: HookEntry[]): string[] {
  * @param written - Value hashes the last successful settings write produced on
  *   this host, or `null` for no record; see `stillAsWritten`.
  * @param writtenHookIds - Hashes of each hook entry's content from that write.
- * @returns The blocked keys then blocked hook-entry labels, sorted within
- *   each group.
+ * @returns The blocked keys, nested `key.sub` labels, then hook-entry labels,
+ *   sorted within each group.
  */
 export function blockedSettingsKeys(
   merged: Record<string, unknown>,
@@ -146,22 +192,23 @@ export function blockedSettingsKeys(
 ): string[] {
   return [
     ...splitAheadKeys(merged, existing, preMerged, written).blocked,
+    ...splitNestedEntries(merged, existing, preMerged, written).blocked.map((e) => e.label),
     ...hookLabels(blockedHookEntries(merged, existing, preMerged, written, writtenHookIds)),
   ];
 }
 
 /**
  * Promotable live-only keys a pull deletes because the repo dropped them (the
- * complement of `blockedSettingsKeys`), followed by one label per hook entry
- * it deletes for the same reason. Credential keys are left to
+ * complement of `blockedSettingsKeys`), then one `key.sub` label per nested
+ * entry and one label per hook entry it deletes for the same reason. Credential keys are left to
  * `credentialOverwriteCount`.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD.
  * @param written - The written-settings record, or `null`.
  * @param writtenHookIds - Hashes of each hook entry's content from that write.
- * @returns The removed keys then removed hook-entry labels, sorted within
- *   each group.
+ * @returns The removed keys, nested `key.sub` labels, then hook-entry labels,
+ *   sorted within each group.
  */
 export function removedSettingsKeys(
   merged: Record<string, unknown>,
@@ -172,6 +219,7 @@ export function removedSettingsKeys(
 ): string[] {
   return [
     ...splitAheadKeys(merged, existing, preMerged, written).removed,
+    ...splitNestedEntries(merged, existing, preMerged, written).removed.map((e) => e.label),
     ...hookLabels(splitHookEntries(merged, existing, preMerged, written, writtenHookIds).removed),
   ];
 }
