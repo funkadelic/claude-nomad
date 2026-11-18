@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -340,6 +340,43 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => resolveTomlConfig()).toThrow(NomadFatal);
   });
+
+  /** Generate a real temp config for `overlay` and return its body (temp dir removed). */
+  async function generatedBody(overlay: string): Promise<string> {
+    writeFileSync(join(repoHome, '.gitleaks.overlay.toml'), overlay);
+    const { resolveTomlConfig } = await import('./gitleaks.config.ts');
+    const result = resolveTomlConfig();
+    try {
+      return readFileSync(result.path!, 'utf8');
+    } finally {
+      rmSync(result.tempPath!, { recursive: true, force: true });
+    }
+  }
+
+  it('carries exactly the bundled targetRules allowlist block after the overlay body', async () => {
+    const body = await generatedBody(
+      "[[allowlists]]\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = \"AND\"\n",
+    );
+    const { resolveTomlPath } = await import('./gitleaks.config.ts');
+    const keyLine = /^[ \t]*targetRules[ \t]*=/gm;
+    const expected = readFileSync(resolveTomlPath()!, 'utf8').match(keyLine)?.length ?? 0;
+    expect(expected).toBeGreaterThan(0);
+    expect(body.match(keyLine)).toHaveLength(expected);
+    // One overlay block plus one per carried block; a comment-only mention adds none.
+    expect(body.match(/^\[\[allowlists\]\]/gm)).toHaveLength(1 + expected);
+    expect(body.indexOf('zzunrelated')).toBeLessThan(body.search(keyLine));
+  });
+
+  it.each(['[allowlist]', '["allowlist"]', "[ 'allowlist' ]"])(
+    'carries nothing for a legacy %s overlay (gitleaks rejects the mix)',
+    async (header) => {
+      const body = await generatedBody(
+        `${header}\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = "AND"\n`,
+      );
+      expect(body).not.toMatch(/^[ \t]*targetRules[ \t]*=/m);
+      expect(body).toContain(header);
+    },
+  );
 });
 
 /**

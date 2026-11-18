@@ -43,6 +43,10 @@ const patFor = (i: number): string => {
   return ['gh', 'p_', body].join('');
 };
 
+/** A path-scoped overlay allowlist that matches nothing the suite scans. */
+const overlayBody =
+  "[[allowlists]]\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = \"AND\"\n";
+
 /** Env vars the suite isolates; USERPROFILE is the home on native Windows. */
 const ISOLATED = [
   'HOME',
@@ -103,10 +107,7 @@ describe.skipIf(!hasGitleaks)(
     it('keeps the suppression when a user overlay extends the bundled config', () => {
       // No repo-level .gitleaks.toml, so the overlay chains onto the bundled one.
       rmSync(join(repoUnderHome, '.gitleaks.toml'));
-      writeFileSync(
-        join(repoUnderHome, '.gitleaks.overlay.toml'),
-        "[[allowlists]]\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = \"AND\"\n",
-      );
+      writeFileSync(join(repoUnderHome, '.gitleaks.overlay.toml'), overlayBody);
       write(transcript, betasLine(flag).repeat(3));
       expect(scanStagedTree(scanRoot)).toEqual([]);
       // The push scan redacts Secret, so identify the surviving finding by line.
@@ -128,6 +129,15 @@ describe.skipIf(!hasGitleaks)(
     });
 
     it('suppresses the beta-flag list in the redact re-scan of a local transcript', () => {
+      const local = join(testHome, '.claude', 'projects', '-enc', 's.jsonl');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, betasLine(flag) + betasLine(realToken));
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([realToken]);
+    });
+
+    it('keeps the redact re-scan suppression when a user overlay extends the bundled config', () => {
+      rmSync(join(repoUnderHome, '.gitleaks.toml'));
+      writeFileSync(join(repoUnderHome, '.gitleaks.overlay.toml'), overlayBody);
       const local = join(testHome, '.claude', 'projects', '-enc', 's.jsonl');
       mkdirSync(dirname(local), { recursive: true });
       writeFileSync(local, betasLine(flag) + betasLine(realToken));

@@ -366,8 +366,9 @@ Transcript-only suppressions, scoped to synced session transcripts
 - Claude Code's beta-flag list (`oauth-<date>` followed by another dated flag such as
   `interleaved-thinking-2025-05-14`), recorded on every turn, which `generic-api-key` reads as a key
   name and a secret. A second copy covers local transcripts so Redact leaves those lines alone too,
-  unless you use a `.gitleaks.overlay.toml`: gitleaks drops that copy when an overlay is present,
-  and Redact then also replaces those flag values (harmless, the line stays valid).
+  including when you use a `.gitleaks.overlay.toml`. The one exception is an overlay written with
+  the older single `[allowlist]` table instead of `[[allowlists]]`: Redact then also replaces those
+  flag values (harmless, the line stays valid).
 
 Structurally anchored suppressions, scoped to both synced transcripts and committed skill content
 (`shared/skills/<name>/...`, any nesting depth). Each carries surrounding structure a bare
