@@ -509,6 +509,23 @@ describe('reportSettingsDriftCheck', () => {
     expect(items.find((i) => i.includes(warnGlyph))).toContain('mk.b');
   });
 
+  it('advises a host-file edit for a dropped nested entry and no put-back from capture', async () => {
+    plantDropped({ model: 'sonnet', mk: { b: 2 }, theme: 'dark' }, ['mk']);
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(
+      join(repo, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', mk: {} }),
+    );
+    const { items } = await runCheck();
+    const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
+    expect(warnRow).toContain('mk.b');
+    expect(warnRow).toContain('add them to hosts/test-host.json');
+    expect(warnRow).not.toContain('capture-settings --host');
+    const infoRow = items.find((i) => i.includes('nomad capture-settings')) ?? '';
+    expect(infoRow).toContain('theme');
+    expect(infoRow).not.toContain('puts back');
+  });
+
   it('emits a name-free count row for excluded local-only keys (no capture advice, no secret name)', async () => {
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),
