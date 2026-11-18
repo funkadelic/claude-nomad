@@ -102,13 +102,14 @@ in pushed history.
 ## nomad redact
 
 Rewrites the secret span in the local source transcripts for a session in place, replacing each
-flagged secret value with `[REDACTED:<rule>]`. If gitleaks does not report the value on its own, or
-it appears more than once in the flagged text, the whole flagged text is replaced, which can also
-remove the key name and quotes around it (the backup below lets you restore the file). This covers
-the whole session subtree: the main transcript at `~/.claude/projects/<encoded>/<session-id>.jsonl`
-and every nested file under `~/.claude/projects/<encoded>/<session-id>/` (subagent transcripts, tool
-results), so a secret that lives only in a subagent transcript is redacted too. Before rewriting,
-the original files are backed up to `~/.cache/claude-nomad/backup/<timestamp>/`.
+flagged secret value with `[REDACTED:<rule>]`. If gitleaks does not report the value on its own, the
+reported value is not found in the flagged text, or it appears there more than once, the whole
+flagged text is replaced. That can also remove the key name and quotes around it and leave the line
+as invalid JSON (the backup below lets you restore the file). This covers the whole session subtree:
+the main transcript at `~/.claude/projects/<encoded>/<session-id>.jsonl` and every nested file under
+`~/.claude/projects/<encoded>/<session-id>/` (subagent transcripts, tool results), so a secret that
+lives only in a subagent transcript is redacted too. Before rewriting, the original files are backed
+up to `~/.cache/claude-nomad/backup/<timestamp>/`.
 
 ```bash
 $ nomad redact <session-id>

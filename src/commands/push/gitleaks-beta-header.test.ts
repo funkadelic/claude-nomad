@@ -107,8 +107,11 @@ describe.skipIf(!hasGitleaks)(
         join(repoUnderHome, '.gitleaks.overlay.toml'),
         "[[allowlists]]\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = \"AND\"\n",
       );
+      write(transcript, betasLine(flag).repeat(3));
+      expect(scanStagedTree(scanRoot)).toEqual([]);
+      // The push scan redacts Secret, so identify the surviving finding by line.
       write(transcript, betasLine(flag) + betasLine(realToken));
-      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+      expect(scanStagedTree(scanRoot)?.map((f) => f.StartLine)).toEqual([2]);
     });
 
     it.each([
