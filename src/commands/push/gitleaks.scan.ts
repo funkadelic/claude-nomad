@@ -207,15 +207,22 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     `--report-path=${reportPath}`,
   ];
   if (toml !== null) args.push('--config', toml);
-  const opts: ExecFileSyncOptions = { cwd: repoDir, stdio: ['ignore', 'pipe', 'pipe'] };
+  // An inherited GIT_DIR/GIT_INDEX_FILE/GIT_WORK_TREE (e.g. from a git hook)
+  // would stage into the caller's repo instead of `repoDir`.
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_WORK_TREE;
+  const opts: ExecFileSyncOptions = { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'] };
   const gitleaksOpts: ExecFileSyncOptions = { ...opts, timeout: GITLEAKS_SCAN_TIMEOUT_MS };
   try {
     execFileSync('git', ['init', '-q'], opts);
-    // safecrlf=false silences the per-file CRLF warning (Git for Windows
-    // default), which across thousands of files would overflow the buffer.
-    execFileSync('git', ['-c', 'core.safecrlf=false', 'add', '-A'], {
+    // A per-file CRLF warning (Git for Windows default) across thousands of
+    // files would overflow the 1 MB default stderr buffer.
+    execFileSync('git', ['add', '-A'], {
       ...opts,
       stdio: ['ignore', 'ignore', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
     });
     execFileSync('gitleaks', args, gitleaksOpts);
     return [];

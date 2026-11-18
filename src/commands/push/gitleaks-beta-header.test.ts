@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,10 +10,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { scanFile, scanStagedTree } from './gitleaks.scan.ts';
 
 /**
- * Real-binary suite for the bundled oauth beta-flag allowlist (push scan and
- * the redact re-scan) and for a findings count large enough that verbose
- * stdout would overflow the 1 MB `execFileSync` buffer. Hermetic setup mirrors
- * `gitleaks-memory-allowlist.test.ts`.
+ * Real-binary suite for the bundled oauth beta-flag allowlist (push scan, the
+ * redact re-scan, and with a user overlay) and for a findings count large
+ * enough that verbose stdout would overflow the 1 MB `execFileSync` buffer.
+ * Hermetic setup mirrors `gitleaks-memory-allowlist.test.ts`.
  */
 const hasGitleaks = ((): boolean => {
   try {
@@ -33,19 +33,39 @@ const flag = 'interleaved-thinking-2025-05-14';
 const betasLine = (next: string): string =>
   `${JSON.stringify({ betas: ['claude-code-20250219', 'oauth-2025-04-20', next] })}\n`;
 
+/** Deterministic github-pat-shaped token `i`, assembled at runtime. */
+const patFor = (i: number): string => {
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const body = [...createHash('sha512').update(`k${i}`).digest()]
+    .map((b) => abc[b % abc.length])
+    .join('')
+    .slice(0, 36);
+  return ['gh', 'p_', body].join('');
+};
+
+/** Env vars the suite isolates; USERPROFILE is the home on native Windows. */
+const ISOLATED = [
+  'HOME',
+  'USERPROFILE',
+  'NOMAD_REPO',
+  'GIT_DIR',
+  'GIT_INDEX_FILE',
+  'GIT_WORK_TREE',
+];
+
 describe.skipIf(!hasGitleaks)(
   'scanStagedTree beta header and large reports (real gitleaks)',
   () => {
-    let originalHome: string | undefined;
-    let originalNomadRepo: string | undefined;
+    let saved: Record<string, string | undefined>;
     let testHome: string;
+    let repoUnderHome: string;
     let scanRoot: string;
 
     beforeEach(() => {
-      originalHome = process.env.HOME;
-      originalNomadRepo = process.env.NOMAD_REPO;
+      saved = Object.fromEntries(ISOLATED.map((k) => [k, process.env[k]]));
+      for (const k of ISOLATED) delete process.env[k];
       testHome = mkdtempSync(join(tmpdir(), 'nomad-gitleaks-beta-home-'));
-      const repoUnderHome = join(testHome, 'claude-nomad');
+      repoUnderHome = join(testHome, 'claude-nomad');
       mkdirSync(repoUnderHome, { recursive: true });
       const here = dirname(fileURLToPath(import.meta.url));
       copyFileSync(
@@ -53,15 +73,15 @@ describe.skipIf(!hasGitleaks)(
         join(repoUnderHome, '.gitleaks.toml'),
       );
       process.env.HOME = testHome;
-      delete process.env.NOMAD_REPO;
+      process.env.USERPROFILE = testHome;
       scanRoot = mkdtempSync(join(tmpdir(), 'nomad-gitleaks-beta-scan-'));
     });
 
     afterEach(() => {
-      if (originalHome !== undefined) process.env.HOME = originalHome;
-      else delete process.env.HOME;
-      if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
-      else delete process.env.NOMAD_REPO;
+      for (const k of ISOLATED) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
       rmSync(testHome, { recursive: true, force: true });
       rmSync(scanRoot, { recursive: true, force: true });
     });
@@ -78,6 +98,17 @@ describe.skipIf(!hasGitleaks)(
     it('suppresses the oauth beta-flag list in a synced transcript', () => {
       write(transcript, betasLine(flag).repeat(20));
       expect(scanStagedTree(scanRoot)).toEqual([]);
+    });
+
+    it('keeps the suppression when a user overlay extends the bundled config', () => {
+      // No repo-level .gitleaks.toml, so the overlay chains onto the bundled one.
+      rmSync(join(repoUnderHome, '.gitleaks.toml'));
+      writeFileSync(
+        join(repoUnderHome, '.gitleaks.overlay.toml'),
+        "[[allowlists]]\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = \"AND\"\n",
+      );
+      write(transcript, betasLine(flag) + betasLine(realToken));
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
     });
 
     it.each([
@@ -105,15 +136,20 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(join(scanRoot, 'elsewhere', 's.jsonl'))?.length).toBe(1);
     });
 
+    it('stages into the scan dir even when the caller exports GIT_INDEX_FILE', () => {
+      const foreign = join(testHome, 'foreign-index');
+      process.env.GIT_INDEX_FILE = foreign;
+      write('notes/a.txt', 'hello\n');
+      expect(scanStagedTree(scanRoot)).toEqual([]);
+      expect(existsSync(foreign)).toBe(false);
+    });
+
     it('returns every finding when the report is large', () => {
+      // 5000 findings print about 1.4 MB under `-v`, past the old buffer limit.
       const n = 5000;
-      const lines = Array.from(
-        { length: n },
-        () => `api_key = "${randomBytes(24).toString('hex')}"`,
-      );
+      const lines = Array.from({ length: n }, (_, i) => `token ${patFor(i)}`);
       write('notes/keys.txt', `${lines.join('\n')}\n`);
-      // A few random keys fall under the entropy threshold; the regression is `null`.
-      expect(scanStagedTree(scanRoot)?.length).toBeGreaterThan(n * 0.9);
+      expect(scanStagedTree(scanRoot)?.length).toBe(n);
     }, 60_000);
   },
 );

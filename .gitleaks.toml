@@ -144,17 +144,31 @@ condition = "AND"
 # as its secret, so each turn yields one false positive. The match-target regex
 # requires the whole `oauth-<date>","<flag>-<date>"` pair, with lowercase
 # dash-separated words for the flag, so a real token after `oauth-...` still
-# fires. The second path covers the absolute local transcript paths that the
-# redact re-scan (`scanFile`) reports; push paths are always relative.
+# fires. This block covers the push scan; no `targetRules`, since gitleaks drops
+# such a block when an overlay extends this file.
 [[allowlists]]
-description = "claude-nomad: oauth beta-flag list (oauth-<date>, <flag>-<date>) in session transcripts"
-targetRules = ["generic-api-key"]
+description = "claude-nomad: oauth beta-flag list (oauth-<date>, <flag>-<date>) in synced session transcripts"
 regexTarget = "match"
 regexes = [
     '''oauth-\d{4}-\d{2}-\d{2}","[a-z]+(?:-[a-z0-9]+)*-\d{4}-\d{2}-\d{2}"''',
 ]
 paths = [
     '''^shared/projects/[^/]+/.*\.jsonl$''',
+]
+condition = "AND"
+
+# Same pattern for the redact re-scan, which reports absolute local transcript
+# paths. It needs `targetRules`: a global block makes a single-file scan skip
+# the whole file on a path match, real secrets included. Dropped when an overlay
+# is present, in which case redact also rewrites these flag values.
+[[allowlists]]
+description = "claude-nomad: oauth beta-flag list in local session transcripts (redact re-scan)"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = [
+    '''oauth-\d{4}-\d{2}-\d{2}","[a-z]+(?:-[a-z0-9]+)*-\d{4}-\d{2}-\d{2}"''',
+]
+paths = [
     '''^(?:[A-Za-z]:)?[/\\](?:.*[/\\])?\.claude[/\\]projects[/\\][^/\\]+[/\\].*\.jsonl$''',
 ]
 condition = "AND"
