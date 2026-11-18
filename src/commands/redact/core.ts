@@ -6,6 +6,8 @@ export type RedactFinding = {
   StartLine: number;
   Match: string;
   RuleID: string;
+  /** Secret inside `Match`. Only a nonempty `Secret` found exactly once in `Match` narrows the replacement; otherwise the whole `Match` (key name and quotes included) is replaced. */
+  Secret?: string;
 };
 
 /** A half-open byte interval `[start, end)` derived from a `Match` value. */
@@ -20,7 +22,9 @@ type MatchInterval = {
  * `indexOf`. Findings with an empty `Match` are skipped. Multiple
  * non-overlapping occurrences of the same value are each recorded as a
  * separate interval. Offsets are value-derived, not column-derived, so they
- * are always correct regardless of gitleaks column alignment.
+ * are always correct regardless of gitleaks column alignment. When a finding's
+ * `Secret` occurs exactly once inside its `Match`, the interval covers only that
+ * secret.
  *
  * @param content Full file content as a single string.
  * @param findings Array of finding descriptors.
@@ -34,10 +38,18 @@ export function collectMatchIntervals(
   for (const f of findings) {
     const match = f.Match;
     if (match === '') continue;
+    // Narrow to the secret: a whole generic-api-key Match spans the closing
+    // quote, and replacing it breaks the JSON line it sits in. A secret that
+    // occurs more than once in the Match is ambiguous, so the whole Match goes.
+    const secret = f.Secret ?? '';
+    const inner = secret === '' ? -1 : match.indexOf(secret);
+    const unique = inner !== -1 && !match.includes(secret, inner + 1);
+    const off = unique ? inner : 0;
+    const len = unique ? secret.length : match.length;
     let from = 0;
     let pos = content.indexOf(match, from);
     while (pos !== -1) {
-      intervals.push({ start: pos, end: pos + match.length, ruleId: f.RuleID });
+      intervals.push({ start: pos + off, end: pos + off + len, ruleId: f.RuleID });
       from = pos + match.length;
       pos = content.indexOf(match, from);
     }
