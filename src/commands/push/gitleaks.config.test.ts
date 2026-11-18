@@ -121,6 +121,8 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     ['leading-bracket whitespace', '[ extend]\nuseDefault = true\n'],
     ['dotted key', 'extend.path = "/evil"\n[[allowlists]]\nregexes = ["X"]\n'],
     ['inline table', 'extend = { path = "/evil" }\n'],
+    ['quoted header', '["extend"]\npath = "/evil"\n'],
+    ['quoted dotted key', '\'extend\'.path = "/evil"\n'],
   ])(
     'rejects a TOML-equivalent [extend] bypass (%s) with NomadFatal and no temp write',
     async (_label, overlayBody) => {
@@ -187,6 +189,10 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     ['dotted-key allowlist form', 'allowlist.regexes = ["X"]\n'],
     ['inline-table allowlist form', 'allowlist = { regexes = ["X"] }\n'],
     ['inline-table allowlists (plural) form', 'allowlists = [{ regexes = ["X"] }]\n'],
+    ['double-quoted header', '[["allowlists"]]\nregexes = ["X"]\n'],
+    ['single-quoted header', "[[ 'allowlists' ]]\nregexes = ['''X''']\n"],
+    ['quoted legacy header', '["allowlist"]\nregexes = ["X"]\n'],
+    ['quoted dotted-key form', '"allowlist".regexes = ["X"]\n'],
   ])(
     'rejects an unscoped overlay allowlist (%s) with NomadFatal and no temp write',
     async (_label, overlayBody) => {

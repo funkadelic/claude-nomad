@@ -74,22 +74,25 @@ export type TomlConfigResult =
   { path: string | null; tempPath: null } | { path: string; tempPath: string };
 
 /**
- * Regex matching an `[extend]` definition at the start of a line, used to
+ * Regexes matching an `[extend]` definition at the start of a line, used to
  * reject an overlay that declares its own `[extend]` block. Covers
  * every TOML-equivalent form so the guard cannot be bypassed by whitespace or
  * key syntax: the table header `[extend]` with optional inner whitespace
  * (`[ extend ]`), the dotted-key form (`extend.path = ...`), and the inline-table
  * form (`extend = { ... }`). All three load the `extend` table in gitleaks' TOML
  * parser and would build the depth-3 chain that silently drops the default
- * ruleset, so all three must fail LOUD.
+ * ruleset, so all three must fail LOUD. Each also matches a quoted name
+ * (`["extend"]`), which TOML treats as the same key.
  */
-const OVERLAY_EXTEND_RE = /^[ \t]*(?:\[[ \t]*extend[ \t]*\]|extend[ \t]*[.=])/m;
+const OVERLAY_EXTEND_HEADER_RE = /^[ \t]*\[[ \t]*["']?extend["']?[ \t]*\]/m;
+/** The dotted-key and inline-table `extend` forms; see `OVERLAY_EXTEND_HEADER_RE`. */
+const OVERLAY_EXTEND_KEY_RE = /^[ \t]*["']?extend["']?[ \t]*[.=]/m;
 
 /** Any TOML table or array-of-tables header at the start of a line. */
 const TABLE_HEADER_RE = /^\s*\[/;
 
-/** An allowlist table header: `[allowlist]` or `[[allowlists]]`. */
-const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*allowlists?\s*\]\]?/;
+/** An allowlist table header: `[allowlist]` or `[[allowlists]]`, bare or quoted. */
+const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*(["']?)allowlists?\1\s*\]\]?/;
 
 /**
  * A dotted-key (`allowlist.regexes = ...`) or inline-table
@@ -100,7 +103,7 @@ const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*allowlists?\s*\]\]?/;
  * guard's handling of the same TOML-equivalent forms) and require the table
  * form, which the walk validates.
  */
-const OVERLAY_INLINE_ALLOWLIST_RE = /^[ \t]*allowlists?[ \t]*[.=]/m;
+const OVERLAY_INLINE_ALLOWLIST_RE = /^[ \t]*(["']?)allowlists?\1[ \t]*[.=]/m;
 
 /** A `paths = ...` key at the start of a line (inside an allowlist block). */
 const PATHS_KEY_RE = /^\s*paths\s*=/;
@@ -289,7 +292,7 @@ export function resolveTomlConfig(): TomlConfigResult {
   // this fallback.
   try {
     const overlayBody = readFileSync(overlayPath, 'utf8');
-    if (OVERLAY_EXTEND_RE.test(overlayBody)) {
+    if (OVERLAY_EXTEND_HEADER_RE.test(overlayBody) || OVERLAY_EXTEND_KEY_RE.test(overlayBody)) {
       throw new NomadFatal(
         '.gitleaks.overlay.toml must not contain an [extend] block; it is generated automatically. Remove the [extend] section and retry.',
       );
