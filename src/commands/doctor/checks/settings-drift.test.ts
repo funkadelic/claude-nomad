@@ -177,10 +177,13 @@ describe('reportSettingsDriftCheck', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNoColor: string | undefined;
+  let originalNomadRepo: string | undefined;
   let env: Env;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    delete process.env.NOMAD_REPO;
     originalNomadHost = process.env.NOMAD_HOST;
     originalNoColor = process.env.NO_COLOR;
     process.env.NO_COLOR = '1';
@@ -194,6 +197,7 @@ describe('reportSettingsDriftCheck', () => {
     restoreEnv('HOME', originalHome);
     restoreEnv('NOMAD_HOST', originalNomadHost);
     restoreEnv('NO_COLOR', originalNoColor);
+    restoreEnv('NOMAD_REPO', originalNomadRepo);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -454,6 +458,73 @@ describe('reportSettingsDriftCheck', () => {
     plantDropped({ model: 'sonnet', theme: 'dark' }, ['model', 'theme'], false);
     const { items } = await runCheck();
     expect(items.find((i) => i.includes(warnGlyph))).toContain('theme');
+  });
+
+  it('advises capture for a new entry under a shared object key, not a pull overwrite', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ mk: { a: 1 } }));
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ mk: { a: 1, b: 2 } }),
+    );
+    const { out } = await runCheck();
+    expect(out).toContain('mk.b');
+    expect(out).toContain('nomad capture-settings');
+    expect(out).not.toContain('diverged');
+  });
+
+  it('advises capture for a nested entry even with no host file, leaving top-level keys to the host-overrides row', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ mk: { a: 1 } }));
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ mk: { a: 1, b: 2 }, theme: 'dark' }),
+    );
+    const { items } = await runCheck();
+    const row = items.find((i) => i.includes('nomad capture-settings')) ?? '';
+    expect(row).toContain('1 local-only key(s)');
+    expect(row).toContain('adding --host for host-specific values');
+    expect(row).toContain('mk.b');
+    expect(row).not.toContain('theme');
+  });
+
+  it('names a nested entry the next pull removes when its key is still as written', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ mk: { a: 1 } }));
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ mk: { a: 1, b: 2 } }),
+    );
+    const cache = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(
+      join(cache, 'settings-written-test-host.json'),
+      JSON.stringify({
+        kind: 'settings-written/2',
+        keys: { mk: settingValueHash({ a: 1, b: 2 }) },
+      }),
+    );
+    const { items } = await runCheck();
+    expect(items.find((i) => i.includes(warnGlyph))).toContain('mk.b');
+  });
+
+  it('advises a host-file edit for a dropped nested entry and no put-back from capture', async () => {
+    plantDropped({ model: 'sonnet', mk: { b: 2 }, theme: 'dark' }, ['mk']);
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(
+      join(repo, 'shared', 'settings.base.json'),
+      JSON.stringify({ model: 'sonnet', mk: {} }),
+    );
+    const { items } = await runCheck();
+    const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
+    expect(warnRow).toContain('mk.b');
+    expect(warnRow).toContain('add them to hosts/test-host.json');
+    expect(warnRow).not.toContain('capture-settings --host');
+    const infoRow = items.find((i) => i.includes('nomad capture-settings')) ?? '';
+    expect(infoRow).toContain('theme');
+    expect(infoRow).not.toContain('puts back');
   });
 
   it('emits a name-free count row for excluded local-only keys (no capture advice, no secret name)', async () => {

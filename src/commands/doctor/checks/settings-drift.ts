@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import {
   classifySettingsDrift,
+  liveOnlyNestedEntries,
   partitionByCaptureExclusion,
+  withoutNestedEntries,
 } from '../../../sync/settings-classify.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
@@ -203,28 +205,49 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
   }
   const merged = deepMerge(base, hostObj ?? {});
 
-  const { missing, changed, extra } = diffMergedSettings(merged, settings);
+  // New entries under a shared object key are capture candidates, not a pull-overwrites change.
+  const nested = liveOnlyNestedEntries(merged, settings);
+  const { missing, changed, extra } = diffMergedSettings(
+    merged,
+    withoutNestedEntries(settings, nested),
+  );
   const { promotable, excluded } = partitionByCaptureExclusion(extra);
   const written = readWrittenSettingsKeys();
-  const dropped = promotable.filter((key) => stillAsWritten(written, settings, key));
-  const candidates = promotable.filter((key) => !stillAsWritten(written, settings, key));
+  const asWritten = (key: string): boolean => stillAsWritten(written, settings, key);
+  const nestedDropped = nested.filter((e) => asWritten(e.key));
+  const nestedCandidates = nested.filter((e) => !asWritten(e.key));
+  const topDropped = promotable.filter(asWritten);
+  const dropped = [...topDropped, ...nestedDropped.map((e) => e.label)];
+  const nestedLabels = nestedCandidates.map((e) => e.label);
+  const candidates = [...promotable.filter((key) => !asWritten(key)), ...nestedLabels];
+  // With no host file, reportHostOverrides already flags new top-level keys; nested ones it cannot see.
+  const shown = hostExists ? candidates : nestedLabels;
 
-  emitDriftRows(section, missing, changed, { candidates, dropped }, excluded, hostExists);
+  emitDriftRows(
+    section,
+    missing,
+    changed,
+    { candidates, dropped, shown, topDropped: topDropped.length },
+    excluded,
+    hostExists,
+  );
 }
 
 /**
  * WARN row for local keys the written-keys record names and the repo dropped.
  * A pull refuses while any other local-only key (`candidates`) exists, so the
  * removal is promised only once those are dealt with. The advice keeps them on
- * this host only, since a plain capture would restore them for every host.
+ * this host only, since a plain capture would restore them for every host; capture
+ * never saves a dropped nested entry, so with one present it says to edit the host file.
  */
-function droppedRow(dropped: string[], candidates: string[]): string {
+function droppedRow(dropped: string[], candidates: string[], nested: boolean): string {
   const verb = candidates.length === 1 ? 'is' : 'are';
   const when =
     candidates.length === 0
       ? "the next 'nomad pull' removes them"
       : `a pull removes them once ${candidates.join(', ')} ${verb} captured or deleted`;
-  return `${yellow(warnGlyph)} settings.json has ${dropped.length} key(s) the repo no longer carries: ${dropped.join(', ')} (${when}, as expected if they were removed from the repo on purpose; to keep them on this machine only, run 'nomad capture-settings --host')`;
+  const keep = nested ? `add them to hosts/${HOST}.json` : "run 'nomad capture-settings --host'";
+  return `${yellow(warnGlyph)} settings.json has ${dropped.length} key(s) the repo no longer carries: ${dropped.join(', ')} (${when}, as expected if they were removed from the repo on purpose; to keep them on this machine only, ${keep})`;
 }
 
 /**
@@ -249,19 +272,21 @@ function droppedRow(dropped: string[], candidates: string[]): string {
  * @param missing - Keys in merged absent from settings.
  * @param changed - Keys in both with different values.
  * @param promotable - Local-only keys capture would promote: `dropped` ones the
- *   written-keys record names (the next pull deletes them), and the rest.
+ *   written-keys record names (the next pull deletes them), the rest, and the
+ *   `shown` subset the capture row names; `topDropped` counts the top-level
+ *   keys at the head of `dropped`.
  * @param excluded - Local-only keys capture refuses (credential/host-local).
- * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the local-only rows).
+ * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the excluded-keys row).
  */
 function emitDriftRows(
   section: DoctorSection,
   missing: string[],
   changed: string[],
-  promotable: { candidates: string[]; dropped: string[] },
+  promotable: { candidates: string[]; dropped: string[]; shown: string[]; topDropped: number },
   excluded: string[],
   hostFileExists: boolean,
 ): void {
-  const { candidates, dropped } = promotable;
+  const { candidates, dropped, shown, topDropped } = promotable;
   if (missing.length > 0) {
     addItem(
       section,
@@ -274,12 +299,14 @@ function emitDriftRows(
       `${yellow(warnGlyph)} settings.json drift: ${changed.join(', ')} diverged from the base+host merge (run 'nomad diff' to inspect; 'nomad pull' overwrites local with the repo, or edit the base/host file to keep local)`,
     );
   }
-  if (dropped.length > 0) addItem(section, droppedRow(dropped, candidates));
-  if (candidates.length > 0 && hostFileExists) {
-    const readds = dropped.length > 0 ? '; this also puts back the removed keys above' : '';
+  if (dropped.length > 0)
+    addItem(section, droppedRow(dropped, candidates, dropped.length > topDropped));
+  if (shown.length > 0) {
+    // Capture puts back only top-level dropped keys; it never re-adds a dropped nested entry.
+    const readds = topDropped > 0 ? '; this also puts back the removed keys above' : '';
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${candidates.length} local-only key(s) not in base+host merge: ${candidates.join(', ')} (run 'nomad capture-settings' to promote them into the repo${readds})`,
+      `${dim(infoGlyph)} settings.json has ${shown.length} local-only key(s) not in base+host merge: ${shown.join(', ')} (run 'nomad capture-settings' to promote them into the repo, adding --host for host-specific values${readds})`,
     );
   }
   if (excluded.length > 0 && hostFileExists) {

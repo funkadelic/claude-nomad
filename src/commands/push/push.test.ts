@@ -1303,6 +1303,38 @@ describe('reportSettingsAheadDrift', () => {
     expect(combined).toContain('nomad capture-settings');
   });
 
+  it('warns about a new entry under an object key the repo already has', async () => {
+    const { repoUnderHome, testHome } = env;
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ mk: { a: 1 } }),
+    );
+    writeFileSync(
+      join(testHome, '.claude', 'settings.json'),
+      JSON.stringify({ mk: { a: 1, b: 2 } }),
+    );
+    const { reportSettingsAheadDrift } = await import('./push.ts');
+    reportSettingsAheadDrift(repoUnderHome);
+    expect(errOutput(env)).toContain('mk.b');
+  });
+
+  it('does not advise capture for a nested entry the repo dropped since the last write', async () => {
+    const { repoUnderHome, testHome } = env;
+    mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });
+    writeFileSync(
+      join(repoUnderHome, 'shared', 'settings.base.json'),
+      JSON.stringify({ mk: { a: 1 } }),
+    );
+    const live = { mk: { a: 1, b: 2 } };
+    writeFileSync(join(testHome, '.claude', 'settings.json'), JSON.stringify(live));
+    const { recordWrittenSettingsKeys } = await import('../../sync/settings-written.ts');
+    recordWrittenSettingsKeys(live);
+    const { reportSettingsAheadDrift } = await import('./push.ts');
+    reportSettingsAheadDrift(repoUnderHome);
+    expect(errOutput(env)).not.toContain('mk.b');
+  });
+
   it('folds a host override into the merge before computing ahead-drift', async () => {
     const { repoUnderHome, testHome } = env;
     mkdirSync(join(repoUnderHome, 'shared'), { recursive: true });

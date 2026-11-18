@@ -3,10 +3,20 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
-import { buildCaptureSubset } from '../../sync/settings-classify.ts';
+import {
+  buildCaptureSubset,
+  describeSettings,
+  normalizeNodePathsDeep,
+  type NestedEntry,
+} from '../../sync/settings-classify.ts';
+import { asPlainObject } from '../../sync/hooks-filter.ts';
 import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
-import { blockedHookEntries } from '../../sync/settings-guard.ts';
+import {
+  blockedHookEntries,
+  blockedNestedEntries,
+  removedSettingsKeys,
+} from '../../sync/settings-guard.ts';
 import { readWrittenHookIds, readWrittenSettingsKeys } from '../../sync/settings-written.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
 import { deepMerge, readJson } from '../../core/utils.json.ts';
@@ -89,25 +99,59 @@ type CaptureSources = {
 };
 
 /**
- * Compose the top-level `ahead`-key capture with the hook-entry capture,
- * warning about skipped/shadowed hook events before the caller decides
- * whether there is anything to write.
+ * New entries under a shared object key to capture. A base capture leaves out
+ * any whose key the base does not hold as an object (it would replace that value,
+ * or add a key only the host file has for every host) and points at `--host`;
+ * `clashed` reports any left out.
+ */
+function nestedCaptureEntries(
+  sources: CaptureSources,
+  useHost: boolean,
+  written: ReturnType<typeof readWrittenSettingsKeys>,
+): { entries: NestedEntry[]; clashed: boolean } {
+  const all = blockedNestedEntries(sources.merged, sources.settings, {}, written);
+  // With --host the merge holds each key as an object, so the host file cannot clash.
+  if (useHost) return { entries: all, clashed: false };
+  const { base } = sources;
+  const clashes = (key: string): boolean =>
+    !Object.hasOwn(base, key) || asPlainObject(base[key]) === null;
+  const clashing = new Set(all.map((e) => e.key).filter(clashes));
+  for (const key of clashing) {
+    const why = Object.hasOwn(base, key)
+      ? `it sets ${key} to a value that is not an object, which saving would replace`
+      : `only hosts/${HOST}.json has ${key}, so saving would add it for every host`;
+    warn(
+      `not saving new ${key} entries to shared/settings.base.json: ${why}; run ` +
+        `'nomad capture-settings --host' to save them there`,
+    );
+  }
+  return { entries: all.filter((e) => !clashes(e.key)), clashed: clashing.size > 0 };
+}
+
+/**
+ * Compose the top-level `ahead`-key capture with the hook-entry capture and new
+ * entries inside an object key the repo already has, warning about
+ * skipped/shadowed hook events before the caller decides whether there is
+ * anything to write.
  */
 function collectCapture(
   sources: CaptureSources,
   useHost: boolean,
-): { subset: Record<string, unknown>; keys: string[]; skipped: string[] } {
+): {
+  subset: Record<string, unknown>;
+  keys: string[];
+  skipped: string[];
+  clashed: boolean;
+  removed: string[];
+} {
   const topSubset = buildCaptureSubset(sources.merged, sources.settings, {
     normalizeNodePath: !useHost,
   });
   // Leave out entries a pull deletes as removed upstream, so capture never undoes that removal.
-  const entries = blockedHookEntries(
-    sources.merged,
-    sources.settings,
-    {},
-    readWrittenSettingsKeys(),
-    readWrittenHookIds(),
-  );
+  const written = readWrittenSettingsKeys();
+  const hookIds = readWrittenHookIds();
+  const entries = blockedHookEntries(sources.merged, sources.settings, {}, written, hookIds);
+  const { entries: nested, clashed } = nestedCaptureEntries(sources, useHost, written);
   const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
   for (const event of skipped) {
@@ -134,12 +178,51 @@ function collectCapture(
   }
   const subset: Record<string, unknown> = { ...topSubset };
   if (hookEventKeys.length > 0) subset.hooks = hooks;
+  for (const e of nested) {
+    if (!Object.hasOwn(subset, e.key)) subset[e.key] = {};
+    const group = subset[e.key] as Record<string, unknown>;
+    group[e.sub] = useHost ? e.value : normalizeNodePathsDeep(e.value);
+  }
 
-  const keys = [...Object.keys(topSubset), ...hookEventKeys.map((e) => `hooks.${e}`)].sort((a, b) =>
-    a.localeCompare(b, 'en'),
-  );
+  const keys = [
+    ...Object.keys(topSubset),
+    ...hookEventKeys.map((e) => `hooks.${e}`),
+    ...nested.map((e) => e.label),
+  ].sort((a, b) => a.localeCompare(b, 'en'));
 
-  return { subset, keys, skipped };
+  // Entries the repo dropped that this capture does not save back; the resync deletes them.
+  const captured = new Set(keys);
+  const removed = removedSettingsKeys(sources.merged, sources.settings, {}, written, hookIds);
+  return { subset, keys, skipped, clashed, removed: removed.filter((k) => !captured.has(k)) };
+}
+
+/**
+ * Regenerate the live settings.json from the updated repo, unless something was
+ * left unsaved: a regenerate would delete it before it is saved.
+ */
+function resyncLive(ts: string, skipped: string[], clashed: boolean, removed: string[]): void {
+  if (skipped.length > 0) {
+    // A regenerate would delete the skipped hooks from the live file before they are saved.
+    warn(
+      "settings.json left unchanged so the skipped hooks stay; run 'nomad capture-settings " +
+        "--host' to save them, then pull",
+    );
+  } else if (clashed) {
+    // A regenerate would delete the entries the destination clash kept out.
+    warn('settings.json left unchanged so the unsaved entries stay; pull once they are saved');
+  } else {
+    // Resync the local file from the now-updated repo source. Suppress the
+    // pull-side drift WARN: re-advising 'nomad capture-settings' in the run
+    // that just captured would be contradictory.
+    regenerateSettings(ts, { suppressDriftWarn: true });
+    if (removed.length > 0) {
+      const { phrase, pronoun } = describeSettings(removed);
+      warn(
+        `this capture also removed ${phrase} from settings.json because the repo no longer ` +
+          `carries ${pronoun}; the previous file is at ~/.cache/claude-nomad/backup/${ts}/settings.json.`,
+      );
+    }
+  }
 }
 
 /**
@@ -147,7 +230,8 @@ function collectCapture(
  *
  * Reads `shared/settings.base.json`, `hosts/<HOST>.json` (when present), and
  * `~/.claude/settings.json`. Computes the ahead-only key capture plus any
- * live-only hook entries under a `hooks` key the repo already carries. When
+ * live-only hook entries under a `hooks` key the repo already carries and any
+ * new entries inside an object key the repo already has. When
  * non-empty, merges the subset into the destination repo file (base by
  * default, host with `--host`), backs up the destination via
  * `backupRepoWrite`, writes atomically, then calls `regenerateSettings` so
@@ -187,13 +271,13 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     const merged = deepMerge(base, overrides);
 
     const settings = readJson<Record<string, unknown>>(settingsPath);
-    const { subset, keys, skipped } = collectCapture(
+    const { subset, keys, skipped, clashed, removed } = collectCapture(
       { base, overrides, merged, settings },
       useHost,
     );
 
     if (keys.length === 0) {
-      if (skipped.length === 0) log('nothing to capture: no local-only keys found');
+      if (skipped.length === 0 && !clashed) log('nothing to capture: no local-only keys found');
       return;
     }
 
@@ -219,18 +303,7 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     backupRepoWrite(destPath, ts, repo);
     writeJsonAtomic(destPath, newContent);
 
-    if (skipped.length > 0) {
-      // A regenerate would delete the skipped hooks from the live file before they are saved.
-      warn(
-        "settings.json left unchanged so the skipped hooks stay; run 'nomad capture-settings " +
-          "--host' to save them, then pull",
-      );
-    } else {
-      // Resync the local file from the now-updated repo source. Suppress the
-      // pull-side drift WARN: re-advising 'nomad capture-settings' in the run
-      // that just captured would be contradictory.
-      regenerateSettings(ts, { suppressDriftWarn: true });
-    }
+    resyncLive(ts, skipped, clashed, removed);
     log(`captured ${keys.length} key(s) into ${dest} (backup: ${ts})`);
   } finally {
     // Release the lock on every exit path. Any NomadFatal propagates to the

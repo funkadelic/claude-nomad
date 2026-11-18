@@ -768,4 +768,226 @@ describe('cmdCaptureSettings', () => {
       expect(Object.hasOwn(base, 'env')).toBe(false);
     });
   });
+
+  describe('nested-entry capture', () => {
+    const mkt = (repo: string) => ({ source: { source: 'github', repo } });
+    const baseMkts = { 'claude-nomad': mkt('a/nomad'), ponytail: mkt('a/ponytail') };
+    const liveMkts = {
+      ...baseMkts,
+      googlechrome: mkt('x/chrome'),
+      'claude-code-mods': mkt('x/mods'),
+      'claude-kit': mkt('x/kit'),
+    };
+    const labels = [
+      'extraKnownMarketplaces.claude-code-mods',
+      'extraKnownMarketplaces.claude-kit',
+      'extraKnownMarketplaces.googlechrome',
+    ];
+
+    it('refuses a pull, then saves new entries under an existing key and keeps them live', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ extraKnownMarketplaces: baseMkts }) + '\n');
+      const liveText = JSON.stringify({ extraKnownMarketplaces: liveMkts }) + '\n';
+      writeFileSync(env.settingsPath, liveText);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      expect(regenerateSettings('20261101-000000').blocked).toEqual(labels);
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(liveText);
+
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+        logs.push(a.map(String).join(' '));
+      });
+      const baseBefore = readFileSync(env.basePath, 'utf8');
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: true });
+      for (const l of labels) expect(logs.join('\n')).toContain(l);
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseBefore);
+
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const read = (p: string) =>
+        JSON.parse(readFileSync(p, 'utf8')) as { extraKnownMarketplaces: object };
+      expect(read(env.basePath).extraKnownMarketplaces).toEqual(liveMkts);
+      expect(read(env.settingsPath).extraKnownMarketplaces).toEqual(liveMkts);
+    });
+
+    it('--host writes the entries raw into the host file and leaves the base unchanged', async () => {
+      const baseText = JSON.stringify({ extraKnownMarketplaces: baseMkts }) + '\n';
+      writeFileSync(env.basePath, baseText);
+      const withPath = { ...liveMkts, googlechrome: { command: '/h/bin/node' } };
+      writeFileSync(env.settingsPath, JSON.stringify({ extraKnownMarketplaces: withPath }) + '\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+      const host = JSON.parse(readFileSync(join(env.hostsDir, 'test-host.json'), 'utf8')) as {
+        extraKnownMarketplaces: Record<string, unknown>;
+      };
+      expect(host.extraKnownMarketplaces.googlechrome).toEqual({ command: '/h/bin/node' });
+      expect(Object.keys(host.extraKnownMarketplaces).sort()).toEqual([
+        'claude-code-mods',
+        'claude-kit',
+        'googlechrome',
+      ]);
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
+    });
+
+    it('normalizes a node launcher path in a base capture', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ mk: { a: 1, n: { command: '/h/bin/node' } } }) + '\n',
+      );
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as { mk: { n: unknown } };
+      expect(base.mk.n).toEqual({ command: 'node' });
+    });
+
+    it('saves a new entry under a key that shadows an Object.prototype member', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ toString: { a: 1 } }) + '\n');
+      writeFileSync(env.settingsPath, JSON.stringify({ toString: { a: 1, b: 2 } }) + '\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(JSON.parse(readFileSync(env.basePath, 'utf8'))).toEqual({ toString: { a: 1, b: 2 } });
+    });
+
+    it('skips new entries whose key the destination holds as a non-object, with a warning', async () => {
+      const baseText = JSON.stringify({ mk: null }) + '\n';
+      writeFileSync(env.basePath, baseText);
+      writeFileSync(join(env.hostsDir, 'test-host.json'), JSON.stringify({ mk: { a: 1 } }));
+      writeFileSync(env.settingsPath, JSON.stringify({ mk: { a: 1, b: 2 } }) + '\n');
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
+      expect(errs.join('\n')).toContain('not saving new mk entries');
+      expect(errs.join('\n')).toContain("run 'nomad capture-settings --host'");
+
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+      const host = JSON.parse(readFileSync(join(env.hostsDir, 'test-host.json'), 'utf8')) as {
+        mk: unknown;
+      };
+      expect(host.mk).toEqual({ a: 1, b: 2 });
+    });
+
+    it('saves the other entries but leaves settings.json unchanged when one key clashes', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: null, other: { a: 1 } }) + '\n');
+      writeFileSync(join(env.hostsDir, 'test-host.json'), JSON.stringify({ mk: { a: 1 } }));
+      const liveText = JSON.stringify({ mk: { a: 1, b: 2 }, other: { a: 1, c: 3 } }) + '\n';
+      writeFileSync(env.settingsPath, liveText);
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as Record<string, unknown>;
+      expect(base).toEqual({ mk: null, other: { a: 1, c: 3 } });
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(liveText);
+      expect(errs.join('\n')).toContain('settings.json left unchanged so the unsaved entries stay');
+    });
+
+    it('sends a new entry under a host-only key to --host instead of the base', async () => {
+      const baseText = JSON.stringify({ model: 'x' }) + '\n';
+      writeFileSync(env.basePath, baseText);
+      writeFileSync(join(env.hostsDir, 'test-host.json'), JSON.stringify({ mk: { a: 1 } }));
+      writeFileSync(env.settingsPath, JSON.stringify({ model: 'x', mk: { a: 1, b: 2 } }) + '\n');
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
+      expect(errs.join('\n')).toContain('only hosts/test-host.json has mk');
+    });
+
+    it('names a dropped nested entry the resync removes', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+      const recorded = { mk: { a: 1, b: 2 } };
+      writeFileSync(env.settingsPath, JSON.stringify({ ...recorded, theme: 'dark' }) + '\n');
+      const { recordWrittenSettingsKeys } = await import('../../sync/settings-written.ts');
+      recordWrittenSettingsKeys(recorded);
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const live = JSON.parse(readFileSync(env.settingsPath, 'utf8')) as Record<string, unknown>;
+      expect(live).toEqual({ mk: { a: 1 }, theme: 'dark' });
+      const out = errs.join('\n');
+      expect(out).toContain('this capture also removed');
+      expect(out).toContain('mk.b');
+    });
+
+    it('captures nothing for a changed sub-value or a new env entry', async () => {
+      const baseText = JSON.stringify({ mk: { a: 1 }, env: { A: '1' } }) + '\n';
+      writeFileSync(env.basePath, baseText);
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ mk: { a: 2 }, env: { A: '1', TOKEN: 's' } }) + '\n',
+      );
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+        logs.push(a.map(String).join(' '));
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(logs.join('\n')).toContain('nothing to capture');
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
+    });
+
+    it('lists a new hook entry once as a hooks key, never as a nested label', async () => {
+      const e = (command: string) => ({ matcher: '', hooks: [{ type: 'command', command }] });
+      writeFileSync(env.basePath, JSON.stringify({ hooks: { Stop: [e('stop')] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ hooks: { Stop: [e('stop')], PreToolUse: [e('mine')] } }) + '\n',
+      );
+      const logs: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+        logs.push(a.map(String).join(' '));
+      });
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: true });
+      expect(logs.join('\n')).toMatch(/keys: hooks\.PreToolUse$/m);
+    });
+
+    it('does not re-add an entry the repo dropped since the last write', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1, gone: 2 } }) + '\n');
+      writeFileSync(env.settingsPath, '{}\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      regenerateSettings('20261101-000001');
+
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as { mk: object };
+      expect(base.mk).toEqual({ a: 1 });
+      expect(regenerateSettings('20261101-000002').removed).toEqual(['mk.gone']);
+    });
+  });
 });

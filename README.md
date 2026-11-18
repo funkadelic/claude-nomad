@@ -217,9 +217,9 @@ it:
 - **You are deciding the change:** edit `shared/settings.base.json` (shared by every host) or
   `hosts/<HOST>.json` (one machine only) in the repo, then `nomad push`.
 - **Something else already wrote it** (Claude Code or a tool added keys to your live
-  `~/.claude/settings.json`): run `nomad capture-settings` to promote those keys into the repo
-  before the next `nomad pull` overwrites them. Add `--host` to land machine-specific values (such
-  as absolute paths) in `hosts/<HOST>.json` instead of the shared base.
+  `~/.claude/settings.json`): run `nomad capture-settings` to promote those keys into the repo;
+  until you do, `nomad pull` leaves `settings.json` unchanged. Add `--host` to land machine-specific
+  values (such as absolute paths) in `hosts/<HOST>.json` instead of the shared base.
 
 If `nomad pull` finds settings on this machine that your sync repo does not track, it leaves
 `~/.claude/settings.json` as it is, so those settings are not lost. It lists the settings by name
@@ -242,6 +242,14 @@ machine, and capture warns you before it writes. If your host file already sets 
 that event, or sets `hooks` to `null`, a plain `nomad capture-settings` does not save the hook and
 tells you to add `--host`. A `--host` capture over `hooks: null` replaces the `null`, so the shared
 hooks for every other event reach this machine again, and capture warns about that too.
+
+When the repo already has a setting that holds named entries, such as `extraKnownMarketplaces`, and
+this machine adds another entry inside it, `nomad pull` stops the same way and names it as
+`extraKnownMarketplaces.<name>`. `nomad capture-settings` adds it to the repo's copy of that setting
+(with `--host`, to this machine's host file) and never changes an entry the repo already has. When
+only this machine's host file has that setting, capture saves the entry only with `--host`. An entry
+another machine removed from the repo is removed here too and named by the pull, or by capture when
+it updates `settings.json`.
 
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
@@ -301,7 +309,8 @@ specific problem and points at the right fix.
 
 If an external tool (such as Claude Code or GSD) wrote new keys into your `~/.claude/settings.json`
 that are not yet in your shared repo, run `nomad capture-settings` to promote them, or to save a
-hook it added under an event your repo already tracks, before the next `nomad pull` overwrites them.
+hook or other entry it added inside a setting your repo already tracks (such as a plugin
+marketplace). Until you do, `nomad pull` leaves `settings.json` unchanged rather than drop them.
 With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json`
 (useful for machine-specific values such as absolute paths). `--dry-run` shows what would be written
 without touching anything. Before it writes, `capture-settings` shows the destination and the keys
