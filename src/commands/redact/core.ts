@@ -23,7 +23,8 @@ type MatchInterval = {
  * non-overlapping occurrences of the same value are each recorded as a
  * separate interval. Offsets are value-derived, not column-derived, so they
  * are always correct regardless of gitleaks column alignment. When a finding's
- * `Secret` occurs inside its `Match`, the interval covers only that secret.
+ * `Secret` occurs exactly once inside its `Match`, the interval covers only that
+ * secret.
  *
  * @param content Full file content as a single string.
  * @param findings Array of finding descriptors.
@@ -38,11 +39,13 @@ export function collectMatchIntervals(
     const match = f.Match;
     if (match === '') continue;
     // Narrow to the secret: a whole generic-api-key Match spans the closing
-    // quote, and replacing it breaks the JSON line it sits in.
+    // quote, and replacing it breaks the JSON line it sits in. A secret that
+    // occurs more than once in the Match is ambiguous, so the whole Match goes.
     const secret = f.Secret ?? '';
     const inner = secret === '' ? -1 : match.indexOf(secret);
-    const off = Math.max(inner, 0);
-    const len = inner === -1 ? match.length : secret.length;
+    const unique = inner !== -1 && !match.includes(secret, inner + 1);
+    const off = unique ? inner : 0;
+    const len = unique ? secret.length : match.length;
     let from = 0;
     let pos = content.indexOf(match, from);
     while (pos !== -1) {

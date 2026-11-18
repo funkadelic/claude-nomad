@@ -290,6 +290,14 @@ describe('applyRedactions regression: value-based redaction preserves valid JSON
     expect(JSON.parse(result)).toEqual({ api_key: '[REDACTED:generic-api-key]', n: 1 });
   });
 
+  it('replaces the whole Match when the Secret also appears as the key name', async () => {
+    const { applyRedactions } = await import('./core.ts');
+    const result = applyRedactions('{"password":"password"}', [
+      { StartLine: 1, Match: 'password":"password"', Secret: 'password', RuleID: 'r' },
+    ]);
+    expect(result).toBe('{"[REDACTED:r]}');
+  });
+
   it('falls back to the whole Match when the Secret is not inside it', async () => {
     const { applyRedactions } = await import('./core.ts');
     const result = applyRedactions('a=XYZ;', [
