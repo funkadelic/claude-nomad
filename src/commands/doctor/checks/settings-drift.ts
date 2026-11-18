@@ -306,7 +306,7 @@ function emitDriftRows(
     const readds = topDropped > 0 ? '; this also puts back the removed keys above' : '';
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${shown.length} local-only key(s) not in base+host merge: ${shown.join(', ')} (run 'nomad capture-settings' to promote them into the repo${readds})`,
+      `${dim(infoGlyph)} settings.json has ${shown.length} local-only key(s) not in base+host merge: ${shown.join(', ')} (run 'nomad capture-settings' to promote them into the repo, adding --host for host-specific values${readds})`,
     );
   }
   if (excluded.length > 0 && hostFileExists) {

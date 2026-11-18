@@ -484,6 +484,7 @@ describe('reportSettingsDriftCheck', () => {
     const { items } = await runCheck();
     const row = items.find((i) => i.includes('nomad capture-settings')) ?? '';
     expect(row).toContain('1 local-only key(s)');
+    expect(row).toContain('adding --host for host-specific values');
     expect(row).toContain('mk.b');
     expect(row).not.toContain('theme');
   });
