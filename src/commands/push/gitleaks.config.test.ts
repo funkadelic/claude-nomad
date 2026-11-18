@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -340,6 +340,38 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => resolveTomlConfig()).toThrow(NomadFatal);
   });
+
+  /** Generate a real temp config for `overlay` and return its body (temp dir removed). */
+  async function generatedBody(overlay: string): Promise<string> {
+    writeFileSync(join(repoHome, '.gitleaks.overlay.toml'), overlay);
+    const { resolveTomlConfig } = await import('./gitleaks.config.ts');
+    const result = resolveTomlConfig();
+    try {
+      return readFileSync(result.path!, 'utf8');
+    } finally {
+      rmSync(result.tempPath!, { recursive: true, force: true });
+    }
+  }
+
+  it('carries exactly the bundled targetRules allowlist block after the overlay body', async () => {
+    const body = await generatedBody(
+      "[[allowlists]]\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = \"AND\"\n",
+    );
+    expect(body.match(/^[ \t]*targetRules[ \t]*=/gm)).toHaveLength(1);
+    expect(body.match(/^\[\[allowlists\]\]/gm)).toHaveLength(2);
+    expect(body).toContain('oauth beta-flag list in local session transcripts (redact re-scan)');
+  });
+
+  it.each(['[allowlist]', '["allowlist"]', "[ 'allowlist' ]"])(
+    'carries nothing for a legacy %s overlay (gitleaks rejects the mix)',
+    async (header) => {
+      const body = await generatedBody(
+        `${header}\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = "AND"\n`,
+      );
+      expect(body).not.toMatch(/^[ \t]*targetRules[ \t]*=/m);
+      expect(body).toContain(header);
+    },
+  );
 });
 
 /**

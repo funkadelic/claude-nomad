@@ -797,6 +797,8 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
           if (String(p).endsWith('.gitleaks.overlay.toml')) {
             return '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\n';
           }
+          // existsSync reports every path present, so the bundled path may not be real.
+          if (String(p).endsWith('.gitleaks.toml')) return '';
           return actual.readFileSync(p as fsModule.PathOrFileDescriptor, enc as never);
         }),
         rmSync: rmSyncSpy.mockImplementation(actual.rmSync),
@@ -899,6 +901,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
           if (String(p).endsWith('.gitleaks.overlay.toml')) {
             return '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\n';
           }
+          if (String(p).endsWith('.gitleaks.toml')) return '';
           return actual.readFileSync(p as fsModule.PathOrFileDescriptor, enc as never);
         }),
         mkdtempSync: vi.fn((p: unknown) => {
