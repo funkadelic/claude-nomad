@@ -456,6 +456,41 @@ describe('reportSettingsDriftCheck', () => {
     expect(items.find((i) => i.includes(warnGlyph))).toContain('theme');
   });
 
+  it('advises capture for a new entry under a shared object key, not a pull overwrite', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ mk: { a: 1 } }));
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ mk: { a: 1, b: 2 } }),
+    );
+    const { out } = await runCheck();
+    expect(out).toContain('mk.b');
+    expect(out).toContain('nomad capture-settings');
+    expect(out).not.toContain('diverged');
+  });
+
+  it('names a nested entry the next pull removes when its key is still as written', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ mk: { a: 1 } }));
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ mk: { a: 1, b: 2 } }),
+    );
+    const cache = join(env.testHome, '.cache', 'claude-nomad');
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(
+      join(cache, 'settings-written-test-host.json'),
+      JSON.stringify({
+        kind: 'settings-written/2',
+        keys: { mk: settingValueHash({ a: 1, b: 2 }) },
+      }),
+    );
+    const { items } = await runCheck();
+    expect(items.find((i) => i.includes(warnGlyph))).toContain('mk.b');
+  });
+
   it('emits a name-free count row for excluded local-only keys (no capture advice, no secret name)', async () => {
     writeFileSync(
       join(env.testHome, 'claude-nomad', 'shared', 'settings.base.json'),

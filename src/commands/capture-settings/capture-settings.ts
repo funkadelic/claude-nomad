@@ -3,7 +3,12 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
-import { buildCaptureSubset, normalizeNodePathsDeep } from '../../sync/settings-classify.ts';
+import {
+  buildCaptureSubset,
+  normalizeNodePathsDeep,
+  type NestedEntry,
+} from '../../sync/settings-classify.ts';
+import { asPlainObject } from '../../sync/hooks-filter.ts';
 import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
 import { blockedHookEntries, blockedNestedEntries } from '../../sync/settings-guard.ts';
@@ -89,6 +94,30 @@ type CaptureSources = {
 };
 
 /**
+ * New entries under a shared object key to capture, leaving out any whose key
+ * the destination file holds as a non-object: deepMerge would replace that
+ * value with just these entries, so warn instead.
+ */
+function nestedCaptureEntries(
+  sources: CaptureSources,
+  useHost: boolean,
+  written: ReturnType<typeof readWrittenSettingsKeys>,
+): NestedEntry[] {
+  const dest = useHost ? sources.overrides : sources.base;
+  const destLabel = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
+  const clashes = (key: string): boolean =>
+    Object.hasOwn(dest, key) && asPlainObject(dest[key]) === null;
+  const all = blockedNestedEntries(sources.merged, sources.settings, {}, written);
+  for (const key of new Set(all.map((e) => e.key).filter(clashes))) {
+    warn(
+      `not saving new ${key} entries: ${destLabel} sets ${key} to a value that is not an ` +
+        `object, which saving would replace; edit ${destLabel} by hand`,
+    );
+  }
+  return all.filter((e) => !clashes(e.key));
+}
+
+/**
  * Compose the top-level `ahead`-key capture with the hook-entry capture and new
  * entries inside an object key the repo already has, warning about
  * skipped/shadowed hook events before the caller decides whether there is
@@ -110,7 +139,7 @@ function collectCapture(
     written,
     readWrittenHookIds(),
   );
-  const nested = blockedNestedEntries(sources.merged, sources.settings, {}, written);
+  const nested = nestedCaptureEntries(sources, useHost, written);
   const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
   for (const event of skipped) {

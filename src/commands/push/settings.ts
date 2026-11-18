@@ -5,6 +5,7 @@ import { claudeHome, HOST } from '../../core/config.ts';
 import {
   classifySettingsDrift,
   describeSettings,
+  liveOnlyNestedEntries,
   partitionByCaptureExclusion,
 } from '../../sync/settings-classify.ts';
 import { baseHasGsdHookEntries, stripGsdHookEntries } from '../../sync/hooks-filter.ts';
@@ -73,7 +74,10 @@ export function reportSettingsAheadDrift(repo: string): void {
     const merged = deepMerge(base, overrides);
     const settings = readJson<Record<string, unknown>>(settingsPath);
     const { ahead } = classifySettingsDrift(merged, settings);
-    const { promotable } = partitionByCaptureExclusion(ahead);
+    const promotable = [
+      ...partitionByCaptureExclusion(ahead).promotable,
+      ...liveOnlyNestedEntries(merged, settings).map((e) => e.label),
+    ];
     if (promotable.length === 0) return;
     const { phrase, pronoun, verb } = describeSettings(promotable);
     warn(

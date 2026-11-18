@@ -848,6 +848,29 @@ describe('cmdCaptureSettings', () => {
       expect(base.mk.n).toEqual({ command: 'node' });
     });
 
+    it('skips new entries whose key the destination holds as a non-object, with a warning', async () => {
+      const baseText = JSON.stringify({ mk: null }) + '\n';
+      writeFileSync(env.basePath, baseText);
+      writeFileSync(join(env.hostsDir, 'test-host.json'), JSON.stringify({ mk: { a: 1 } }));
+      writeFileSync(env.settingsPath, JSON.stringify({ mk: { a: 1, b: 2 } }) + '\n');
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
+      expect(errs.join('\n')).toContain('not saving new mk entries');
+
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+      const host = JSON.parse(readFileSync(join(env.hostsDir, 'test-host.json'), 'utf8')) as {
+        mk: unknown;
+      };
+      expect(host.mk).toEqual({ a: 1, b: 2 });
+    });
+
     it('captures nothing for a changed sub-value or a new env entry', async () => {
       const baseText = JSON.stringify({ mk: { a: 1 }, env: { A: '1' } }) + '\n';
       writeFileSync(env.basePath, baseText);

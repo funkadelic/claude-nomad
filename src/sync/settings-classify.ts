@@ -394,3 +394,23 @@ export function liveOnlyNestedEntries(
   }
   return out.sort((a, b) => a.label.localeCompare(b.label, 'en'));
 }
+
+/**
+ * `settings` with the given nested entries removed, so drift on their parent
+ * key reflects only edits a pull would overwrite.
+ *
+ * @param settings - Parsed `~/.claude/settings.json` object.
+ * @param entries - Entries from `liveOnlyNestedEntries`.
+ * @returns A shallow copy without those entries.
+ */
+export function withoutNestedEntries(
+  settings: Record<string, unknown>,
+  entries: NestedEntry[],
+): Record<string, unknown> {
+  const out = { ...settings };
+  for (const e of entries) {
+    const group = out[e.key] as Record<string, unknown>;
+    out[e.key] = Object.fromEntries(Object.entries(group).filter(([k]) => k !== e.sub));
+  }
+  return out;
+}

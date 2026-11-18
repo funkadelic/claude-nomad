@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import {
   classifySettingsDrift,
+  liveOnlyNestedEntries,
   partitionByCaptureExclusion,
+  withoutNestedEntries,
 } from '../../../sync/settings-classify.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
@@ -203,11 +205,22 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
   }
   const merged = deepMerge(base, hostObj ?? {});
 
-  const { missing, changed, extra } = diffMergedSettings(merged, settings);
+  // New entries under a shared object key are capture candidates, not a pull-overwrites change.
+  const nested = liveOnlyNestedEntries(merged, settings);
+  const { missing, changed, extra } = diffMergedSettings(
+    merged,
+    withoutNestedEntries(settings, nested),
+  );
   const { promotable, excluded } = partitionByCaptureExclusion(extra);
   const written = readWrittenSettingsKeys();
-  const dropped = promotable.filter((key) => stillAsWritten(written, settings, key));
-  const candidates = promotable.filter((key) => !stillAsWritten(written, settings, key));
+  const asWritten = (key: string): boolean => stillAsWritten(written, settings, key);
+  const nestedDropped = nested.filter((e) => asWritten(e.key));
+  const nestedCandidates = nested.filter((e) => !asWritten(e.key));
+  const dropped = [...promotable.filter(asWritten), ...nestedDropped.map((e) => e.label)];
+  const candidates = [
+    ...promotable.filter((key) => !asWritten(key)),
+    ...nestedCandidates.map((e) => e.label),
+  ];
 
   emitDriftRows(section, missing, changed, { candidates, dropped }, excluded, hostExists);
 }
