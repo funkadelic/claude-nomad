@@ -217,9 +217,9 @@ it:
 - **You are deciding the change:** edit `shared/settings.base.json` (shared by every host) or
   `hosts/<HOST>.json` (one machine only) in the repo, then `nomad push`.
 - **Something else already wrote it** (Claude Code or a tool added keys to your live
-  `~/.claude/settings.json`): run `nomad capture-settings` to promote those keys into the repo
-  before the next `nomad pull` overwrites them. Add `--host` to land machine-specific values (such
-  as absolute paths) in `hosts/<HOST>.json` instead of the shared base.
+  `~/.claude/settings.json`): run `nomad capture-settings` to promote those keys into the repo;
+  until you do, `nomad pull` leaves `settings.json` unchanged. Add `--host` to land machine-specific
+  values (such as absolute paths) in `hosts/<HOST>.json` instead of the shared base.
 
 If `nomad pull` finds settings on this machine that your sync repo does not track, it leaves
 `~/.claude/settings.json` as it is, so those settings are not lost. It lists the settings by name
