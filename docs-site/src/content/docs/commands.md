@@ -103,6 +103,12 @@ is short enough to show, for example `PreToolUse hook 'python3 ~/x.py'`.
 removed from the repo is removed and named the same way as a removed setting, and capture does not
 save it back.
 
+When the repo already carries a setting that holds named entries, such as `extraKnownMarketplaces`,
+and this machine's live settings add another entry inside it, pull stops the same way and names it
+as `extraKnownMarketplaces.<name>`. `nomad capture-settings` adds it to the repo's copy of that
+setting (with `--host`, to this machine's host file) and never changes an entry the repo already
+has. An entry another machine removed from the repo is removed here too and named by the pull.
+
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
 them and will not stop for them. When it finds some the repo does not track, it writes
@@ -385,6 +391,9 @@ live settings file that are not yet in `shared/settings.base.json` or your host 
 writing the destination file, `capture-settings` calls `regenerateSettings` so the local
 `settings.json` immediately matches the updated repo state. Idempotent: when no local-only keys
 remain the command exits cleanly with a message and writes nothing.
+
+It also saves an entry added inside an object setting the repo already carries, such as a new
+marketplace under `extraKnownMarketplaces`, without changing the entries already there.
 
 Because the default destination (`shared/settings.base.json`) syncs to every host, the command
 shows the destination and the keys it will promote and asks for confirmation before writing. Pass

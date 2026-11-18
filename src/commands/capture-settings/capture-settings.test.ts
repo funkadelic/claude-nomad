@@ -791,7 +791,7 @@ describe('cmdCaptureSettings', () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
       const { regenerateSettings } = await import('../../sync/links.ts');
-      expect(regenerateSettings('20261118-000000').blocked).toEqual(labels);
+      expect(regenerateSettings('20261101-000000').blocked).toEqual(labels);
       expect(readFileSync(env.settingsPath, 'utf8')).toBe(liveText);
 
       const logs: string[] = [];
@@ -889,14 +889,14 @@ describe('cmdCaptureSettings', () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
       const { regenerateSettings } = await import('../../sync/links.ts');
-      regenerateSettings('20261118-000001');
+      regenerateSettings('20261101-000001');
 
       writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
       const { cmdCaptureSettings } = await import('./capture-settings.ts');
       await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
       const base = JSON.parse(readFileSync(env.basePath, 'utf8')) as { mk: object };
       expect(base.mk).toEqual({ a: 1 });
-      expect(regenerateSettings('20261118-000002').removed).toEqual(['mk.gone']);
+      expect(regenerateSettings('20261101-000002').removed).toEqual(['mk.gone']);
     });
   });
 });

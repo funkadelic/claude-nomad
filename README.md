@@ -243,6 +243,12 @@ that event, or sets `hooks` to `null`, a plain `nomad capture-settings` does not
 tells you to add `--host`. A `--host` capture over `hooks: null` replaces the `null`, so the shared
 hooks for every other event reach this machine again, and capture warns about that too.
 
+When the repo already has a setting that holds named entries, such as `extraKnownMarketplaces`, and
+this machine adds another entry inside it, `nomad pull` stops the same way and names it as
+`extraKnownMarketplaces.<name>`. `nomad capture-settings` adds it to the repo's copy of that setting
+(with `--host`, to this machine's host file) and never changes an entry the repo already has. An
+entry another machine removed from the repo is removed here too and named by the pull.
+
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
 them and will not stop for them. When it finds some your repo does not track, it writes
@@ -301,13 +307,14 @@ specific problem and points at the right fix.
 
 If an external tool (such as Claude Code or GSD) wrote new keys into your `~/.claude/settings.json`
 that are not yet in your shared repo, run `nomad capture-settings` to promote them, or to save a
-hook it added under an event your repo already tracks, before the next `nomad pull` overwrites them.
-With `--host`, the keys land in `hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json`
-(useful for machine-specific values such as absolute paths). `--dry-run` shows what would be written
-without touching anything. Before it writes, `capture-settings` shows the destination and the keys
-and asks you to confirm; pass `--yes` (or `-y`) to skip the prompt, which is required when running
-without an interactive terminal. `nomad push` also warns when it detects ahead-drift so you have a
-prompt to act before the push completes.
+hook or other entry it added inside a setting your repo already tracks (such as a plugin
+marketplace), before the next `nomad pull` overwrites them. With `--host`, the keys land in
+`hosts/<NOMAD_HOST>.json` instead of `shared/settings.base.json` (useful for machine-specific values
+such as absolute paths). `--dry-run` shows what would be written without touching anything. Before
+it writes, `capture-settings` shows the destination and the keys and asks you to confirm; pass
+`--yes` (or `-y`) to skip the prompt, which is required when running without an interactive
+terminal. `nomad push` also warns when it detects ahead-drift so you have a prompt to act before the
+push completes.
 
 ## Claude Code plugin
 
