@@ -474,3 +474,50 @@ describe('settingsRemovedMessage', () => {
     );
   });
 });
+
+describe('nested entries under a shared object key', () => {
+  const merged = { mk: { a: 1 } };
+  const live = { mk: { a: 1, b: 2 } };
+
+  it('blocks a live-only sub-key when nothing says it was removed upstream', () => {
+    expect(blockedSettingsKeys(merged, live, {}, null)).toEqual(['mk.b']);
+  });
+
+  it('orders top-level keys, then nested labels, then hook labels', () => {
+    const hook = { matcher: '', hooks: [{ type: 'command', command: 'mine' }] };
+    const stop = { matcher: '', hooks: [{ type: 'command', command: 'stop' }] };
+    const m = { mk: { a: 1 }, hooks: { Stop: [stop] } };
+    const l = { mk: { a: 1, b: 2 }, theme: 'dark', hooks: { Stop: [stop], Start: [hook] } };
+    expect(blockedSettingsKeys(m, l, {})).toEqual(['theme', 'mk.b', "Start hook 'mine'"]);
+  });
+
+  it('treats a sub-key preMerged held with the same value as removed upstream', () => {
+    const pre = { mk: { a: 1, b: 2 } };
+    expect(blockedSettingsKeys(merged, live, pre)).toEqual([]);
+    expect(removedSettingsKeys(merged, live, pre, null)).toEqual(['mk.b']);
+  });
+
+  it('ignores a launcher path difference when comparing against preMerged', () => {
+    const m = { mk: {} };
+    const l = { mk: { n: { command: '/x/bin/node' } } };
+    const pre = { mk: { n: { command: 'node' } } };
+    expect(removedSettingsKeys(m, l, pre, null)).toEqual(['mk.n']);
+  });
+
+  it('keeps a sub-key blocked when preMerged held a different value or a non-object', () => {
+    expect(blockedSettingsKeys(merged, live, { mk: { b: 3 } })).toEqual(['mk.b']);
+    expect(blockedSettingsKeys(merged, live, { mk: 'x' })).toEqual(['mk.b']);
+  });
+
+  it('treats every live-only sub-key as removed when the write record matches the whole key', () => {
+    const l = { mk: { a: 1, b: 2, c: 3 } };
+    const written = rec({ mk: l.mk });
+    expect(blockedSettingsKeys(merged, l, {}, written)).toEqual([]);
+    expect(removedSettingsKeys(merged, l, {}, written)).toEqual(['mk.b', 'mk.c']);
+  });
+
+  it('keeps the sub-keys blocked when the key was edited since the write', () => {
+    const written = rec({ mk: { a: 1 } });
+    expect(blockedSettingsKeys(merged, live, {}, written)).toEqual(['mk.b']);
+  });
+});

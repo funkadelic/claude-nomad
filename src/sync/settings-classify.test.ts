@@ -6,6 +6,7 @@ import {
   CAPTURE_EXCLUDED_KEYS,
   classifySettingsDrift,
   describeSettings,
+  liveOnlyNestedEntries,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from './settings-classify.ts';
@@ -655,5 +656,42 @@ describe('prototype-pollution guard over repo-supplied settings', () => {
     ) as Record<string, Record<string, unknown>>;
     expect(Object.getPrototypeOf(out.hooks)).toBe(Object.prototype);
     expect(Object.keys(out.hooks)).toEqual(['kept']);
+  });
+});
+
+describe('liveOnlyNestedEntries', () => {
+  it('lists a new sub-key under a shared object key with its label and live value', () => {
+    const merged = { mk: { a: 1 } };
+    const live = { mk: { a: 1, c: { r: 'x' }, b: 2 } };
+    expect(liveOnlyNestedEntries(merged, live)).toEqual([
+      { key: 'mk', sub: 'b', label: 'mk.b', value: 2 },
+      { key: 'mk', sub: 'c', label: 'mk.c', value: { r: 'x' } },
+    ]);
+  });
+
+  it('ignores a top-level ahead key, an array merged value and a scalar live value', () => {
+    expect(liveOnlyNestedEntries({}, { mk: { a: 1 } })).toEqual([]);
+    expect(liveOnlyNestedEntries({ mk: [1] }, { mk: { a: 1 } })).toEqual([]);
+    expect(liveOnlyNestedEntries({ mk: { a: 1 } }, { mk: 5 })).toEqual([]);
+  });
+
+  it('never lists env sub-keys or a hooks event', () => {
+    const merged = { env: { A: '1' }, hooks: { Stop: [] } };
+    const live = { env: { A: '1', TOKEN: 's' }, hooks: { Stop: [], Start: [{ matcher: '' }] } };
+    expect(liveOnlyNestedEntries(merged, live)).toEqual([]);
+  });
+
+  it('does not list a sub-key present in both with a different value', () => {
+    expect(liveOnlyNestedEntries({ mk: { a: 1 } }, { mk: { a: 2 } })).toEqual([]);
+  });
+
+  it('skips a __proto__ sub-key and keeps its sibling', () => {
+    const live = JSON.parse('{"mk":{"__proto__":{"x":1},"ok":1}}') as Record<string, unknown>;
+    expect(liveOnlyNestedEntries({ mk: {} }, live).map((e) => e.label)).toEqual(['mk.ok']);
+  });
+
+  it('skips a top-level __proto__ object on both sides', () => {
+    const both = JSON.parse('{"__proto__":{"x":1}}') as Record<string, unknown>;
+    expect(liveOnlyNestedEntries(both, both)).toEqual([]);
   });
 });
