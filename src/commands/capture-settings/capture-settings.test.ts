@@ -848,6 +848,16 @@ describe('cmdCaptureSettings', () => {
       expect(base.mk.n).toEqual({ command: 'node' });
     });
 
+    it('saves a new entry under a key that shadows an Object.prototype member', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ toString: { a: 1 } }) + '\n');
+      writeFileSync(env.settingsPath, JSON.stringify({ toString: { a: 1, b: 2 } }) + '\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(JSON.parse(readFileSync(env.basePath, 'utf8'))).toEqual({ toString: { a: 1, b: 2 } });
+    });
+
     it('skips new entries whose key the destination holds as a non-object, with a warning', async () => {
       const baseText = JSON.stringify({ mk: null }) + '\n';
       writeFileSync(env.basePath, baseText);

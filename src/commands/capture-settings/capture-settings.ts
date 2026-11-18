@@ -167,7 +167,7 @@ function collectCapture(
   const subset: Record<string, unknown> = { ...topSubset };
   if (hookEventKeys.length > 0) subset.hooks = hooks;
   for (const e of nested) {
-    subset[e.key] ??= {};
+    if (!Object.hasOwn(subset, e.key)) subset[e.key] = {};
     const group = subset[e.key] as Record<string, unknown>;
     group[e.sub] = useHost ? e.value : normalizeNodePathsDeep(e.value);
   }

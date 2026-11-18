@@ -217,12 +217,12 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
   const nestedDropped = nested.filter((e) => asWritten(e.key));
   const nestedCandidates = nested.filter((e) => !asWritten(e.key));
   const dropped = [...promotable.filter(asWritten), ...nestedDropped.map((e) => e.label)];
-  const candidates = [
-    ...promotable.filter((key) => !asWritten(key)),
-    ...nestedCandidates.map((e) => e.label),
-  ];
+  const nestedLabels = nestedCandidates.map((e) => e.label);
+  const candidates = [...promotable.filter((key) => !asWritten(key)), ...nestedLabels];
+  // With no host file, reportHostOverrides already flags new top-level keys; nested ones it cannot see.
+  const shown = hostExists ? candidates : nestedLabels;
 
-  emitDriftRows(section, missing, changed, { candidates, dropped }, excluded, hostExists);
+  emitDriftRows(section, missing, changed, { candidates, dropped, shown }, excluded, hostExists);
 }
 
 /**
@@ -262,19 +262,20 @@ function droppedRow(dropped: string[], candidates: string[]): string {
  * @param missing - Keys in merged absent from settings.
  * @param changed - Keys in both with different values.
  * @param promotable - Local-only keys capture would promote: `dropped` ones the
- *   written-keys record names (the next pull deletes them), and the rest.
+ *   written-keys record names (the next pull deletes them), the rest, and the
+ *   `shown` subset the capture row names.
  * @param excluded - Local-only keys capture refuses (credential/host-local).
- * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the local-only rows).
+ * @param hostFileExists - Whether `hosts/<HOST>.json` exists (gates the excluded-keys row).
  */
 function emitDriftRows(
   section: DoctorSection,
   missing: string[],
   changed: string[],
-  promotable: { candidates: string[]; dropped: string[] },
+  promotable: { candidates: string[]; dropped: string[]; shown: string[] },
   excluded: string[],
   hostFileExists: boolean,
 ): void {
-  const { candidates, dropped } = promotable;
+  const { candidates, dropped, shown } = promotable;
   if (missing.length > 0) {
     addItem(
       section,
@@ -288,11 +289,11 @@ function emitDriftRows(
     );
   }
   if (dropped.length > 0) addItem(section, droppedRow(dropped, candidates));
-  if (candidates.length > 0 && hostFileExists) {
+  if (shown.length > 0) {
     const readds = dropped.length > 0 ? '; this also puts back the removed keys above' : '';
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${candidates.length} local-only key(s) not in base+host merge: ${candidates.join(', ')} (run 'nomad capture-settings' to promote them into the repo${readds})`,
+      `${dim(infoGlyph)} settings.json has ${shown.length} local-only key(s) not in base+host merge: ${shown.join(', ')} (run 'nomad capture-settings' to promote them into the repo${readds})`,
     );
   }
   if (excluded.length > 0 && hostFileExists) {

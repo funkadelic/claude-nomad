@@ -177,10 +177,13 @@ describe('reportSettingsDriftCheck', () => {
   let originalHome: string | undefined;
   let originalNomadHost: string | undefined;
   let originalNoColor: string | undefined;
+  let originalNomadRepo: string | undefined;
   let env: Env;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    delete process.env.NOMAD_REPO;
     originalNomadHost = process.env.NOMAD_HOST;
     originalNoColor = process.env.NO_COLOR;
     process.env.NO_COLOR = '1';
@@ -194,6 +197,7 @@ describe('reportSettingsDriftCheck', () => {
     restoreEnv('HOME', originalHome);
     restoreEnv('NOMAD_HOST', originalNomadHost);
     restoreEnv('NO_COLOR', originalNoColor);
+    restoreEnv('NOMAD_REPO', originalNomadRepo);
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
@@ -468,6 +472,20 @@ describe('reportSettingsDriftCheck', () => {
     expect(out).toContain('mk.b');
     expect(out).toContain('nomad capture-settings');
     expect(out).not.toContain('diverged');
+  });
+
+  it('advises capture for a nested entry even with no host file, leaving top-level keys to the host-overrides row', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ mk: { a: 1 } }));
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ mk: { a: 1, b: 2 }, theme: 'dark' }),
+    );
+    const { items } = await runCheck();
+    const row = items.find((i) => i.includes('nomad capture-settings')) ?? '';
+    expect(row).toContain('1 local-only key(s)');
+    expect(row).toContain('mk.b');
+    expect(row).not.toContain('theme');
   });
 
   it('names a nested entry the next pull removes when its key is still as written', async () => {
