@@ -280,6 +280,24 @@ describe('applyRedactions regression: value-based redaction preserves valid JSON
     });
   });
 
+  it('replaces only the Secret when the Match spans its key and quotes', async () => {
+    const { applyRedactions } = await import('./core.ts');
+    const secret = ['Qm7Vt2Kp9X', 'w4Zr8Ln3Hj', '6Bd1Fs5Gc0Ty'].join('');
+    const line = `{"api_key":"${secret}","n":1}`;
+    const result = applyRedactions(line, [
+      { StartLine: 1, Match: `api_key":"${secret}"`, Secret: secret, RuleID: 'generic-api-key' },
+    ]);
+    expect(JSON.parse(result)).toEqual({ api_key: '[REDACTED:generic-api-key]', n: 1 });
+  });
+
+  it('falls back to the whole Match when the Secret is not inside it', async () => {
+    const { applyRedactions } = await import('./core.ts');
+    const result = applyRedactions('a=XYZ;', [
+      { StartLine: 1, Match: 'XYZ', Secret: 'nope', RuleID: 'r' },
+    ]);
+    expect(result).toBe('a=[REDACTED:r];');
+  });
+
   it('handles a Match that is a substring of another Match on the same line', async () => {
     const { applyRedactions } = await import('./core.ts');
     const full = ghpFixture('0123456789abcdefghijABCDEFGHIJ012345');
