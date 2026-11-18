@@ -446,7 +446,7 @@ appends your overlay body, scans with that combined config, then deletes the thr
 merge is gitleaks' own `[extend]` append, so your allowlist entries add to the shipped and default
 ones rather than replacing them.
 
-Two rules:
+Three rules:
 
 - Your overlay must NOT contain its own `[extend]` block. nomad writes the `[extend]` line for
   you; if the overlay includes one, the push aborts with a clear error rather than scanning with a
@@ -454,8 +454,20 @@ Two rules:
 - If you keep BOTH a full `<REPO_HOME>/.gitleaks.toml` AND an overlay, the full `.gitleaks.toml`
   wins and the overlay is ignored (a full repo toml means you have taken complete manual control).
   Pick one approach: the overlay for additive tweaks, or a full `.gitleaks.toml` for total control.
+- Each top-level `[[allowlists]]` block must list the files it applies to in `paths`, and must
+  not use a pattern that matches anything (such as `.*`) or every file of a common synced type
+  (such as `\.md$` or `\.jsonl$`). The overlay syncs to every host, so an allowlist without that
+  limit would hide real secrets on all of them; `nomad push` stops with an error instead, and so
+  does `nomad doctor --check-shared` when it scans this host's sessions. A block that also has `regexes` must
+  set `condition = "AND"`, as in the example below: without it gitleaks ignores every finding in
+  the listed files, not just the ones your `regexes` describe, so nomad stops on that too.
+  Write `paths` and `regexes` patterns in syntax JavaScript also accepts: nomad checks each one
+  and stops on a pattern it cannot read, such as `[[:alpha:]]` classes or Go-only escapes like
+  `\A`. Keys with a dot inside quotes
+  (`"allowlist.regexes"`) are refused too; use a `[[allowlists]]` header.
 
-Example `<REPO_HOME>/.gitleaks.overlay.toml` (note: no `[extend]` block):
+Example `<REPO_HOME>/.gitleaks.overlay.toml` (note: no `[extend]` block, and `paths` limits it to
+synced session transcripts):
 
 ```toml
 [[allowlists]]
@@ -463,6 +475,10 @@ description = "my-org: internal build-token noise"
 regexes = [
     '''BUILDTOK-[A-Za-z0-9]{24}''',
 ]
+paths = [
+    '''^shared/projects/[^/]+/.*\.jsonl$''',
+]
+condition = "AND"
 ```
 
 The overlay file is push-allowed (it is an exact-name entry in `PUSH_ALLOWED_STATIC` in
