@@ -102,11 +102,11 @@ in pushed history.
 ## nomad redact
 
 Rewrites the secret span in the local source transcripts for a session in place, replacing each
-flagged secret value with `[REDACTED:<rule>]` (the key name and quotes around it stay). This covers the whole session subtree: the main transcript
-at `~/.claude/projects/<encoded>/<session-id>.jsonl` and every nested file under
-`~/.claude/projects/<encoded>/<session-id>/` (subagent transcripts, tool results), so a secret that
-lives only in a subagent transcript is redacted too. Before rewriting, the original files are
-backed up to `~/.cache/claude-nomad/backup/<timestamp>/`.
+flagged secret value with `[REDACTED:<rule>]` (the key name and quotes around it stay). This covers
+the whole session subtree: the main transcript at `~/.claude/projects/<encoded>/<session-id>.jsonl`
+and every nested file under `~/.claude/projects/<encoded>/<session-id>/` (subagent transcripts, tool
+results), so a secret that lives only in a subagent transcript is redacted too. Before rewriting,
+the original files are backed up to `~/.cache/claude-nomad/backup/<timestamp>/`.
 
 ```bash
 $ nomad redact <session-id>
