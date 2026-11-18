@@ -197,7 +197,8 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     'protect',
     '--staged',
     '--redact',
-    '-v',
+    // No `-v`: the report file carries every finding, and verbose stdout past
+    // the 1 MB `execFileSync` buffer kills gitleaks before it writes the report.
     '--report-format=json',
     `--report-path=${reportPath}`,
   ];
