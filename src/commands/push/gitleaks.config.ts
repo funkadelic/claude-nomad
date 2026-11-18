@@ -8,8 +8,8 @@
  * on top of it. Co-locating them here (rather than importing `resolveTomlPath`
  * from `gitleaks.scan.ts`) keeps the dependency one-directional
  * (`gitleaks.scan.ts` + `checks.ts` -> this module); this module
- * imports only `config.ts`, `package-root.ts`, and `utils.ts`, so there is no
- * cycle.
+ * imports only `config.ts`, `package-root.ts`, `utils.ts`, and the leaf
+ * `gitleaks.overlay-guard.ts`, so there is no cycle.
  */
 
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { repoHome } from '../../core/config.ts';
 import { packageRoot } from '../../core/package-root.ts';
 import { NomadFatal, warn } from '../../core/utils.ts';
+import { assertOverlaySafe } from './gitleaks.overlay-guard.ts';
 
 /**
  * Two-tier `.gitleaks.toml` lookup: returns `REPO_HOME/.gitleaks.toml` when
@@ -73,99 +74,11 @@ export function resolveTomlPath(repo: string = repoHome()): string | null {
 export type TomlConfigResult =
   { path: string | null; tempPath: null } | { path: string; tempPath: string };
 
-/**
- * Regex matching an `[extend]` definition at the start of a line, used to
- * reject an overlay that declares its own `[extend]` block. Covers
- * every TOML-equivalent form so the guard cannot be bypassed by whitespace or
- * key syntax: the table header `[extend]` with optional inner whitespace
- * (`[ extend ]`), the dotted-key form (`extend.path = ...`), and the inline-table
- * form (`extend = { ... }`). All three load the `extend` table in gitleaks' TOML
- * parser and would build the depth-3 chain that silently drops the default
- * ruleset, so all three must fail LOUD.
- */
-const OVERLAY_EXTEND_RE = /^[ \t]*(?:\[[ \t]*extend[ \t]*\]|extend[ \t]*[.=])/m;
-
-/** Any TOML table or array-of-tables header at the start of a line. */
-const TABLE_HEADER_RE = /^\s*\[/;
-
-/** An allowlist table header: `[allowlist]` or `[[allowlists]]`. */
-const OVERLAY_ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*allowlists?\s*\]\]?/;
-
-/**
- * A dotted-key (`allowlist.regexes = ...`) or inline-table
- * (`allowlist = { ... }`) allowlist definition. gitleaks' TOML parser honors
- * these forms, but the line-based `paths` walk only recognizes the
- * `[[allowlists]]` table header, so an unscoped allowlist written this way would
- * slip past the scope check. Reject them outright (mirroring the `[extend]`
- * guard's handling of the same TOML-equivalent forms) and require the table
- * form, which the walk validates.
- */
-const OVERLAY_INLINE_ALLOWLIST_RE = /^[ \t]*allowlists?[ \t]*[.=]/m;
-
-/** A `paths = ...` key at the start of a line (inside an allowlist block). */
-const PATHS_KEY_RE = /^\s*paths\s*=/;
-
-/**
- * A quoted catch-all pattern (`.*`, `.+`, `^.*$`, etc.) in any TOML quote
- * style. Such a pattern in an overlay allowlist's `regexes` or `paths` would
- * suppress every finding, defeating the path scoping.
- */
-const CATCH_ALL_RE = /('''|"""|'|")\^?\(?\.[*+]\)?\$?\1/;
-
-/**
- * Reject an overlay whose allowlist blocks are not path-scoped. The overlay is
- * merged ON TOP of the bundled ruleset and propagates to every host through the
- * synced repo, so an unscoped allowlist (a global `[allowlist]` with `regexes`
- * but no `paths`, or a catch-all `.*`/`.+` pattern) would silently disable
- * secret scanning fleet-wide, defeating the "never push secrets" promise. Every
- * `[[allowlists]]` block must carry a `paths` entry (scoping it to specific
- * files, matching the bundled-file invariant) and must not use a catch-all
- * pattern; the dotted-key and inline-table allowlist forms are rejected outright
- * (they would bypass the line-based walk), forcing the table form. Throws
- * `NomadFatal` so a dangerous overlay fails LOUD, mirroring the `[extend]`
- * guard. The walk is line-based (no TOML parser dependency): it
- * tracks whether the current table is an allowlist and whether it has seen a
- * `paths` key before the next table header closes the block.
- *
- * @param overlayBody The already-read overlay file contents.
- */
-function assertOverlayAllowlistsScoped(overlayBody: string): void {
-  if (OVERLAY_INLINE_ALLOWLIST_RE.test(overlayBody)) {
-    throw new NomadFatal(
-      '.gitleaks.overlay.toml must declare allowlists as [[allowlists]] table blocks, not the dotted-key (allowlist.x = ...) or inline-table (allowlist = { ... }) form, which bypasses path-scope validation. Use a [[allowlists]] block with a `paths` entry.',
-    );
-  }
-  let inAllowlist = false;
-  let hasPaths = false;
-  const closeBlock = (): void => {
-    if (inAllowlist && !hasPaths) {
-      throw new NomadFatal(
-        '.gitleaks.overlay.toml allowlist must be path-scoped: every [[allowlists]] block needs a `paths` entry so it cannot suppress findings repo-wide. Anchor `paths` to the files you intend to allow (e.g. shared/projects/<logical>/...jsonl).',
-      );
-    }
-  };
-  for (const line of overlayBody.split('\n')) {
-    if (TABLE_HEADER_RE.test(line)) {
-      closeBlock();
-      inAllowlist = OVERLAY_ALLOWLIST_HEADER_RE.test(line);
-      hasPaths = false;
-    } else if (inAllowlist) {
-      if (PATHS_KEY_RE.test(line)) hasPaths = true;
-      if (CATCH_ALL_RE.test(line)) {
-        throw new NomadFatal(
-          '.gitleaks.overlay.toml allowlist contains a catch-all pattern (.* or .+) that would suppress every finding. Replace it with a specific, anchored pattern.',
-        );
-      }
-    }
-  }
-  closeBlock();
-}
+/** An allowlist table header in the bundled file: `[allowlist]` or `[[allowlists]]`. */
+const ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*(["']?)allowlists?\1\s*\]\]?/;
 
 /** A `targetRules = ...` key line (not a comment mention). */
 const TARGET_RULES_KEY_RE = /^[ \t]*targetRules[ \t]*=/m;
-
-/** A legacy single-table `[allowlist]` header, bare or quoted (never `[[allowlists]]`). */
-const LEGACY_ALLOWLIST_RE = /^[ \t]*\[[ \t]*(["']?)allowlist\1[ \t]*\]/m;
 
 /**
  * Every allowlist table chunk of `tomlBody` that carries a real `targetRules`
@@ -176,7 +89,7 @@ const LEGACY_ALLOWLIST_RE = /^[ \t]*\[[ \t]*(["']?)allowlist\1[ \t]*\]/m;
 function targetRulesBlocks(tomlBody: string): string {
   return tomlBody
     .split(/^(?=[ \t]*\[)/m)
-    .filter((chunk) => OVERLAY_ALLOWLIST_HEADER_RE.test(chunk) && TARGET_RULES_KEY_RE.test(chunk))
+    .filter((chunk) => ALLOWLIST_HEADER_RE.test(chunk) && TARGET_RULES_KEY_RE.test(chunk))
     .join('');
 }
 
@@ -184,7 +97,7 @@ function targetRulesBlocks(tomlBody: string): string {
  * Read the overlay body and write the generated temp config that chains it onto
  * the bundled base. Separated from `resolveTomlConfig` so the I/O try/catch
  * (the generation-failure fallback) is a tight seam and the caller stays under
- * the cognitive-complexity gate. The `[extend]` guard is intentionally NOT
+ * the cognitive-complexity gate. The overlay guard is intentionally NOT
  * here: it runs in `resolveTomlConfig` BEFORE this call so its `NomadFatal` is
  * never swallowed by the generation-failure fallback catch.
  *
@@ -201,16 +114,16 @@ function targetRulesBlocks(tomlBody: string): string {
  * @param overlayBody The already-read overlay body (read once by the caller so a
  *   single buffer is both guarded and spliced, closing the guard/build TOCTOU).
  * @param bundled Absolute path to the bundled `.gitleaks.toml` (from `resolveTomlPath`).
+ * @param legacy True when the overlay uses a legacy `[allowlist]` table.
  * @returns The generated temp directory and the config file path inside it.
  */
 function buildOverlayTempConfig(
   overlayBody: string,
   bundled: string,
+  legacy: boolean,
 ): { configPath: string; tempPath: string } {
   // gitleaks rejects a file mixing `[allowlist]` and `[[allowlists]]`.
-  const carried = LEGACY_ALLOWLIST_RE.test(overlayBody)
-    ? ''
-    : targetRulesBlocks(readFileSync(bundled, 'utf8'));
+  const carried = legacy ? '' : targetRulesBlocks(readFileSync(bundled, 'utf8'));
   const tempBody = `[extend]\npath = ${JSON.stringify(bundled)}\n\n${overlayBody}\n${carried}`;
   const tempPath = mkdtempSync(join(tmpdir(), 'nomad-gitleaks-cfg-'));
   const configPath = join(tempPath, 'config.toml');
@@ -240,7 +153,7 @@ function buildOverlayTempConfig(
  *   - Overlay present, no full repo toml, bundled base absent: falls back to
  *     `{ path: null, tempPath: null }` so gitleaks still runs with its default
  *     ruleset (never no-scan, never skipped).
- *   - Overlay present with its own `[extend]` block: throws `NomadFatal`
+ *   - Overlay that is not valid TOML, or has its own `[extend]` block: throws `NomadFatal`
  *     BEFORE generating the temp, so a dangerous/malformed overlay fails LOUD and
  *     aborts the push rather than silently weakening the scan.
  *   - Overlay present with an unscoped allowlist (a block lacking `paths`, or a
@@ -289,13 +202,8 @@ export function resolveTomlConfig(): TomlConfigResult {
   // this fallback.
   try {
     const overlayBody = readFileSync(overlayPath, 'utf8');
-    if (OVERLAY_EXTEND_RE.test(overlayBody)) {
-      throw new NomadFatal(
-        '.gitleaks.overlay.toml must not contain an [extend] block; it is generated automatically. Remove the [extend] section and retry.',
-      );
-    }
-    assertOverlayAllowlistsScoped(overlayBody);
-    const { configPath, tempPath } = buildOverlayTempConfig(overlayBody, bundled);
+    const { legacy } = assertOverlaySafe(overlayBody);
+    const { configPath, tempPath } = buildOverlayTempConfig(overlayBody, bundled, legacy);
     return { path: configPath, tempPath };
   } catch (err) {
     if (err instanceof NomadFatal) throw err;

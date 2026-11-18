@@ -300,7 +300,9 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
           if (s.endsWith('.gitleaks.overlay.toml')) return true;
           return true;
         }),
-        readFileSync: vi.fn(() => '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\n'),
+        readFileSync: vi.fn(
+          () => '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\ncondition = "AND"\n',
+        ),
         rmSync: rmSyncSpy.mockImplementation(actual.rmSync),
       };
     });
@@ -330,7 +332,9 @@ describe('probeGitleaks / rebaseBeforePush (mocked child_process)', () => {
           if (s.endsWith('.gitleaks.overlay.toml')) return true;
           return true;
         }),
-        readFileSync: vi.fn(() => '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\n'),
+        readFileSync: vi.fn(
+          () => '[[allowlists]]\nregexes = ["MY_TOKEN"]\npaths = ["x.txt"]\ncondition = "AND"\n',
+        ),
         rmSync: rmSyncSpy.mockImplementation(actual.rmSync),
       };
     });
