@@ -102,7 +102,7 @@ in pushed history.
 ## nomad redact
 
 Rewrites the secret span in the local source transcripts for a session in place, replacing each
-flagged span with `[REDACTED:<rule>]`. This covers the whole session subtree: the main transcript
+flagged secret value with `[REDACTED:<rule>]` (the key name and quotes around it stay). This covers the whole session subtree: the main transcript
 at `~/.claude/projects/<encoded>/<session-id>.jsonl` and every nested file under
 `~/.claude/projects/<encoded>/<session-id>/` (subagent transcripts, tool results), so a secret that
 lives only in a subagent transcript is redacted too. Before rewriting, the original files are
@@ -358,6 +358,10 @@ Transcript-only suppressions, scoped to synced session transcripts
   file must still fire.
 - The documented test-fixture GitHub PAT literal and its scrub placeholders, which accumulate in
   transcripts whenever a conversation touches the docs that quote them.
+- Claude Code's beta-flag list (`oauth-<date>` followed by another dated flag such as
+  `interleaved-thinking-2025-05-14`), recorded on every turn, which `generic-api-key` reads as a key
+  name and a secret. This entry also covers your local `~/.claude/projects/` transcripts, so Redact
+  leaves those lines alone too.
 
 Structurally anchored suppressions, scoped to both synced transcripts and committed skill content
 (`shared/skills/<name>/...`, any nesting depth). Each carries surrounding structure a bare
