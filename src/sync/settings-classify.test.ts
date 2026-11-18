@@ -691,7 +691,8 @@ describe('liveOnlyNestedEntries', () => {
   });
 
   it('skips a top-level __proto__ object on both sides', () => {
-    const both = JSON.parse('{"__proto__":{"x":1}}') as Record<string, unknown>;
-    expect(liveOnlyNestedEntries(both, both)).toEqual([]);
+    const merged = JSON.parse('{"__proto__":{}}') as Record<string, unknown>;
+    const live = JSON.parse('{"__proto__":{"x":1}}') as Record<string, unknown>;
+    expect(liveOnlyNestedEntries(merged, live)).toEqual([]);
   });
 });
