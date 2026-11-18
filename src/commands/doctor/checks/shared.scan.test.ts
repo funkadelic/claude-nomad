@@ -59,7 +59,7 @@ describe('reportCheckShared (mocked scan failures)', () => {
           // The gitleaks `version` probe and the git init/add stage must succeed
           // so the flow reaches the scan; only the protect --staged scan fails.
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           // gitleaks protect --staged exits non-zero WITHOUT writing any report
           // at --report-path, so readGitleaksReport returns null (the unparseable
           // signal) and the reporter reports scan-failed rather than chasing
@@ -156,7 +156,7 @@ describe('reportCheckShared (mocked scan failures)', () => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
           // git init / git add succeed; only the protect --staged scan fails.
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           // gitleaks protect --staged fails and carries stderr/stdout that must
           // never reach the doctor row (the shared scanStagedTree is called with
           // forwardStreams=false, so the streams are dropped entirely).

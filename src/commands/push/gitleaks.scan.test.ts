@@ -285,6 +285,25 @@ describe('scanFile (mocked child_process)', () => {
         Buffer.isBuffer(c[0]) && c[0].toString().includes('crash-stderr-diagnostic'),
     );
     expect(forwarded).toBe(true);
+    expect(stderrSpy).toHaveBeenCalledWith('scan aborted: crash\n');
+  });
+
+  it('names the killing signal in the cause line on the crash path', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          throw Object.assign(new Error('spawnSync gitleaks ENOBUFS\nextra'), {
+            code: 'ENOBUFS',
+            signal: 'SIGTERM',
+          });
+        }),
+      };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile('/some/file.jsonl', true)).toBeNull();
+    expect(stderrSpy).toHaveBeenCalledWith('scan aborted: spawnSync gitleaks ENOBUFS (SIGTERM)\n');
   });
 
   it('passes GITLEAKS_SCAN_TIMEOUT_MS as timeout on the gitleaks execFileSync call', async () => {

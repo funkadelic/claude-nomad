@@ -70,7 +70,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
         }),
       };
@@ -111,7 +111,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           // gitleaks protect --staged exits non-zero but writes a parseable
           // empty array: both partition buckets are empty, so the reporter emits
           // the clean row (staged count) rather than a phantom-session fail.
@@ -186,7 +186,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
@@ -261,7 +261,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
@@ -338,7 +338,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
@@ -409,7 +409,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
@@ -476,7 +476,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (list[0] === 'init' || list[0] === 'add') return Buffer.from('');
+          if (list[0] === 'init' || list.includes('add')) return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });

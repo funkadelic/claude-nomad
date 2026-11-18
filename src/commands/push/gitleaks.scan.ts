@@ -138,16 +138,20 @@ function readGitleaksReport(reportPath: string): Finding[] | null {
  * error, reads the JSON report (`null` when it is missing/unparseable, or when
  * `reportPath` is `undefined` because the scratch dir was never created), and
  * when `forwardStreams` is set and there is no parseable report, writes the
- * captured stderr/stdout to the process streams so the caller can surface the
- * diagnostic. Returns the parsed findings, or `null` on a hard scan failure.
+ * captured stderr/stdout to the process streams plus a one-line cause (failed
+ * command, errno, signal) so the caller can surface the diagnostic. Returns the
+ * parsed findings, or `null` on a hard scan failure.
  */
 function resolveScanFailure(
   reportPath: string | undefined,
-  e: { stderr?: Buffer; stdout?: Buffer },
+  e: { stderr?: Buffer; stdout?: Buffer; message?: string; signal?: string | null },
   forwardStreams: boolean,
 ): Finding[] | null {
   const report = reportPath === undefined ? null : readGitleaksReport(reportPath);
   if (forwardStreams && report === null) {
+    const head = String(e.message).split('\n')[0];
+    const signal = e.signal ? ' (' + e.signal + ')' : '';
+    process.stderr.write(`scan aborted: ${head}${signal}\n`);
     if (e.stderr) process.stderr.write(e.stderr);
     if (e.stdout) process.stdout.write(e.stdout);
   }
@@ -179,12 +183,12 @@ function resolveScanFailure(
  * FAIL row). All calls use `execFileSync` argv-array form (no shell), matching
  * the no-shell invariant applied consistently across the codebase.
  *
- * `forwardStreams` (default `false`): when `true`, the gitleaks redacted
- * stderr/stdout captured on a non-zero exit is written to the process streams
- * ONLY on the scan-crash path (when the report is unparseable or missing, i.e.
- * `readGitleaksReport` returns `null`). On the leaks-found path the report
- * parses to a findings array, the structured caller FATAL fully describes the
- * findings, and the raw streams are suppressed to avoid printing them twice.
+ * `forwardStreams` (default `false`): when `true`, the failure cause and the
+ * captured stderr (gitleaks runs without `-v`, so stdout carries no findings)
+ * are written to the process streams ONLY on the scan-crash path (when the
+ * report is unparseable or missing, i.e. `readGitleaksReport` returns `null`).
+ * On the leaks-found path the structured caller FATAL fully describes the
+ * findings and the streams are suppressed.
  * `runGitleaksScan` passes `true`; the read-only `--check-shared` preflight
  * leaves it `false` so it never writes to streams on any path.
  */
@@ -207,7 +211,12 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   const gitleaksOpts: ExecFileSyncOptions = { ...opts, timeout: GITLEAKS_SCAN_TIMEOUT_MS };
   try {
     execFileSync('git', ['init', '-q'], opts);
-    execFileSync('git', ['add', '-A'], opts);
+    // safecrlf=false silences the per-file CRLF warning (Git for Windows
+    // default), which across thousands of files would overflow the buffer.
+    execFileSync('git', ['-c', 'core.safecrlf=false', 'add', '-A'], {
+      ...opts,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
     execFileSync('gitleaks', args, gitleaksOpts);
     return [];
   } catch (err) {

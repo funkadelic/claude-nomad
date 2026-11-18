@@ -262,8 +262,8 @@ export function buildSessionAwareFatal(
  * Run the staged gitleaks scan at the end of `cmdPush`, delegating the
  * git-stage + scan mechanism to the shared `scanStagedTree(REPO_HOME, true)`
  * so the push gate and the `--check-shared` preflight cannot drift. The
- * `forwardStreams = true` argument reproduces the prior behavior of writing
- * gitleaks' redacted stderr/stdout so the user sees which file is dirty.
+ * `forwardStreams = true` argument writes the failure cause and gitleaks'
+ * stderr when the scan produces no report.
  *
  * On findings, classifies them into session vs non-session paths and throws a
  * session-aware NomadFatal whose message names every affected session id with
@@ -275,8 +275,8 @@ export function buildSessionAwareFatal(
  * distinct scan-failed FATAL so the operator does not chase a phantom
  * `nomad drop-session` recovery. On the leaks-found path the raw gitleaks
  * streams are suppressed (the session-aware FATAL fully describes the findings).
- * On the scan-failed/null-report path the raw stderr/stdout is forwarded so
- * "Review the gitleaks output above." has something to point at.
+ * On the scan-failed/null-report path the cause line and raw stderr are
+ * forwarded so "Review the gitleaks output above." has something to point at.
  *
  * ENOENT (gitleaks or git absent) propagates from the helper and is mapped to
  * the platform-aware install-hint FATAL. Defense-in-depth: the presence probe
