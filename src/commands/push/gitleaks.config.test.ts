@@ -357,9 +357,14 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     const body = await generatedBody(
       "[[allowlists]]\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = \"AND\"\n",
     );
-    expect(body.match(/^[ \t]*targetRules[ \t]*=/gm)).toHaveLength(1);
-    expect(body.match(/^\[\[allowlists\]\]/gm)).toHaveLength(2);
-    expect(body).toContain('oauth beta-flag list in local session transcripts (redact re-scan)');
+    const { resolveTomlPath } = await import('./gitleaks.config.ts');
+    const keyLine = /^[ \t]*targetRules[ \t]*=/gm;
+    const expected = readFileSync(resolveTomlPath()!, 'utf8').match(keyLine)?.length ?? 0;
+    expect(expected).toBeGreaterThan(0);
+    expect(body.match(keyLine)).toHaveLength(expected);
+    // One overlay block plus one per carried block; a comment-only mention adds none.
+    expect(body.match(/^\[\[allowlists\]\]/gm)).toHaveLength(1 + expected);
+    expect(body.indexOf('zzunrelated')).toBeLessThan(body.search(keyLine));
   });
 
   it.each(['[allowlist]', '["allowlist"]', "[ 'allowlist' ]"])(
