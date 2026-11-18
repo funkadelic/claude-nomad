@@ -107,7 +107,9 @@ When the repo already carries a setting that holds named entries, such as `extra
 and this machine's live settings add another entry inside it, pull stops the same way and names it
 as `extraKnownMarketplaces.<name>`. `nomad capture-settings` adds it to the repo's copy of that
 setting (with `--host`, to this machine's host file) and never changes an entry the repo already
-has. An entry another machine removed from the repo is removed here too and named by the pull.
+has. When only this machine's host file has that setting, capture saves the entry only with
+`--host`. An entry another machine removed from the repo is removed here too and named by the pull,
+or by capture when it updates `settings.json`.
 
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
