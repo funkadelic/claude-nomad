@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -6,15 +7,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
 
-import { failGlyph, warnGlyph } from '../../../render/color.ts';
+import { failGlyph, okGlyph, warnGlyph } from '../../../render/color.ts';
 import {
   type EnvSnapshot,
   type Section,
+  GITLEAKS_TOML,
   makeEnv,
   restoreEnv,
   saveEnv,
   writePathMap,
 } from './shared.test-helpers.ts';
+
+/** True when a usable gitleaks binary is on PATH; the real-scan case skips otherwise. */
+const hasGitleaks = ((): boolean => {
+  try {
+    execFileSync('gitleaks', ['version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 /** An overlay block with no `paths`, which the overlay guard rejects. */
 const UNSAFE_OVERLAY = "[[allowlists]]\nregexes = ['''tok-[a-z]+''']\n";
@@ -119,23 +131,26 @@ describe('reportCheckShared overlay validation', () => {
     expect(created.filter((d) => existsSync(d))).toEqual([]);
   });
 
-  it('shows the ignored-overlay notice once as a WARN row, with no stderr copy', async () => {
-    testHome = makeEnv().testHome;
-    const repo = join(testHome, 'claude-nomad');
-    writeFileSync(join(repo, '.gitleaks.toml'), '[extend]\nuseDefault = true\n');
-    writeOverlay(testHome, SAFE_OVERLAY);
-    const memDir = join(repo, 'shared', 'projects', 'foo', 'memory');
-    mkdirSync(memDir, { recursive: true });
-    writeFileSync(join(memDir, 'note.md'), 'nothing secret\n');
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const section = await run();
-    const rows = section.items.filter((r) => r.includes('takes precedence'));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toContain(warnGlyph);
-    expect(errSpy.mock.calls.flat().some((a) => String(a).includes('takes precedence'))).toBe(
-      false,
-    );
-    expect(process.exitCode).toBe(0);
-    errSpy.mockRestore();
-  });
+  it.skipIf(!hasGitleaks)(
+    'shows the ignored-overlay notice once as a WARN row, with no stderr copy',
+    async () => {
+      const env = makeEnv();
+      testHome = env.testHome;
+      writeFileSync(join(testHome, 'claude-nomad', '.gitleaks.toml'), GITLEAKS_TOML);
+      writeOverlay(testHome, SAFE_OVERLAY);
+      // A staged session makes the scan call resolveTomlConfig again after the quiet call.
+      writeFileSync(join(testHome, '.claude', 'projects', env.encodedDir, 's.jsonl'), '{}\n');
+      writePathMap(testHome, { foo: { 'test-host': env.localPath } });
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const section = await run();
+      const rows = section.items.filter((r) => r.includes('takes precedence'));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toContain(warnGlyph);
+      expect(errSpy.mock.calls.flat().some((a) => String(a).includes('takes precedence'))).toBe(
+        false,
+      );
+      expect(section.items.some((r) => r.includes(okGlyph))).toBe(true);
+      expect(process.exitCode).toBe(0);
+    },
+  );
 });
