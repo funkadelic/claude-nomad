@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as cpModule from 'node:child_process';
 import type * as fsModule from 'node:fs';
 
-import { failGlyph } from '../../../render/color.ts';
+import { failGlyph, warnGlyph } from '../../../render/color.ts';
 import {
   type EnvSnapshot,
   type Section,
@@ -117,5 +117,25 @@ describe('reportCheckShared overlay validation', () => {
     expect(process.exitCode).toBe(0);
     expect(created.length).toBeGreaterThan(0);
     expect(created.filter((d) => existsSync(d))).toEqual([]);
+  });
+
+  it('shows the ignored-overlay notice once as a WARN row, with no stderr copy', async () => {
+    testHome = makeEnv().testHome;
+    const repo = join(testHome, 'claude-nomad');
+    writeFileSync(join(repo, '.gitleaks.toml'), '[extend]\nuseDefault = true\n');
+    writeOverlay(testHome, SAFE_OVERLAY);
+    const memDir = join(repo, 'shared', 'projects', 'foo', 'memory');
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(join(memDir, 'note.md'), 'nothing secret\n');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const section = await run();
+    const rows = section.items.filter((r) => r.includes('takes precedence'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain(warnGlyph);
+    expect(errSpy.mock.calls.flat().some((a) => String(a).includes('takes precedence'))).toBe(
+      false,
+    );
+    expect(process.exitCode).toBe(0);
+    errSpy.mockRestore();
   });
 });
