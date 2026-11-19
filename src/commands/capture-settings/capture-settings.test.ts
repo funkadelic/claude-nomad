@@ -69,6 +69,7 @@ describe('cmdCaptureSettings', () => {
     vi.restoreAllMocks();
     // restoreAllMocks does not clear vi.doMock module mocks; unmock explicitly.
     vi.doUnmock('../../core/utils.lockfile.ts');
+    vi.doUnmock('../../sync/settings-upstream.ts');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
     if (originalNomadHost !== undefined) process.env.NOMAD_HOST = originalNomadHost;
@@ -1136,6 +1137,104 @@ describe('cmdCaptureSettings', () => {
       expect(read(env.settingsPath).mk).toEqual({ a: 1, fresh: 3 });
       expect(errs.join('\n')).toContain('this capture also removed');
       expect(errs.join('\n')).toContain('mk.gone');
+    });
+  });
+
+  describe('array-member capture', () => {
+    /** Run a confirmed capture, returning stderr lines. */
+    async function capture(host: boolean): Promise<string[]> {
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host, dryRun: false, yes: true });
+      return errs;
+    }
+    const read = (p: string) => JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>;
+    const hostPath = () => join(env.hostsDir, 'test-host.json');
+
+    it('appends new members to the base array, normalized, and the refusal clears', async () => {
+      writeFileSync(
+        env.basePath,
+        JSON.stringify({ permissions: { allow: ['a'] }, list: [] }) + '\n',
+      );
+      const live = { permissions: { allow: ['a', '/usr/bin/node x', 'b'] }, list: [1] };
+      writeFileSync(env.settingsPath, JSON.stringify(live) + '\n');
+      await capture(false);
+      expect(read(env.basePath)).toEqual({
+        permissions: { allow: ['a', 'node x', 'b'] },
+        list: [1],
+      });
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      expect(regenerateSettings('20261101-000003').blocked).toEqual([]);
+    });
+
+    it('skips a base capture of an array the host file sets, pointing at --host', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ permissions: { allow: ['a'] } }) + '\n');
+      writeFileSync(hostPath(), JSON.stringify({ permissions: { allow: ['h'] } }) + '\n');
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ permissions: { allow: ['h', 'b'] } }) + '\n',
+      );
+      const errs = await capture(false);
+      expect(read(env.basePath)).toEqual({ permissions: { allow: ['a'] } });
+      expect(read(env.settingsPath)).toEqual({ permissions: { allow: ['h', 'b'] } });
+      expect(errs.join('\n')).toContain('hosts/test-host.json sets permissions.allow itself');
+    });
+
+    it('with --host appends to the host array, or copies the shared one and warns', async () => {
+      writeFileSync(
+        env.basePath,
+        JSON.stringify({ permissions: { allow: ['a'] }, list: [] }) + '\n',
+      );
+      writeFileSync(hostPath(), JSON.stringify({ list: ['h'] }) + '\n');
+      const live = { permissions: { allow: ['a', 'b'] }, list: ['h', 'n'] };
+      writeFileSync(env.settingsPath, JSON.stringify(live) + '\n');
+      const errs = await capture(true);
+      expect(read(hostPath())).toEqual({ permissions: { allow: ['a', 'b'] }, list: ['h', 'n'] });
+      expect(read(env.basePath)).toEqual({ permissions: { allow: ['a'] }, list: [] });
+      const shadow = errs.filter((e) => e.includes('full'));
+      expect(shadow).toHaveLength(1);
+      expect(shadow[0]).toContain('permissions.allow list');
+    });
+
+    it('does not warn about copying an empty shared array into the host file', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ list: [] }) + '\n');
+      writeFileSync(env.settingsPath, JSON.stringify({ list: ['n'] }) + '\n');
+      const errs = await capture(true);
+      expect(read(hostPath())).toEqual({ list: ['n'] });
+      expect(errs.filter((e) => e.includes('full'))).toEqual([]);
+    });
+
+    it('after a refused pull on an old record, never saves back what the repo dropped', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1, gone: 2 } }) + '\n');
+      writeFileSync(env.settingsPath, '{}\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      vi.doMock('../../sync/settings-upstream.ts', () => ({
+        preRebaseSettingsMerge: () => ({ mk: { a: 1, gone: 2 } }),
+      }));
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      regenerateSettings('20261101-000001');
+      // A record from before entry ids were kept.
+      const { settingsWrittenPath } = await import('../../core/config.ts');
+      const recordPath = settingsWrittenPath();
+      const record = read(recordPath);
+      delete record.entryIds;
+      writeFileSync(recordPath, JSON.stringify(record));
+
+      writeFileSync(env.settingsPath, JSON.stringify({ mk: { a: 1, gone: 2, fresh: 3 } }) + '\n');
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+      const heads = { pre: 'p', post: 'q' };
+      expect(regenerateSettings('20261101-000002', { prePostHeads: heads }).blocked).toEqual([
+        'mk.fresh',
+      ]);
+      vi.doUnmock('../../sync/settings-upstream.ts');
+      await capture(false);
+      expect(read(env.basePath)).toEqual({ mk: { a: 1, fresh: 3 } });
     });
   });
 });

@@ -22,6 +22,7 @@ import {
 } from './settings-guard.ts';
 import { preRebaseSettingsMerge } from './settings-upstream.ts';
 import {
+  backfillWrittenEntryIds,
   readWrittenEntryIds,
   readWrittenHookIds,
   readWrittenSettingsKeys,
@@ -335,14 +336,16 @@ export function regenerateSettings(
   // settings.json bypasses the gate; the whole point is to overwrite it.
   let blocked: string[] = [];
   let removed: string[] = [];
+  let preMerged: Record<string, unknown> = {};
   if (!suppressDriftWarn && present) {
     if (malformed) {
       warn('existing settings.json is malformed; skipping drift-check and regenerating.');
     } else {
+      preMerged = preRebaseSettingsMerge(repo, opts.prePostHeads);
       ({ blocked, removed } = reportSettingsDrift(
         merged,
         existing,
-        preRebaseSettingsMerge(repo, opts.prePostHeads),
+        preMerged,
         readWrittenSettingsKeys(),
       ));
     }
@@ -359,6 +362,8 @@ export function regenerateSettings(
   // A blocked write is skipped entirely: no backup (nothing changes) and no
   // atomic write, leaving the live file exactly as it was.
   if (blocked.length > 0) {
+    // The record is not rewritten here, so keep what the repo dropped visible to capture.
+    backfillWrittenEntryIds(preMerged);
     return { label: overrideLabel, blocked, removed };
   }
 

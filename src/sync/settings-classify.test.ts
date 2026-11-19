@@ -6,12 +6,8 @@ import {
   CAPTURE_EXCLUDED_KEYS,
   classifySettingsDrift,
   describeSettings,
-  liveOnlyNestedEntries,
-  nestedEntries,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
-  valueAtPath,
-  withoutNestedEntries,
 } from './settings-classify.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { deepMerge } from '../core/utils.json.ts';
@@ -659,127 +655,5 @@ describe('prototype-pollution guard over repo-supplied settings', () => {
     ) as Record<string, Record<string, unknown>>;
     expect(Object.getPrototypeOf(out.hooks)).toBe(Object.prototype);
     expect(Object.keys(out.hooks)).toEqual(['kept']);
-  });
-});
-
-describe('liveOnlyNestedEntries', () => {
-  it('lists a new sub-key under a shared object key with its label and live value', () => {
-    const merged = { mk: { a: 1 } };
-    const live = { mk: { a: 1, c: { r: 'x' }, b: 2 } };
-    expect(liveOnlyNestedEntries(merged, live)).toEqual([
-      { path: ['mk', 'b'], key: 'mk', label: 'mk.b', value: 2 },
-      { path: ['mk', 'c'], key: 'mk', label: 'mk.c', value: { r: 'x' } },
-    ]);
-  });
-
-  it('ignores a top-level ahead key, an array merged value and a scalar live value', () => {
-    expect(liveOnlyNestedEntries({}, { mk: { a: 1 } })).toEqual([]);
-    expect(liveOnlyNestedEntries({ mk: [1] }, { mk: { a: 1 } })).toEqual([]);
-    expect(liveOnlyNestedEntries({ mk: { a: 1 } }, { mk: 5 })).toEqual([]);
-  });
-
-  it('never lists env sub-keys or a hooks event', () => {
-    const merged = { env: { A: '1' }, hooks: { Stop: [] } };
-    const live = { env: { A: '1', TOKEN: 's' }, hooks: { Stop: [], Start: [{ matcher: '' }] } };
-    expect(liveOnlyNestedEntries(merged, live)).toEqual([]);
-  });
-
-  it('does not list a sub-key present in both with a different value', () => {
-    expect(liveOnlyNestedEntries({ mk: { a: 1 } }, { mk: { a: 2 } })).toEqual([]);
-  });
-
-  it('skips a __proto__ sub-key and keeps its sibling', () => {
-    const live = JSON.parse('{"mk":{"__proto__":{"x":1},"ok":1}}') as Record<string, unknown>;
-    expect(liveOnlyNestedEntries({ mk: {} }, live).map((e) => e.label)).toEqual(['mk.ok']);
-  });
-
-  it('skips a top-level __proto__ object on both sides', () => {
-    const merged = JSON.parse('{"__proto__":{}}') as Record<string, unknown>;
-    const live = JSON.parse('{"__proto__":{"x":1}}') as Record<string, unknown>;
-    expect(liveOnlyNestedEntries(merged, live)).toEqual([]);
-  });
-});
-
-describe('liveOnlyNestedEntries at depth', () => {
-  it('lists a field added three levels down by its full path', () => {
-    const merged = { mk: { foo: { source: { repo: 'a' } } } };
-    const live = { mk: { foo: { source: { repo: 'a', ref: 'v1' } } } };
-    expect(liveOnlyNestedEntries(merged, live)).toEqual([
-      { path: ['mk', 'foo', 'source', 'ref'], key: 'mk', label: 'mk.foo.source.ref', value: 'v1' },
-    ]);
-  });
-
-  it('lists a new branch once, not its descendants', () => {
-    const live = { mk: { a: 1, foo: { x: { y: 1 } } } };
-    expect(liveOnlyNestedEntries({ mk: { a: 1 } }, live).map((e) => e.label)).toEqual(['mk.foo']);
-  });
-
-  it('lists nothing when either side holds a scalar or array at that level', () => {
-    expect(liveOnlyNestedEntries({ mk: { foo: { x: 1 } } }, { mk: { foo: [1] } })).toEqual([]);
-    expect(liveOnlyNestedEntries({ mk: { foo: [1] } }, { mk: { foo: { x: 1 } } })).toEqual([]);
-  });
-
-  it('skips a nested __proto__ sub-key and keeps its sibling', () => {
-    const live = JSON.parse('{"mk":{"foo":{"__proto__":{"x":1},"ok":1}}}') as Record<
-      string,
-      unknown
-    >;
-    expect(liveOnlyNestedEntries({ mk: { foo: {} } }, live).map((e) => e.label)).toEqual([
-      'mk.foo.ok',
-    ]);
-  });
-});
-
-describe('nestedEntries', () => {
-  it('lists every object sub-path, skipping env, hooks and scalars', () => {
-    const settings = {
-      model: 'x',
-      env: { K: 'v' },
-      hooks: { Stop: [] },
-      mk: { a: 1, foo: { ref: 'r' } },
-    };
-    expect(nestedEntries(settings).map((e) => e.label)).toEqual(['mk.a', 'mk.foo', 'mk.foo.ref']);
-  });
-});
-
-describe('valueAtPath', () => {
-  it('reads own values through plain objects and returns undefined past a non-object', () => {
-    const obj = { a: { b: { c: 1 } }, arr: [1], n: null };
-    expect(valueAtPath(obj, ['a', 'b', 'c'])).toBe(1);
-    expect(valueAtPath(obj, ['a', 'x'])).toBeUndefined();
-    expect(valueAtPath(obj, ['arr', '0'])).toBeUndefined();
-    expect(valueAtPath(obj, ['n', 'x'])).toBeUndefined();
-    expect(valueAtPath(obj, ['a', 'toString'])).toBeUndefined();
-  });
-});
-
-describe('withoutNestedEntries', () => {
-  it('removes an ancestor and its descendant in either order without recreating the ancestor', () => {
-    const settings = { mk: { a: 1, foo: { c: 1, e: 3 } } };
-    const at = (path: string[]) => ({ path, key: 'mk', label: path.join('.'), value: null });
-    const foo = at(['mk', 'foo']);
-    const c = at(['mk', 'foo', 'c']);
-    expect(withoutNestedEntries(settings, [foo, c])).toEqual({ mk: { a: 1 } });
-    expect(withoutNestedEntries(settings, [c, foo])).toEqual({ mk: { a: 1 } });
-    expect(settings).toEqual({ mk: { a: 1, foo: { c: 1, e: 3 } } });
-  });
-
-  it('removes a depth-three entry, keeps siblings and leaves the input untouched', () => {
-    const settings = { mk: { a: 1, foo: { x: 1, source: { repo: 'a', ref: 'v1' } } }, theme: 'd' };
-    const before = JSON.stringify(settings);
-    const entry = liveOnlyNestedEntries(
-      { mk: { a: 1, foo: { x: 1, source: { repo: 'a' } } } },
-      settings,
-    );
-    expect(withoutNestedEntries(settings, entry)).toEqual({
-      mk: { a: 1, foo: { x: 1, source: { repo: 'a' } } },
-      theme: 'd',
-    });
-    expect(JSON.stringify(settings)).toBe(before);
-  });
-
-  it('returns an entry unchanged when its parent is no longer an object', () => {
-    const entry = { path: ['mk', 'foo', 'x'], key: 'mk', label: 'mk.foo.x', value: 1 };
-    expect(withoutNestedEntries({ mk: { foo: 5 } }, [entry])).toEqual({ mk: { foo: 5 } });
   });
 });

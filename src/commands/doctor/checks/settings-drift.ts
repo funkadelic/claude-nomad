@@ -5,8 +5,8 @@ import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../rend
 import {
   classifySettingsDrift,
   partitionByCaptureExclusion,
-  withoutNestedEntries,
 } from '../../../sync/settings-classify.ts';
+import { withoutNestedEntries } from '../../../sync/settings-entries.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
 import { baseHasGsdHookEntries } from '../../../sync/hooks-filter.ts';

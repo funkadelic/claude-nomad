@@ -529,6 +529,23 @@ describe('reportSettingsDriftCheck', () => {
     expect(infoRow).not.toContain('mk.gone');
   });
 
+  it('lists a new array member as a capture candidate, not a pull-overwrites change', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(
+      join(repo, 'shared', 'settings.base.json'),
+      JSON.stringify({ permissions: { allow: ['a'] } }),
+    );
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ permissions: { allow: ['a', 'b'] } }),
+    );
+    const { items } = await runCheck();
+    const infoRow = items.find((i) => i.includes('nomad capture-settings')) ?? '';
+    expect(infoRow).toContain('permissions.allow["b"]');
+    expect(items.some((i) => i.includes('diverged'))).toBe(false);
+  });
+
   it('advises a host-file edit for a dropped nested entry and no put-back from capture', async () => {
     plantDropped({ model: 'sonnet', mk: { b: 2 }, theme: 'dark' }, ['mk']);
     const repo = join(env.testHome, 'claude-nomad');

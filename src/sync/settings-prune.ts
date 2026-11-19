@@ -1,9 +1,24 @@
 import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { asPlainObject } from './hooks-filter.ts';
-import type { NestedEntry } from './settings-classify.ts';
+import { elementEntry, type NestedEntry } from './settings-entries.ts';
 
-/** Whether the last settings write produced the entry at this path with this value. */
-type WasWritten = (path: string[], value: unknown) => boolean;
+/** Whether the last settings write produced this entry. */
+type WasWritten = (e: NestedEntry) => boolean;
+
+/** `arr` (at `path`) without the members the last write produced, each appended to `removed`. */
+function pruneArray(
+  path: string[],
+  arr: unknown[],
+  wasWritten: WasWritten,
+  removed: NestedEntry[],
+): unknown[] {
+  return arr.filter((value) => {
+    const e = elementEntry(path, value);
+    if (!wasWritten(e)) return true;
+    if (!removed.some((r) => r.label === e.label)) removed.push(e);
+    return false;
+  });
+}
 
 /**
  * Copy of `obj` (at `path`) without any descendant the last write produced;
@@ -19,13 +34,14 @@ function pruneWritten(
   for (const [sub, value] of Object.entries(obj)) {
     if (isProtoPollutionKey(sub)) continue;
     const full = [...path, sub];
-    if (wasWritten(full, value)) {
-      removed.push({ path: full, key: full[0], label: full.join('.'), value });
+    const e: NestedEntry = { path: full, key: full[0], label: full.join('.'), value };
+    if (wasWritten(e)) {
+      removed.push(e);
       continue;
     }
     const child = asPlainObject(value);
     if (child === null) {
-      out[sub] = value;
+      out[sub] = Array.isArray(value) ? pruneArray(full, value, wasWritten, removed) : value;
       continue;
     }
     const before = removed.length;
@@ -43,7 +59,7 @@ function pruneWritten(
  * `removed`. The live settings object is not mutated.
  *
  * @param split - The blocked/removed partition of live-only entries.
- * @param wasWritten - Whether the last write produced an entry at a path and value.
+ * @param wasWritten - Whether the last write produced an entry.
  * @returns The partition with written descendants moved to `removed`, sorted by label.
  */
 export function pruneBlockedEntries(
@@ -53,7 +69,7 @@ export function pruneBlockedEntries(
   const blocked: NestedEntry[] = [];
   const removed = [...split.removed];
   for (const e of split.blocked) {
-    const obj = asPlainObject(e.value);
+    const obj = e.element === true ? null : asPlainObject(e.value);
     const dropped: NestedEntry[] = [];
     const value = obj === null ? e.value : pruneWritten(e.path, obj, wasWritten, dropped);
     if (dropped.length === 0) blocked.push(e);

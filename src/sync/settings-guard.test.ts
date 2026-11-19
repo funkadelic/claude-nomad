@@ -193,10 +193,14 @@ describe('blockedSettingsKeys hook entries', () => {
     expect(blockedSettingsKeys(mergedWithS, live, {})).toEqual([]);
   });
 
-  it("leaves every other changed key on today's behavior (repo value wins, no refusal)", () => {
-    const merged = { permissions: { allow: ['a'] } };
-    const live = { permissions: { allow: ['a', 'b'] } };
-    expect(blockedSettingsKeys(merged, live, {})).toEqual([]);
+  it('blocks a member added to a shared array, but not a dropped member or changed scalar', () => {
+    const merged = { permissions: { allow: ['a', 'c'] }, model: 'x' };
+    expect(
+      blockedSettingsKeys(merged, { permissions: { allow: ['a', 'b'] }, model: 'x' }, {}),
+    ).toEqual(['permissions.allow["b"]']);
+    expect(blockedSettingsKeys(merged, { permissions: { allow: ['a'] }, model: 'y' }, {})).toEqual(
+      [],
+    );
   });
 
   it('combines a blocked top-level key and a blocked hook entry in one refusal', () => {
@@ -641,5 +645,60 @@ describe('nested entries under a shared object key', () => {
       expect(removedSettingsKeys(m, l, {}, rec({ mk: l.mk }))).toEqual(['mk.x', 'mk.y']);
       expect(blockedSettingsKeys(m, l, {}, rec({ mk: { a: 1 } }))).toEqual(['mk.x', 'mk.y']);
     });
+  });
+});
+
+describe('array members', () => {
+  const m = { permissions: { allow: ['a'] } };
+  const el = (value: unknown) => nestedEntryId(['permissions', 'allow'], value, true);
+
+  it('blocks a new member of a top-level array too', () => {
+    expect(blockedSettingsKeys({ list: [1] }, { list: [1, { x: 2 }] }, {})).toEqual([
+      'list[{"x":2}]',
+    ]);
+  });
+
+  it('removes a member the pre-pull merge held, launcher paths normalized', () => {
+    const l = { permissions: { allow: ['a', '/usr/bin/node x'] } };
+    const pre = { permissions: { allow: ['a', 'node x'] } };
+    expect(blockedSettingsKeys(m, l, pre)).toEqual([]);
+    expect(removedSettingsKeys(m, l, pre, null)).toEqual(['permissions.allow["/usr/bin/node x"]']);
+  });
+
+  it('refuses the member added here and removes the one the last write produced', () => {
+    const l = { permissions: { allow: ['a', 'gone', 'fresh'] } };
+    const ids = new Set([el('a'), el('gone')]);
+    expect(blockedSettingsKeys(m, l, {}, null, new Set(), ids)).toEqual([
+      'permissions.allow["fresh"]',
+    ]);
+    expect(removedSettingsKeys(m, l, {}, null, new Set(), ids)).toEqual([
+      'permissions.allow["gone"]',
+    ]);
+  });
+
+  it('does not match an object entry id with the same path and value', () => {
+    const ids = new Set([nestedEntryId(['permissions', 'allow'], 'b')]);
+    const l = { permissions: { allow: ['a', 'b'] } };
+    expect(blockedSettingsKeys(m, l, {}, null, new Set(), ids)).toEqual(['permissions.allow["b"]']);
+  });
+
+  it('lists a repeated member once', () => {
+    const l = { permissions: { allow: ['a', 'b', 'b'] } };
+    expect(blockedSettingsKeys(m, l, {})).toEqual(['permissions.allow["b"]']);
+  });
+
+  it('prunes members the last write produced out of an array inside a blocked branch', () => {
+    const merged = { mk: { a: 1 } };
+    const l = { mk: { a: 1, foo: { list: ['old', 'old', 'new'] } } };
+    const ids = new Set([nestedEntryId(['mk', 'foo', 'list'], 'old', true)]);
+    const split = splitNestedEntries(merged, l, {}, null, ids);
+    expect(split.blocked.map((e) => e.value)).toEqual([{ list: ['new'] }]);
+    expect(split.removed.map((e) => e.label)).toEqual(['mk.foo.list["old"]']);
+  });
+
+  it('never prunes inside a blocked member', () => {
+    const l = { permissions: { allow: ['a', { k: 1 }] } };
+    const ids = new Set([nestedEntryId(['permissions', 'allow', 'k'], 1)]);
+    expect(splitNestedEntries(m, l, {}, null, ids).blocked.map((e) => e.value)).toEqual([{ k: 1 }]);
   });
 });

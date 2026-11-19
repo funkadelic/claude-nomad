@@ -10,12 +10,10 @@ import {
   classifySettingsDrift,
   deepEqual,
   describeSettings,
-  liveOnlyNestedEntries,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
-  valueAtPath,
-  type NestedEntry,
 } from './settings-classify.ts';
+import { holdsEntry, liveOnlyNestedEntries, type NestedEntry } from './settings-entries.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { pruneBlockedEntries } from './settings-prune.ts';
 import {
@@ -38,14 +36,20 @@ export function settingValueHash(value: unknown): string {
 }
 
 /**
- * Id of one nested settings entry: the hash of its full path and value (node
- * launcher paths normalized, as the write-time and live sides both compare), so
- * a live value edited since the write never matches.
- * @param path - The entry's key path from the top level.
- * @param value - The entry's value.
+ * Id of one nested entry: the hash of its path and value (node launcher paths
+ * normalized), so a live value edited since the write never matches.
+ * @param path - The entry's key path, or the array's path for an element.
+ * @param value - The entry's value, or the array member.
+ * @param element - True for an array member.
  */
-export function nestedEntryId(path: readonly string[], value: unknown): string {
-  return settingValueHash([path, normalizeNodePathsDeep(value)]);
+export function nestedEntryId(path: readonly string[], value: unknown, element = false): string {
+  const id: unknown[] = [path, normalizeNodePathsDeep(value)];
+  return settingValueHash(element ? [...id, 'element'] : id);
+}
+
+/** `nestedEntryId` of an entry. */
+function entryId(e: NestedEntry): string {
+  return nestedEntryId(e.path, e.value, e.element === true);
 }
 
 /**
@@ -160,16 +164,11 @@ export function splitNestedEntries(
 ): { blocked: NestedEntry[]; removed: NestedEntry[] } {
   // Entry ids keep an upstream removal visible after a local edit to the same key.
   const removedUpstream = (e: NestedEntry): boolean =>
-    writtenEntryIds.has(nestedEntryId(e.path, e.value)) ||
+    writtenEntryIds.has(entryId(e)) ||
     stillAsWritten(written, existing, e.key) ||
-    deepEqual(
-      normalizeNodePathsDeep(valueAtPath(preMerged, e.path)),
-      normalizeNodePathsDeep(e.value),
-    );
+    holdsEntry(preMerged, e);
   const split = partition(liveOnlyNestedEntries(merged, existing), removedUpstream);
-  return pruneBlockedEntries(split, (path, value) =>
-    writtenEntryIds.has(nestedEntryId(path, value)),
-  );
+  return pruneBlockedEntries(split, (e) => writtenEntryIds.has(entryId(e)));
 }
 
 /**

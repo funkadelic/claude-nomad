@@ -13,7 +13,7 @@ import { writeJsonAtomic } from '../core/utils.fs.ts';
 import { warn } from '../core/utils.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { hookEntryContents } from './hooks-entries.ts';
-import { nestedEntries } from './settings-classify.ts';
+import { nestedEntries } from './settings-entries.ts';
 import { nestedEntryId, settingValueHash, type WrittenSettings } from './settings-guard.ts';
 
 /**
@@ -98,9 +98,34 @@ export function recordWrittenSettingsKeys(written: Record<string, unknown>): voi
       Object.entries(stripGsdHookEntries(written)).map(([k, v]) => [k, settingValueHash(v)]),
     );
     const hookIds = [...hookEntryContents(written)].map(settingValueHash);
-    const entryIds = nestedEntries(written).map((e) => nestedEntryId(e.path, e.value));
+    const entryIds = nestedEntries(written).map((e) =>
+      nestedEntryId(e.path, e.value, e.element === true),
+    );
     writeJsonAtomic(path, { kind: SETTINGS_WRITTEN_KIND, keys, hookIds, entryIds });
   } catch (err) {
     warn(`could not record the written settings keys: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Add the nested entry ids of `preMerged` to the existing record after a
+ * refused pull, so a capture still treats what the repo dropped as removed.
+ * No record means no change. Never throws.
+ * @param preMerged - The merge at the pre-pull HEAD.
+ */
+export function backfillWrittenEntryIds(preMerged: Record<string, unknown>): void {
+  try {
+    const record = readRecord();
+    if (record === null) return;
+    const ids = new Set(stringSet(record.entryIds));
+    for (const e of nestedEntries(preMerged))
+      ids.add(nestedEntryId(e.path, e.value, e.element === true));
+    writeJsonAtomic(settingsWrittenPath(), {
+      kind: SETTINGS_WRITTEN_KIND,
+      ...record,
+      entryIds: [...ids],
+    });
+  } catch (err) {
+    warn(`could not update the written settings keys: ${(err as Error).message}`);
   }
 }

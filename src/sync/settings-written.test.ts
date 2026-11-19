@@ -232,4 +232,54 @@ describe('settings-written', () => {
     expect(() => recordWrittenSettingsKeys({ model: 'sonnet' })).not.toThrow();
     expect(errSpy.mock.calls.some((c) => String(c[0]).includes('ENOSPC'))).toBe(true);
   });
+
+  it('records array members with element ids', async () => {
+    const { readWrittenEntryIds, recordWrittenSettingsKeys } =
+      await import('./settings-written.ts');
+    const { nestedEntryId } = await import('./settings-guard.ts');
+    recordWrittenSettingsKeys({ list: ['x'] });
+    expect(readWrittenEntryIds()).toEqual(new Set([nestedEntryId(['list'], 'x', true)]));
+  });
+
+  describe('backfillWrittenEntryIds', () => {
+    it('adds the pre-pull entry ids to an existing record and keeps its keys', async () => {
+      const mod = await import('./settings-written.ts');
+      const { nestedEntryId } = await import('./settings-guard.ts');
+      mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+      writeFileSync(
+        recordPath,
+        JSON.stringify({ kind: mod.SETTINGS_WRITTEN_KIND, keys: { mk: 'h' }, hookIds: ['k'] }),
+      );
+      mod.backfillWrittenEntryIds({ mk: { gone: 2 } });
+      expect(mod.readWrittenSettingsKeys()).toEqual({ mk: 'h' });
+      expect([...mod.readWrittenHookIds()]).toEqual(['k']);
+      expect(mod.readWrittenEntryIds()).toEqual(new Set([nestedEntryId(['mk', 'gone'], 2)]));
+      mod.backfillWrittenEntryIds({ mk: { gone: 2, a: 1 } });
+      expect(mod.readWrittenEntryIds().size).toBe(2);
+    });
+
+    it('writes nothing when there is no record', async () => {
+      const { backfillWrittenEntryIds } = await import('./settings-written.ts');
+      backfillWrittenEntryIds({ mk: { gone: 2 } });
+      expect(existsSync(recordPath)).toBe(false);
+    });
+
+    it('warns and does not throw when the write fails', async () => {
+      vi.doMock('../core/utils.fs.ts', async (importOriginal) => {
+        const actual = await importOriginal<typeof utilsFsModule>();
+        return {
+          ...actual,
+          writeJsonAtomic: () => {
+            throw new Error('ENOSPC: no space left on device');
+          },
+        };
+      });
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const mod = await import('./settings-written.ts');
+      mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+      writeFileSync(recordPath, JSON.stringify({ kind: mod.SETTINGS_WRITTEN_KIND, keys: {} }));
+      expect(() => mod.backfillWrittenEntryIds({ mk: { a: 1 } })).not.toThrow();
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('ENOSPC'))).toBe(true);
+    });
+  });
 });

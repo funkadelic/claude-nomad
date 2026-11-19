@@ -1,16 +1,14 @@
 import { HOST } from '../../core/config.ts';
 import { asPlainObject } from '../../sync/hooks-filter.ts';
-import {
-  normalizeNodePathsDeep,
-  valueAtPath,
-  type NestedEntry,
-} from '../../sync/settings-classify.ts';
+import { normalizeNodePathsDeep } from '../../sync/settings-classify.ts';
+import { valueAtPath, type NestedEntry } from '../../sync/settings-entries.ts';
 import { blockedNestedEntries, type WrittenSettings } from '../../sync/settings-guard.ts';
 import { warn } from '../../core/utils.ts';
 
 /** The settings views `nestedCaptureEntries` reads. */
 type NestedSources = {
   base: Record<string, unknown>;
+  overrides: Record<string, unknown>;
   merged: Record<string, unknown>;
   settings: Record<string, unknown>;
 };
@@ -28,14 +26,12 @@ function firstNonObjectPrefix(base: Record<string, unknown>, parent: string[]): 
 }
 
 /**
- * New entries, at any depth, inside an object the repo already has. A base
- * capture leaves out any whose parent path the base does not hold as an object
- * all the way down (saving would replace that value, or add a path only the host
- * file has for every host) and points at `--host`; `clashed` reports any left
- * out. The non-object message names the failing prefix, which for a one-level
- * entry is the top-level key.
+ * New entries, at any depth, inside an object or array the repo already has. A
+ * base capture leaves out an object entry whose parent path the base does not
+ * hold as an object all the way down, and an array member whose array the host
+ * file sets itself, pointing at `--host`; `clashed` reports any left out.
  *
- * @param sources - Base, merge and live settings.
+ * @param sources - Base, host, merge and live settings.
  * @param useHost - True when capturing into the host file (never clashes).
  * @param written - The written-settings record, or `null`.
  * @param entryIds - Hashes of each nested entry from the last write.
@@ -48,17 +44,45 @@ export function nestedCaptureEntries(
   entryIds: ReadonlySet<string>,
 ): { entries: NestedEntry[]; clashed: boolean } {
   const all = blockedNestedEntries(sources.merged, sources.settings, {}, written, entryIds);
-  // With --host the merge holds each path as an object, so the host file cannot clash.
-  if (useHost) return { entries: all, clashed: false };
   const failing = new Set<string>();
+  const shadowed = new Set<string>();
   const kept: NestedEntry[] = [];
   for (const e of all) {
-    const prefix = firstNonObjectPrefix(sources.base, e.path.slice(0, -1));
-    if (prefix === null) kept.push(e);
-    else failing.add(clashWarning(sources.base, prefix));
+    const problem = useHost ? null : baseClash(sources, e);
+    if (problem === null) kept.push(e);
+    else failing.add(problem);
+    if (useHost && shadowsBase(sources, e)) shadowed.add(e.path.join('.'));
   }
   for (const message of failing) warn(message);
+  for (const label of shadowed) {
+    warn(
+      `hosts/${HOST}.json will carry this host's full ${label} list, so later edits to ` +
+        `${label} in shared/settings.base.json will not reach this host`,
+    );
+  }
   return { entries: kept, clashed: failing.size > 0 };
+}
+
+/** Why a base capture cannot save `e`, or `null` when it can. */
+function baseClash(sources: NestedSources, e: NestedEntry): string | null {
+  if (e.element === true) {
+    // With the host file silent here, the merge's array is the base's own.
+    if (valueAtPath(sources.overrides, e.path) === undefined) return null;
+    const label = e.path.join('.');
+    return (
+      `not saving new ${label} entries to shared/settings.base.json: hosts/${HOST}.json sets ` +
+      `${label} itself, so the shared list never reaches this host; run ` +
+      `'nomad capture-settings --host' to save them there`
+    );
+  }
+  const prefix = firstNonObjectPrefix(sources.base, e.path.slice(0, -1));
+  return prefix === null ? null : clashWarning(sources.base, prefix);
+}
+
+/** Whether a host capture of `e` copies a non-empty shared array the host file did not set. */
+function shadowsBase(sources: NestedSources, e: NestedEntry): boolean {
+  if (e.element !== true || valueAtPath(sources.overrides, e.path) !== undefined) return false;
+  return (valueAtPath(sources.merged, e.path) as unknown[]).length > 0;
 }
 
 /** The warning for new entries under `prefix`, the first path the base does not hold as an object. */
@@ -75,16 +99,19 @@ function clashWarning(base: Record<string, unknown>, prefix: string[]): string {
 }
 
 /**
- * Add each entry to `subset` at its full path, creating the objects along the way.
- * A base capture normalizes node launcher paths; a host capture keeps them raw.
+ * Add each entry to `subset` at its full path, creating the objects along the
+ * way. An array member is appended to a copy of the merge's array there, since
+ * arrays replace on merge. A base capture normalizes node launcher paths.
  *
  * @param subset - The capture subset being built (mutated).
  * @param entries - Entries from `nestedCaptureEntries`.
+ * @param merged - The base + host merge.
  * @param useHost - True when capturing into the host file.
  */
 export function addNestedEntries(
   subset: Record<string, unknown>,
   entries: NestedEntry[],
+  merged: Record<string, unknown>,
   useHost: boolean,
 ): void {
   for (const e of entries) {
@@ -94,6 +121,11 @@ export function addNestedEntries(
       node = node[seg] as Record<string, unknown>;
     }
     const [last] = e.path.slice(-1);
-    node[last] = useHost ? e.value : normalizeNodePathsDeep(e.value);
+    const value = useHost ? e.value : normalizeNodePathsDeep(e.value);
+    if (e.element !== true) node[last] = value;
+    else {
+      if (!Object.hasOwn(node, last)) node[last] = [...(valueAtPath(merged, e.path) as unknown[])];
+      (node[last] as unknown[]).push(value);
+    }
   }
 }

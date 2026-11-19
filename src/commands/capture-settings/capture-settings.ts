@@ -144,7 +144,7 @@ function collectCapture(
   }
   const subset: Record<string, unknown> = { ...topSubset };
   if (hookEventKeys.length > 0) subset.hooks = hooks;
-  addNestedEntries(subset, nested, useHost);
+  addNestedEntries(subset, nested, sources.merged, useHost);
 
   const keys = [
     ...Object.keys(topSubset),
