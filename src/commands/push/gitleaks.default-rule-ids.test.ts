@@ -6,7 +6,7 @@ import {
   GITLEAKS_DEFAULT_RULE_IDS_VERSION,
 } from './gitleaks.default-rule-ids.ts';
 
-// Bumping the pin fails here until the id list is regenerated.
+// Bumping the pin fails here until the id list version is bumped too.
 describe('GITLEAKS_DEFAULT_RULE_IDS', () => {
   it('was generated for the pinned gitleaks version', () => {
     expect(GITLEAKS_DEFAULT_RULE_IDS_VERSION).toBe(GITLEAKS_PINNED_VERSION);

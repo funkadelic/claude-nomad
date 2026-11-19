@@ -26,6 +26,16 @@ const CANARY_MATCHES = ['nomad-canary-zz9q7', ''];
 /** Keys that narrow an allowlist to specific matches rather than whole files. */
 const MATCHER_KEYS = ['regexes', 'stopwords', 'commits'];
 
+/** Top-level keys an overlay may set; anything else could reach gitleaks' `extend` table. */
+const ROOT_KEYS = new Set([
+  'title',
+  'description',
+  'minversion',
+  'allowlist',
+  'allowlists',
+  'rules',
+]);
+
 /**
  * True for a TOML table (not an array or scalar).
  * @param value A parsed TOML value.
@@ -54,13 +64,13 @@ function lowerKeys(table: Table): Table {
 }
 
 /**
- * Reject a quoted key containing a dot anywhere in the overlay: gitleaks' config
- * loader splits `"allowlist.regexes"` into nested tables, past these checks.
+ * Reject a quoted key with a dot or a non-ASCII character anywhere in the overlay:
+ * gitleaks splits `"allowlist.regexes"` into tables and folds `"ruleſ"` to `rules`.
  * @param value A parsed TOML value.
  */
-function assertNoDottedKeys(value: unknown): void {
+function assertPlainKeys(value: unknown): void {
   if (Array.isArray(value)) {
-    value.forEach(assertNoDottedKeys);
+    value.forEach(assertPlainKeys);
     return;
   }
   if (!isTable(value)) return;
@@ -70,7 +80,12 @@ function assertNoDottedKeys(value: unknown): void {
         `.gitleaks.overlay.toml key "${key}" contains a dot, which gitleaks splits into nested tables. Use a [table] header instead.`,
       );
     }
-    assertNoDottedKeys(child);
+    if (/[\u0080-\uffff]/.test(key)) {
+      throw new NomadFatal(
+        `.gitleaks.overlay.toml key ${JSON.stringify(key)} has a non-ASCII character, which gitleaks may read as a different key. Use plain ASCII key names.`,
+      );
+    }
+    assertPlainKeys(child);
   }
 }
 
@@ -101,8 +116,8 @@ function isBroad(pattern: unknown, canaries: string[]): boolean {
 function parseOverlay(overlayBody: string): Table {
   try {
     const doc = parse(overlayBody);
-    assertNoDottedKeys(doc);
-    return lowerKeys(doc);
+    assertPlainKeys(doc);
+    return doc;
   } catch (err) {
     if (err instanceof NomadFatal) throw err;
     // The parser's full message quotes the offending line, which may hold a secret.
@@ -118,6 +133,16 @@ function parseOverlay(overlayBody: string): Table {
  * @param doc The parsed overlay with lowercased top-level keys.
  */
 function allowlistTables(doc: Table): Table[] {
+  if (doc.allowlists !== undefined && !Array.isArray(doc.allowlists)) {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml has a single [allowlists] table, which gitleaks cannot load; use [[allowlists]] blocks (double brackets).',
+    );
+  }
+  if (doc.allowlist !== undefined && doc.allowlists !== undefined) {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml mixes a legacy [allowlist] table with [[allowlists]] blocks, which gitleaks cannot load; turn the [allowlist] table into an [[allowlists]] block.',
+    );
+  }
   const entries: unknown[] = [doc.allowlist, doc.allowlists].flat().filter((e) => e !== undefined);
   if (!entries.every(isTable)) {
     throw new NomadFatal(
@@ -154,7 +179,7 @@ function assertRuleIdNew(rule: Table): void {
   }
   if (GITLEAKS_DEFAULT_RULE_IDS.has(id.toLowerCase())) {
     throw new NomadFatal(
-      `.gitleaks.overlay.toml rule "${id}" reuses a built-in gitleaks rule id, which would replace that rule on every host. Give your rule a new id.`,
+      `.gitleaks.overlay.toml rule ${JSON.stringify(id)} reuses a built-in gitleaks rule id, which would replace that rule on every host. Give your rule a new id.`,
     );
   }
 }
@@ -192,18 +217,41 @@ function assertAllowlistScoped(allowlist: Table): void {
 }
 
 /**
- * Throw `NomadFatal` unless the overlay is valid TOML with no `extend` table and
- * only path-scoped allowlists and new rule ids. Returns whether it uses a legacy `[allowlist]`
- * table, which gitleaks refuses to mix with `[[allowlists]]`.
- * @param overlayBody The already-read overlay file contents.
+ * Reject an `extend` key, an unknown top-level key, or a known one not written in
+ * lowercase (a `[[Allowlists]]` header collides with the bundled blocks nomad appends).
+ * @param raw The parsed overlay with its keys as written.
+ * @param doc The same overlay with lowercased top-level keys.
  */
-export function assertOverlaySafe(overlayBody: string): { legacy: boolean } {
-  const doc = parseOverlay(overlayBody);
+function assertRootKeys(raw: Table, doc: Table): void {
   if ('extend' in doc) {
     throw new NomadFatal(
       '.gitleaks.overlay.toml must not contain an [extend] block; it is generated automatically. Remove the [extend] section and retry.',
     );
   }
+  const unknown = Object.keys(doc).find((key) => !ROOT_KEYS.has(key));
+  if (unknown !== undefined) {
+    throw new NomadFatal(
+      `.gitleaks.overlay.toml has an unsupported top-level key ${JSON.stringify(unknown)}; put settings inside [[allowlists]] or [[rules]] blocks.`,
+    );
+  }
+  const mixed = Object.keys(raw).find((key) => key !== key.toLowerCase());
+  if (mixed !== undefined) {
+    throw new NomadFatal(
+      `.gitleaks.overlay.toml top-level key ${JSON.stringify(mixed)} must be written in lowercase, as ${JSON.stringify(mixed.toLowerCase())}.`,
+    );
+  }
+}
+
+/**
+ * Throw `NomadFatal` unless the overlay is valid TOML with only known lowercase
+ * top-level keys (no `extend`), path-scoped allowlists, and new rule ids. Returns whether it uses a
+ * legacy `[allowlist]` table, which gitleaks refuses to mix with `[[allowlists]]`.
+ * @param overlayBody The already-read overlay file contents.
+ */
+export function assertOverlaySafe(overlayBody: string): { legacy: boolean } {
+  const raw = parseOverlay(overlayBody);
+  const doc = lowerKeys(raw);
+  assertRootKeys(raw, doc);
   for (const allowlist of allowlistTables(doc)) assertAllowlistScoped(allowlist);
   for (const rule of ruleTables(doc)) assertRuleIdNew(rule);
   return { legacy: doc.allowlist !== undefined };

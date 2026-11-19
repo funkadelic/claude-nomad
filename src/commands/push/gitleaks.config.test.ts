@@ -110,9 +110,8 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     expect(result.path).toBe(join(result.tempPath!, 'config.toml'));
     expect(writtenPath).toBe(result.path);
     // Body extends the absolute bundled path via JSON.stringify and includes the overlay body.
-    expect(writtenBody).toMatch(/^\[extend\]\npath = "/);
-    expect(writtenBody).toContain(`path = ${JSON.stringify(bundled)}`);
-    expect(writtenBody.startsWith('/')).toBe(false); // sanity: starts with [extend]
+    // An inline `extend` table keeps the overlay's leading bare keys out of `extend`.
+    expect(writtenBody.startsWith(`extend = { path = ${JSON.stringify(bundled)} }\n`)).toBe(true);
     expect(writtenBody).toContain('MY_TOKEN');
     expect(writtenOpts).toEqual({ mode: 0o600, flag: 'wx' });
   });

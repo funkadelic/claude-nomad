@@ -27,6 +27,11 @@ describe('assertOverlaySafe', () => {
       "[[rules]]\nid = 'my-token'\nregex = '''abc'''\n[[rules.allowlists]]\nregexes = ['''.*''']\n",
       false,
     ],
+    [
+      'the allowed metadata keys',
+      `title = "t"\ndescription = "d"\nminversion = "v8.0.0"\n${SCOPED}`,
+      false,
+    ],
   ])('accepts %s', (_label, body, legacy) => {
     expect(assertOverlaySafe(body)).toEqual({ legacy });
   });
@@ -43,7 +48,15 @@ describe('assertOverlaySafe', () => {
       "[[allowlists]]\npaths = ['''^a''']\nregexes = ['''\ncondition = \"AND\"\n''']\n",
       /condition = "AND"/,
     ],
-    ['upper-case keys with no paths', "[[ALLOWLISTS]]\nREGEXES = ['''X''']\n", /path-scoped/],
+    ['upper-case keys with no paths', "[[allowlists]]\nREGEXES = ['''X''']\n", /path-scoped/],
+    ['an upper-case allowlists table', "[[ALLOWLISTS]]\npaths = ['''^a''']\n", /in lowercase/],
+    ['a mixed-case allowlists table', "[[Allowlists]]\npaths = ['''^a''']\n", /"allowlists"/],
+    ['a single [allowlists] table', "[allowlists]\npaths = ['''^a''']\n", /double brackets/],
+    [
+      'a legacy [allowlist] mixed with [[allowlists]]',
+      `${SCOPED.replace('[[allowlists]]', '[allowlist]')}${SCOPED}`,
+      /mixes a legacy/,
+    ],
     ['an empty paths list', '[[allowlists]]\npaths = []\n', /path-scoped/],
     ['a catch-all regex', SCOPED.replace("'''X'''", "'''.*'''"), /catch-all/],
     ['a catch-all path', "[[allowlists]]\npaths = ['''^.*$''']\n", /catch-all/],
@@ -93,7 +106,7 @@ describe('assertOverlaySafe', () => {
       /built-in gitleaks rule id/,
     ],
     ['an upper-case id key', "[[rules]]\nID = 'github-pat'\n", /built-in gitleaks rule id/],
-    ['an upper-case rules table', "[[Rules]]\nid = 'github-pat'\n", /built-in gitleaks rule id/],
+    ['an upper-case rules table', "[[Rules]]\nid = 'my-token'\n", /in lowercase/],
     [
       'a built-in id in another case',
       "[[rules]]\nid = 'GitHub-PAT'\n",
@@ -101,6 +114,19 @@ describe('assertOverlaySafe', () => {
     ],
     ['a rule with no id', "[[rules]]\nregex = '''abc'''\n", /needs an `id`/],
     ['a non-string rule id', '[[rules]]\nid = 1\n', /needs an `id`/],
+    ['a long-s rules table', '[["ruleſ"]]\nid = \'github-pat\'\n', /non-ASCII character/],
+    [
+      'a long-s allowlists table',
+      "[[\"allowliſtſ\"]]\nregexes = ['''.*''']\n",
+      /non-ASCII character/,
+    ],
+    [
+      'a non-ASCII nested key',
+      "[[allowlists]]\npaths = ['''^a''']\n[allowlists.\"paſh\"]\nx = 1\n",
+      /non-ASCII character/,
+    ],
+    ['a top-level disabledRules', 'disabledRules = ["github-pat"]\n', /"disabledrules"/],
+    ['an unknown top-level table', '[foo]\nbar = 1\n', /top-level key "foo"/],
     ['an empty rule id', "[[rules]]\nid = ''\n", /needs an `id`/],
     ['a string rules value', "rules = 'x'\n", /\[\[rules\]\] blocks/],
     ['a single [rules] table', "[rules]\nid = 'my-token'\n", /\[\[rules\]\] blocks/],
