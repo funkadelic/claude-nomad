@@ -754,6 +754,16 @@ describe('valueAtPath', () => {
 });
 
 describe('withoutNestedEntries', () => {
+  it('removes an ancestor and its descendant in either order without recreating the ancestor', () => {
+    const settings = { mk: { a: 1, foo: { c: 1, e: 3 } } };
+    const at = (path: string[]) => ({ path, key: 'mk', label: path.join('.'), value: null });
+    const foo = at(['mk', 'foo']);
+    const c = at(['mk', 'foo', 'c']);
+    expect(withoutNestedEntries(settings, [foo, c])).toEqual({ mk: { a: 1 } });
+    expect(withoutNestedEntries(settings, [c, foo])).toEqual({ mk: { a: 1 } });
+    expect(settings).toEqual({ mk: { a: 1, foo: { c: 1, e: 3 } } });
+  });
+
   it('removes a depth-three entry, keeps siblings and leaves the input untouched', () => {
     const settings = { mk: { a: 1, foo: { x: 1, source: { repo: 'a', ref: 'v1' } } }, theme: 'd' };
     const before = JSON.stringify(settings);
