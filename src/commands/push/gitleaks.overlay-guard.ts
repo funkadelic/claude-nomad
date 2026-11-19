@@ -8,6 +8,7 @@
 import { parse, stringify, type TomlError } from 'smol-toml';
 
 import { NomadFatal } from '../../core/utils.ts';
+import { GITLEAKS_DEFAULT_RULE_IDS } from './gitleaks.default-rule-ids.ts';
 
 type Table = Record<string, unknown>;
 
@@ -127,6 +128,38 @@ function allowlistTables(doc: Table): Table[] {
 }
 
 /**
+ * Every `[[rules]]` table in the overlay, with lowercased keys.
+ * @param doc The parsed overlay with lowercased top-level keys.
+ */
+function ruleTables(doc: Table): Table[] {
+  if (doc.rules === undefined) return [];
+  if (!Array.isArray(doc.rules) || !doc.rules.every(isTable)) {
+    throw new NomadFatal('.gitleaks.overlay.toml rules must be tables; use [[rules]] blocks.');
+  }
+  return doc.rules.map(lowerKeys);
+}
+
+/**
+ * Reject a rule with no usable `id` or one that reuses a built-in gitleaks id,
+ * which would replace that rule on every host. A new-id rule's own
+ * `[[rules.allowlists]]` need no scope check: they can only weaken that rule.
+ * @param rule One rule table with lowercased keys.
+ */
+function assertRuleIdNew(rule: Table): void {
+  const { id } = rule;
+  if (typeof id !== 'string' || id === '') {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml has a [[rules]] block that needs an `id` written as text, like id = "my-token".',
+    );
+  }
+  if (GITLEAKS_DEFAULT_RULE_IDS.has(id.toLowerCase())) {
+    throw new NomadFatal(
+      `.gitleaks.overlay.toml rule "${id}" reuses a built-in gitleaks rule id, which would replace that rule on every host. Give your rule a new id.`,
+    );
+  }
+}
+
+/**
  * Reject an allowlist with a catch-all pattern, no `paths`, or matchers
  * without `condition = "AND"` (without AND, a path match alone allows a finding).
  * @param allowlist One allowlist table with lowercased keys.
@@ -160,7 +193,7 @@ function assertAllowlistScoped(allowlist: Table): void {
 
 /**
  * Throw `NomadFatal` unless the overlay is valid TOML with no `extend` table and
- * only path-scoped allowlists. Returns whether it uses a legacy `[allowlist]`
+ * only path-scoped allowlists and new rule ids. Returns whether it uses a legacy `[allowlist]`
  * table, which gitleaks refuses to mix with `[[allowlists]]`.
  * @param overlayBody The already-read overlay file contents.
  */
@@ -172,6 +205,7 @@ export function assertOverlaySafe(overlayBody: string): { legacy: boolean } {
     );
   }
   for (const allowlist of allowlistTables(doc)) assertAllowlistScoped(allowlist);
+  for (const rule of ruleTables(doc)) assertRuleIdNew(rule);
   return { legacy: doc.allowlist !== undefined };
 }
 

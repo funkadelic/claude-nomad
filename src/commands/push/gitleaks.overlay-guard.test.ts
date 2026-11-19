@@ -21,6 +21,12 @@ describe('assertOverlaySafe', () => {
       "[[allowlists]]\npaths = ['''^a''']\nconstructor = 1\n",
       false,
     ],
+    ['a rule with a new id', "[[rules]]\nid = 'my-token'\nregex = '''abc'''\n", false],
+    [
+      'a new-id rule with an unscoped rule allowlist',
+      "[[rules]]\nid = 'my-token'\nregex = '''abc'''\n[[rules.allowlists]]\nregexes = ['''.*''']\n",
+      false,
+    ],
   ])('accepts %s', (_label, body, legacy) => {
     expect(assertOverlaySafe(body)).toEqual({ legacy });
   });
@@ -76,6 +82,29 @@ describe('assertOverlaySafe', () => {
     ['a lazy catch-all regex', SCOPED.replace("'''X'''", "'''.*?'''"), /catch-all/],
     ['a class catch-all regex', SCOPED.replace("'''X'''", "'''[\\s\\S]*'''"), /catch-all/],
     ['an empty-matching regex', SCOPED.replace("'''X'''", "'''X?'''"), /catch-all/],
+    [
+      'a rule reusing a built-in id',
+      "[[rules]]\nid = 'github-pat'\nregex = '''(?!)'''\n",
+      /built-in gitleaks rule id/,
+    ],
+    [
+      'a built-in id with an unscoped rule allowlist',
+      "[[rules]]\nid = 'github-pat'\nregex = '''abc'''\n[[rules.allowlists]]\nregexes = ['''.*''']\n",
+      /built-in gitleaks rule id/,
+    ],
+    ['an upper-case id key', "[[rules]]\nID = 'github-pat'\n", /built-in gitleaks rule id/],
+    ['an upper-case rules table', "[[Rules]]\nid = 'github-pat'\n", /built-in gitleaks rule id/],
+    [
+      'a built-in id in another case',
+      "[[rules]]\nid = 'GitHub-PAT'\n",
+      /built-in gitleaks rule id/,
+    ],
+    ['a rule with no id', "[[rules]]\nregex = '''abc'''\n", /needs an `id`/],
+    ['a non-string rule id', '[[rules]]\nid = 1\n', /needs an `id`/],
+    ['an empty rule id', "[[rules]]\nid = ''\n", /needs an `id`/],
+    ['a string rules value', "rules = 'x'\n", /\[\[rules\]\] blocks/],
+    ['a single [rules] table', "[rules]\nid = 'my-token'\n", /\[\[rules\]\] blocks/],
+    ['a non-table rules entry', "rules = ['x']\n", /\[\[rules\]\] blocks/],
   ])('rejects %s', (_label, body, message) => {
     expect(() => assertOverlaySafe(body)).toThrow(NomadFatal);
     expect(() => assertOverlaySafe(body)).toThrow(message);
