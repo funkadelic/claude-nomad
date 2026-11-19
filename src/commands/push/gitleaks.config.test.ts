@@ -459,7 +459,9 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
 
   it('single-file leaves an overlay with no global block byte-identical', async () => {
     const overlay = `# zzcomment\n[[allowlists]]\n  targetRules   =   ["github-pat"]\nregexes=['''zzkept''']\npaths = ['''^nothing/''']\ncondition="AND"\n`;
-    expect(await generatedBody(overlay, true)).toContain(overlay);
+    const body = await generatedBody(overlay, true);
+    expect(body.indexOf(overlay)).toBeGreaterThanOrEqual(0);
+    expect(body.indexOf(overlay)).toBe(body.lastIndexOf(overlay));
   });
 
   it('default mode splices a mixed overlay verbatim, global block included', async () => {

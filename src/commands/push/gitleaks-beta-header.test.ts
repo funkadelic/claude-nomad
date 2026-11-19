@@ -149,7 +149,7 @@ describe.skipIf(!hasGitleaks)(
       const paths = String.raw`paths = ['''abc123\.jsonl$''']`;
       writeFileSync(
         join(repoUnderHome, '.gitleaks.overlay.toml'),
-        `[[allowlists]]\nregexes = ['''zzneverseen''']\n${paths}\ncondition = "AND"\n\n` +
+        `[[allowlists]]\nregexes = ['''${patFor(1)}''']\n${paths}\ncondition = "AND"\n\n` +
           `[[allowlists]]\ntargetRules = ["github-pat"]\nregexes = ['''${patFor(0)}''']\n${paths}\ncondition = "AND"\n`,
       );
       const local = join(testHome, '.claude', 'projects', '-enc', 'abc123.jsonl');
