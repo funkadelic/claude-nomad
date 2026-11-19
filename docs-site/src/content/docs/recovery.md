@@ -453,34 +453,35 @@ cannot load an overlay that mixes the two.
 
 Five rules:
 
-- Your overlay must NOT contain its own `[extend]` block. nomad writes the `[extend]` line for
-  you; if the overlay includes one, the push aborts with a clear error rather than scanning with a
-  config you did not intend.
+- Your overlay must NOT contain its own `[extend]` block. nomad writes the `extend` setting for you;
+  if the overlay includes one, the push aborts with a clear error rather than scanning with a config
+  you did not intend.
 - If you keep BOTH a full `<REPO_HOME>/.gitleaks.toml` AND an overlay, the full `.gitleaks.toml`
   wins and the overlay is ignored (a full repo toml means you have taken complete manual control).
   Pick one approach: the overlay for additive tweaks, or a full `.gitleaks.toml` for total control.
-- Each top-level `[[allowlists]]` block must list the files it applies to in `paths`, and must
-  not use a pattern that matches anything (such as `.*`) or every file of a common synced type
-  (such as `\.md$` or `\.jsonl$`). The overlay syncs to every host, so an allowlist without that
+- Each top-level `[[allowlists]]` block must list the files it applies to in `paths`, and must not
+  use a pattern that matches anything (such as `.*`) or every file of a common synced type (such as
+  `\.md$` or `\.jsonl$`), or, for an absolute path written for Redact, every file under your home
+  folder or `~/.claude/projects/`. The overlay syncs to every host, so an allowlist without that
   limit would hide real secrets on all of them; `nomad push` stops with an error instead, and so
-  does `nomad doctor --check-shared`. A block that also has `regexes` must
-  set `condition = "AND"`, as in the example below: without it gitleaks ignores every finding in
-  the listed files, not just the ones your `regexes` describe, so nomad stops on that too.
-  Write `paths` and `regexes` patterns in syntax JavaScript also accepts: nomad checks each one
-  and stops on a pattern it cannot read, such as `[[:alpha:]]` classes or Go-only escapes like
-  `\A`. Keys with a dot inside quotes (`"allowlist.regexes"`) are refused too; use a
-  `[[allowlists]]` header. So are key names with any character outside plain ASCII, since
-  gitleaks can read a look-alike such as `"ruleſ"` as `rules`.
+  does `nomad doctor --check-shared`. A block that also has `regexes` must set `condition = "AND"`,
+  as in the example below: without it gitleaks ignores every finding in the listed files, not just
+  the ones your `regexes` describe, so nomad stops on that too. Write `regexes` as a list, and write
+  `paths` and `regexes` patterns in syntax JavaScript also accepts: nomad checks each one and stops
+  on a pattern it cannot read, such as `[[:alpha:]]` classes or Go-only escapes like `\A`. Keys with
+  a dot inside quotes (`"allowlist.regexes"`) are refused too; use a `[[allowlists]]` header. So are
+  key names with any character outside plain ASCII, since gitleaks can read a look-alike such as
+  `"ruleſ"` as `rules`.
 - Each overlay `[[rules]]` block needs its own `id`, and that `id` must not be the id of one of
-  gitleaks' built-in rules (such as `github-pat`). A rule with a built-in id replaces that
-  built-in rule on every host and could stop real secrets from being caught, so `nomad push` stops
-  with an error instead, and so does `nomad doctor --check-shared`.
-- Outside its blocks, the overlay may only set `title`, `description`, and `minVersion`. Any
-  other top-level setting (such as `disabledRules`) stops `nomad push` and
-  `nomad doctor --check-shared` with an error. Write block names in lowercase (`[[allowlists]]`,
-  not `[[Allowlists]]`) and write `[[allowlists]]` with double brackets. A legacy `[allowlist]`
-  table is accepted on its own, but not mixed with `[[allowlists]]` blocks: gitleaks cannot load
-  that overlay.
+  gitleaks' built-in rules (such as `github-pat`). A rule with a built-in id replaces that built-in
+  rule on every host and could stop real secrets from being caught, so `nomad push` stops with an
+  error instead, and so does `nomad doctor --check-shared`.
+- Outside its blocks, the overlay may only set `title`, `description`, and `minVersion`, each as
+  text. Any other top-level setting (such as `disabledRules`) stops `nomad push` and
+  `nomad doctor --check-shared` with an error. Write block names in lowercase (`[[allowlists]]`, not
+  `[[Allowlists]]`) and write `[[allowlists]]` blocks with double brackets, not as an inline
+  `allowlists = [...]` list. A legacy `[allowlist]` table is accepted on its own, but not mixed with
+  `[[allowlists]]` blocks: gitleaks cannot load that overlay.
 
 Example `<REPO_HOME>/.gitleaks.overlay.toml` (note: no `[extend]` block, and `paths` limits it to
 synced session transcripts):

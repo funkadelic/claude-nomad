@@ -1,7 +1,7 @@
 /**
  * Resolves the gitleaks `--config` path for every scan site, layering a
  * user-owned `REPO_HOME/.gitleaks.overlay.toml` allowlist ON TOP of the
- * package-bundled `.gitleaks.toml` via a generated temp `[extend]` chain.
+ * package-bundled `.gitleaks.toml` via a generated temp config that `extend`s it.
  *
  * Owns both tiers of gitleaks `--config` resolution: the two-tier
  * `resolveTomlPath` base lookup and the `resolveTomlConfig` overlay merge built
@@ -137,7 +137,7 @@ function buildOverlayTempConfig(
  * `REPO_HOME/.gitleaks.overlay.toml` allowlist ON TOP of the package-bundled
  * `.gitleaks.toml` (which itself `[extend] useDefault = true` chains the gitleaks
  * default ruleset). Implements Approach A (chain), empirically verified at
- * gitleaks 8.30.1: the generated temp config `[extend] path = <bundled abs>` plus
+ * gitleaks 8.30.1: the generated temp config `extend = { path = <bundled abs> }` plus
  * the overlay body loads as temp -> bundled(useDefault) -> default, exactly the
  * depth-2 `maxExtendDepth` limit (depth 3 SILENTLY drops the default ruleset).
  * The caller owns cleanup: when `tempPath` is non-null it MUST be removed in a

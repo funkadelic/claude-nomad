@@ -172,7 +172,7 @@ function resolveScanFailure(
  * collision-resistant path under `~/.cache/claude-nomad/`, and invokes
  * `gitleaks protect --staged`. Passes `--config <toml>` resolved via
  * `resolveTomlConfig`, which layers a user-owned `.gitleaks.overlay.toml` on the
- * two-tier `resolveTomlPath` base by generating a temp `[extend]` config (removed
+ * two-tier `resolveTomlPath` base by generating a temp config that `extend`s it (removed
  * in the `finally`); omits the flag when no base exists so gitleaks uses its
  * default ruleset. Returns `[]` on a clean exit, the
  * parsed `Finding[]` on a non-zero exit with a readable report, or `null` when
