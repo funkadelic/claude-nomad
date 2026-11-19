@@ -24,7 +24,14 @@ function pruneWritten(
       continue;
     }
     const child = asPlainObject(value);
-    out[sub] = child === null ? value : pruneWritten(full, child, wasWritten, removed);
+    if (child === null) {
+      out[sub] = value;
+      continue;
+    }
+    const before = removed.length;
+    const kept = pruneWritten(full, child, wasWritten, removed);
+    // A child emptied by pruning held only written entries, so it goes too.
+    if (removed.length === before || Object.keys(kept).length > 0) out[sub] = kept;
   }
   return out;
 }

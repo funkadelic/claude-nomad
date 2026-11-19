@@ -614,6 +614,26 @@ describe('nested entries under a shared object key', () => {
         expect(split.blocked.map((e) => e.label)).toEqual(['mk.foo']);
         expect(split.removed).toEqual([]);
       });
+
+      it('drops a child object left empty once its written fields are pruned', () => {
+        const written = new Set([
+          nestedEntryId(['mk', 'foo', 'source', 'a'], 1),
+          nestedEntryId(['mk', 'foo', 'source', 'b'], 2),
+        ]);
+        // Reordered keys change the parent hashes, so only the leaf ids match.
+        const l = { mk: { a: 1, foo: { source: { b: 2, a: 1 }, e: 3 } } };
+        const split = splitNestedEntries(m, l, {}, null, written);
+        expect(split.blocked.map((e) => e.value)).toEqual([{ e: 3 }]);
+        expect(split.removed.map((e) => e.label)).toEqual(['mk.foo.source.a', 'mk.foo.source.b']);
+        const only = { mk: { a: 1, foo: { source: { b: 2, a: 1 } } } };
+        expect(splitNestedEntries(m, only, {}, null, written).blocked).toEqual([]);
+      });
+
+      it('keeps a child object that was already empty', () => {
+        const l = { mk: { a: 1, foo: { d: {}, c: 1, e: 3 } } };
+        const split = splitNestedEntries(m, l, {}, null, wrote);
+        expect(split.blocked.map((e) => e.value)).toEqual([{ d: {}, e: 3 }]);
+      });
     });
 
     it('falls back to the whole-key record when no entry ids exist', () => {

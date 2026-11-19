@@ -184,6 +184,14 @@ describe('settings preview and wet pull parity', () => {
     ] as const;
     expect(blockedSettingsKeys(merged, live, ...args)).toEqual(['mk.foo.x']);
     expect(removedSettingsKeys(merged, live, ...args)).toEqual(['mk.foo.source.ref']);
+    expect(regenerateSettings('20260516-000001').blocked).toEqual(['mk.foo.x']);
+
+    // Once the local field is gone, the real pull writes the repo value and names the removal.
+    writeFileSync(settingsPath, JSON.stringify({ mk: { foo: { source } } }) + '\n');
+    expect(regenerateSettings('20260516-000002').removed).toEqual(['mk.foo.source.ref']);
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({
+      mk: { foo: { source: { repo: 'a' } } },
+    });
   });
 
   it('a record without entry ids still removes every live-only entry under an unchanged key', async () => {

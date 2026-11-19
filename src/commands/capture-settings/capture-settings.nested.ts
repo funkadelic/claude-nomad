@@ -93,6 +93,7 @@ export function addNestedEntries(
       if (!Object.hasOwn(node, seg)) node[seg] = {};
       node = node[seg] as Record<string, unknown>;
     }
-    node[e.path[e.path.length - 1]] = useHost ? e.value : normalizeNodePathsDeep(e.value);
+    const [last] = e.path.slice(-1);
+    node[last] = useHost ? e.value : normalizeNodePathsDeep(e.value);
   }
 }

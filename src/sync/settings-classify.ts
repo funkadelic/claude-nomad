@@ -430,7 +430,8 @@ export function liveOnlyNestedEntries(
   return nestedEntries(stripGsdHookEntries(settings))
     .filter((e) => {
       const parent = asPlainObject(valueAtPath(mergedObj, e.path.slice(0, -1)));
-      return parent !== null && !Object.hasOwn(parent, e.path[e.path.length - 1]);
+      const [last] = e.path.slice(-1);
+      return parent !== null && !Object.hasOwn(parent, last);
     })
     .sort((a, b) => a.label.localeCompare(b.label, 'en'));
 }
