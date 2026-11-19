@@ -32,6 +32,7 @@ describe('assertOverlaySafe', () => {
       `title = "t"\ndescription = "d"\nminversion = "v8.0.0"\n${SCOPED}`,
       false,
     ],
+    ['camelCase top-level metadata keys', `Title = "t"\nminVersion = "v8.0.0"\n${SCOPED}`, false],
   ])('accepts %s', (_label, body, legacy) => {
     expect(assertOverlaySafe(body)).toEqual({ legacy });
   });

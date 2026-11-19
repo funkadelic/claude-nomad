@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- vendored id list, not logic */
 /**
  * Rule ids in gitleaks' default ruleset for the pinned version, used to stop an
  * overlay rule from replacing one. Regenerate on a pin bump:

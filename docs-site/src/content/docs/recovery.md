@@ -475,9 +475,9 @@ Five rules:
   gitleaks' built-in rules (such as `github-pat`). A rule with a built-in id replaces that
   built-in rule on every host and could stop real secrets from being caught, so `nomad push` stops
   with an error instead, and so does `nomad doctor --check-shared`.
-- Outside its blocks, the overlay may only set `title`, `description`, and `minversion`. Any
+- Outside its blocks, the overlay may only set `title`, `description`, and `minVersion`. Any
   other top-level setting (such as `disabledRules`, which turns built-in rules off) stops
-  `nomad push` and `nomad doctor --check-shared` with an error. Write top-level names in
+  `nomad push` and `nomad doctor --check-shared` with an error. Write block names in
   lowercase (`[[allowlists]]`, not `[[Allowlists]]`) and with double brackets, and do not mix a
   legacy `[allowlist]` table with `[[allowlists]]` blocks: gitleaks cannot load those overlays.
 

@@ -36,6 +36,9 @@ const ROOT_KEYS = new Set([
   'rules',
 ]);
 
+/** Top-level block keys, which must be written in lowercase. */
+const BLOCK_KEYS = new Set(['allowlist', 'allowlists', 'rules']);
+
 /**
  * True for a TOML table (not an array or scalar).
  * @param value A parsed TOML value.
@@ -234,7 +237,10 @@ function assertRootKeys(raw: Table, doc: Table): void {
       `.gitleaks.overlay.toml has an unsupported top-level key ${JSON.stringify(unknown)}; put settings inside [[allowlists]] or [[rules]] blocks.`,
     );
   }
-  const mixed = Object.keys(raw).find((key) => key !== key.toLowerCase());
+  // Only the block keys collide with the [[allowlists]] nomad appends; `minVersion` may stay camelCase.
+  const mixed = Object.keys(raw).find(
+    (key) => BLOCK_KEYS.has(key.toLowerCase()) && key !== key.toLowerCase(),
+  );
   if (mixed !== undefined) {
     throw new NomadFatal(
       `.gitleaks.overlay.toml top-level key ${JSON.stringify(mixed)} must be written in lowercase, as ${JSON.stringify(mixed.toLowerCase())}.`,
