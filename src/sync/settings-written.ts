@@ -13,7 +13,8 @@ import { writeJsonAtomic } from '../core/utils.fs.ts';
 import { warn } from '../core/utils.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { hookEntryContents } from './hooks-entries.ts';
-import { settingValueHash, type WrittenSettings } from './settings-guard.ts';
+import { nestedEntries } from './settings-classify.ts';
+import { nestedEntryId, settingValueHash, type WrittenSettings } from './settings-guard.ts';
 
 /**
  * Producer tag the reader requires, so a record from an older nomad (a bare
@@ -31,19 +32,24 @@ function isObject(v: unknown): v is Record<string, unknown> {
  * unreadable, malformed JSON, a missing or foreign `kind`, or a `keys` map
  * holding a non-string. Never throws.
  */
-function readRecord(): { keys: WrittenSettings; hookIds: unknown } | null {
+function readRecord(): { keys: WrittenSettings; hookIds: unknown; entryIds: unknown } | null {
   try {
     const parsed: unknown = JSON.parse(readFileSync(settingsWrittenPath(), 'utf8'));
     if (!isObject(parsed) || parsed.kind !== SETTINGS_WRITTEN_KIND || !isObject(parsed.keys)) {
       return null;
     }
-    const { keys, hookIds } = parsed;
+    const { keys, hookIds, entryIds } = parsed;
     return Object.values(keys).every((h) => typeof h === 'string')
-      ? { keys: keys as WrittenSettings, hookIds }
+      ? { keys: keys as WrittenSettings, hookIds, entryIds }
       : null;
   } catch {
     return null;
   }
+}
+
+/** The string members of `v` when it is an array, else an empty set. */
+function stringSet(v: unknown): ReadonlySet<string> {
+  return new Set(Array.isArray(v) ? v.filter((h): h is string => typeof h === 'string') : []);
 }
 
 /**
@@ -59,15 +65,23 @@ export function readWrittenSettingsKeys(): WrittenSettings | null {
  * produced; empty for no record or a record written before these were kept.
  */
 export function readWrittenHookIds(): ReadonlySet<string> {
-  const ids = readRecord()?.hookIds;
-  return new Set(Array.isArray(ids) ? ids.filter((h): h is string => typeof h === 'string') : []);
+  return stringSet(readRecord()?.hookIds);
+}
+
+/**
+ * Hashes of each nested settings entry (path and value) the last write
+ * produced; empty for no record or a record written before these were kept.
+ */
+export function readWrittenEntryIds(): ReadonlySet<string> {
+  return stringSet(readRecord()?.entryIds);
 }
 
 /**
  * Record a hash of each top-level value of `written` (the object handed to
  * `writeJsonAtomic` for settings.json), stripped of gsd hook entries first
  * so a graft-restored `hooks` key never enters the record, plus a hash of
- * each hook entry's full content. Drops any previous
+ * each hook entry's full content and of each nested object entry (path and
+ * value) outside `hooks` and credential keys. Drops any previous
  * record before writing, so a failed write leaves none rather than a stale one.
  * Never throws: degrades to a warning on failure, since settings.json is
  * already written.
@@ -84,7 +98,8 @@ export function recordWrittenSettingsKeys(written: Record<string, unknown>): voi
       Object.entries(stripGsdHookEntries(written)).map(([k, v]) => [k, settingValueHash(v)]),
     );
     const hookIds = [...hookEntryContents(written)].map(settingValueHash);
-    writeJsonAtomic(path, { kind: SETTINGS_WRITTEN_KIND, keys, hookIds });
+    const entryIds = nestedEntries(written).map((e) => nestedEntryId(e.path, e.value));
+    writeJsonAtomic(path, { kind: SETTINGS_WRITTEN_KIND, keys, hookIds, entryIds });
   } catch (err) {
     warn(`could not record the written settings keys: ${(err as Error).message}`);
   }

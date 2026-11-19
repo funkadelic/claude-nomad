@@ -13,9 +13,11 @@ import {
   liveOnlyNestedEntries,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
+  valueAtPath,
   type NestedEntry,
 } from './settings-classify.ts';
-import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
+import { pruneBlockedEntries } from './settings-prune.ts';
 import {
   hookEntryContents,
   hookEntryLabel,
@@ -33,6 +35,17 @@ export type WrittenSettings = Readonly<Record<string, string>>;
  */
 export function settingValueHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+/**
+ * Id of one nested settings entry: the hash of its full path and value (node
+ * launcher paths normalized, as the write-time and live sides both compare), so
+ * a live value edited since the write never matches.
+ * @param path - The entry's key path from the top level.
+ * @param value - The entry's value.
+ */
+export function nestedEntryId(path: readonly string[], value: unknown): string {
+  return settingValueHash([path, normalizeNodePathsDeep(value)]);
 }
 
 /**
@@ -127,23 +140,36 @@ export function blockedHookEntries(
 /**
  * Split live-only entries under a shared object key into those a pull refuses
  * (`blocked`) and those it deletes as removed upstream (`removed`): `preMerged`
- * held the same value, or the whole key still matches the write record.
+ * held the same value, the last write produced the entry, or (for a record
+ * without entry ids) the whole key still matches it. A blocked entry's own
+ * descendants the last write produced move to `removed`, and its `value` is a
+ * copy without them.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
+ * @param written - The written-settings record, or `null`.
+ * @param writtenEntryIds - Hashes of each nested entry from the last write.
+ * @returns The blocked/removed partition.
  */
-function splitNestedEntries(
+export function splitNestedEntries(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
+  writtenEntryIds: ReadonlySet<string>,
 ): { blocked: NestedEntry[]; removed: NestedEntry[] } {
-  const pre = stripGsdHookEntries(preMerged);
-  // The record is whole-key: once the key is also edited locally, an entry dropped upstream reads as local.
+  // Entry ids keep an upstream removal visible after a local edit to the same key.
   const removedUpstream = (e: NestedEntry): boolean =>
+    writtenEntryIds.has(nestedEntryId(e.path, e.value)) ||
     stillAsWritten(written, existing, e.key) ||
     deepEqual(
-      normalizeNodePathsDeep(asPlainObject(pre[e.key])?.[e.sub]),
+      normalizeNodePathsDeep(valueAtPath(preMerged, e.path)),
       normalizeNodePathsDeep(e.value),
     );
-  return partition(liveOnlyNestedEntries(merged, existing), removedUpstream);
+  const split = partition(liveOnlyNestedEntries(merged, existing), removedUpstream);
+  return pruneBlockedEntries(split, (path, value) =>
+    writtenEntryIds.has(nestedEntryId(path, value)),
+  );
 }
 
 /**
@@ -153,14 +179,16 @@ function splitNestedEntries(
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
  * @param written - The written-settings record, or `null`.
+ * @param writtenEntryIds - Hashes of each nested entry from the last write.
  */
 export function blockedNestedEntries(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
+  writtenEntryIds: ReadonlySet<string>,
 ): NestedEntry[] {
-  return splitNestedEntries(merged, existing, preMerged, written).blocked;
+  return splitNestedEntries(merged, existing, preMerged, written, writtenEntryIds).blocked;
 }
 
 /**
@@ -185,6 +213,7 @@ function hookLabels(entries: HookEntry[]): string[] {
  * @param written - Value hashes the last successful settings write produced on
  *   this host, or `null` for no record; see `stillAsWritten`.
  * @param writtenHookIds - Hashes of each hook entry's content from that write.
+ * @param writtenEntryIds - Hashes of each nested entry from that write.
  * @returns The blocked keys, nested `key.sub` labels, then hook-entry labels,
  *   sorted within each group.
  */
@@ -194,10 +223,13 @@ export function blockedSettingsKeys(
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null = null,
   writtenHookIds: ReadonlySet<string> = new Set(),
+  writtenEntryIds: ReadonlySet<string> = new Set(),
 ): string[] {
   return [
     ...splitAheadKeys(merged, existing, preMerged, written).blocked,
-    ...splitNestedEntries(merged, existing, preMerged, written).blocked.map((e) => e.label),
+    ...splitNestedEntries(merged, existing, preMerged, written, writtenEntryIds).blocked.map(
+      (e) => e.label,
+    ),
     ...hookLabels(blockedHookEntries(merged, existing, preMerged, written, writtenHookIds)),
   ];
 }
@@ -212,6 +244,7 @@ export function blockedSettingsKeys(
  * @param preMerged - The merge at the pre-pull HEAD.
  * @param written - The written-settings record, or `null`.
  * @param writtenHookIds - Hashes of each hook entry's content from that write.
+ * @param writtenEntryIds - Hashes of each nested entry from that write.
  * @returns The removed keys, nested `key.sub` labels, then hook-entry labels,
  *   sorted within each group.
  */
@@ -221,10 +254,13 @@ export function removedSettingsKeys(
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
   writtenHookIds: ReadonlySet<string> = new Set(),
+  writtenEntryIds: ReadonlySet<string> = new Set(),
 ): string[] {
   return [
     ...splitAheadKeys(merged, existing, preMerged, written).removed,
-    ...splitNestedEntries(merged, existing, preMerged, written).removed.map((e) => e.label),
+    ...splitNestedEntries(merged, existing, preMerged, written, writtenEntryIds).removed.map(
+      (e) => e.label,
+    ),
     ...hookLabels(splitHookEntries(merged, existing, preMerged, written, writtenHookIds).removed),
   ];
 }

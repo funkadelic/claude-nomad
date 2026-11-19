@@ -510,6 +510,25 @@ describe('reportSettingsDriftCheck', () => {
     expect(items.find((i) => i.includes(warnGlyph))).toContain('mk.b');
   });
 
+  it('splits one key into a dropped entry and a capture candidate, as the pull does', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ mk: { a: 1 } }));
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ mk: { a: 1, gone: 2, fresh: 3 } }),
+    );
+    const { recordWrittenSettingsKeys } = await import('../../../sync/settings-written.ts');
+    recordWrittenSettingsKeys({ mk: { a: 1, gone: 2 } });
+    const { items } = await runCheck();
+    const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
+    expect(warnRow).toContain('mk.gone');
+    expect(warnRow).toContain('once mk.fresh is captured or deleted');
+    const infoRow = items.find((i) => i.includes('nomad capture-settings')) ?? '';
+    expect(infoRow).toContain('mk.fresh');
+    expect(infoRow).not.toContain('mk.gone');
+  });
+
   it('advises a host-file edit for a dropped nested entry and no put-back from capture', async () => {
     plantDropped({ model: 'sonnet', mk: { b: 2 }, theme: 'dark' }, ['mk']);
     const repo = join(env.testHome, 'claude-nomad');

@@ -3,21 +3,16 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
-import {
-  buildCaptureSubset,
-  describeSettings,
-  normalizeNodePathsDeep,
-  type NestedEntry,
-} from '../../sync/settings-classify.ts';
-import { asPlainObject } from '../../sync/hooks-filter.ts';
+import { buildCaptureSubset, describeSettings } from '../../sync/settings-classify.ts';
 import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
+import { blockedHookEntries, removedSettingsKeys } from '../../sync/settings-guard.ts';
+import { addNestedEntries, nestedCaptureEntries } from './capture-settings.nested.ts';
 import {
-  blockedHookEntries,
-  blockedNestedEntries,
-  removedSettingsKeys,
-} from '../../sync/settings-guard.ts';
-import { readWrittenHookIds, readWrittenSettingsKeys } from '../../sync/settings-written.ts';
+  readWrittenEntryIds,
+  readWrittenHookIds,
+  readWrittenSettingsKeys,
+} from '../../sync/settings-written.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
 import { deepMerge, readJson } from '../../core/utils.json.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
@@ -99,36 +94,6 @@ type CaptureSources = {
 };
 
 /**
- * New entries under a shared object key to capture. A base capture leaves out
- * any whose key the base does not hold as an object (it would replace that value,
- * or add a key only the host file has for every host) and points at `--host`;
- * `clashed` reports any left out.
- */
-function nestedCaptureEntries(
-  sources: CaptureSources,
-  useHost: boolean,
-  written: ReturnType<typeof readWrittenSettingsKeys>,
-): { entries: NestedEntry[]; clashed: boolean } {
-  const all = blockedNestedEntries(sources.merged, sources.settings, {}, written);
-  // With --host the merge holds each key as an object, so the host file cannot clash.
-  if (useHost) return { entries: all, clashed: false };
-  const { base } = sources;
-  const clashes = (key: string): boolean =>
-    !Object.hasOwn(base, key) || asPlainObject(base[key]) === null;
-  const clashing = new Set(all.map((e) => e.key).filter(clashes));
-  for (const key of clashing) {
-    const why = Object.hasOwn(base, key)
-      ? `it sets ${key} to a value that is not an object, which saving would replace`
-      : `only hosts/${HOST}.json has ${key}, so saving would add it for every host`;
-    warn(
-      `not saving new ${key} entries to shared/settings.base.json: ${why}; run ` +
-        `'nomad capture-settings --host' to save them there`,
-    );
-  }
-  return { entries: all.filter((e) => !clashes(e.key)), clashed: clashing.size > 0 };
-}
-
-/**
  * Compose the top-level `ahead`-key capture with the hook-entry capture and new
  * entries inside an object key the repo already has, warning about
  * skipped/shadowed hook events before the caller decides whether there is
@@ -150,8 +115,9 @@ function collectCapture(
   // Leave out entries a pull deletes as removed upstream, so capture never undoes that removal.
   const written = readWrittenSettingsKeys();
   const hookIds = readWrittenHookIds();
+  const entryIds = readWrittenEntryIds();
   const entries = blockedHookEntries(sources.merged, sources.settings, {}, written, hookIds);
-  const { entries: nested, clashed } = nestedCaptureEntries(sources, useHost, written);
+  const { entries: nested, clashed } = nestedCaptureEntries(sources, useHost, written, entryIds);
   const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
   for (const event of skipped) {
@@ -178,11 +144,7 @@ function collectCapture(
   }
   const subset: Record<string, unknown> = { ...topSubset };
   if (hookEventKeys.length > 0) subset.hooks = hooks;
-  for (const e of nested) {
-    if (!Object.hasOwn(subset, e.key)) subset[e.key] = {};
-    const group = subset[e.key] as Record<string, unknown>;
-    group[e.sub] = useHost ? e.value : normalizeNodePathsDeep(e.value);
-  }
+  addNestedEntries(subset, nested, useHost);
 
   const keys = [
     ...Object.keys(topSubset),
@@ -192,7 +154,14 @@ function collectCapture(
 
   // Entries the repo dropped that this capture does not save back; the resync deletes them.
   const captured = new Set(keys);
-  const removed = removedSettingsKeys(sources.merged, sources.settings, {}, written, hookIds);
+  const removed = removedSettingsKeys(
+    sources.merged,
+    sources.settings,
+    {},
+    written,
+    hookIds,
+    entryIds,
+  );
   return { subset, keys, skipped, clashed, removed: removed.filter((k) => !captured.has(k)) };
 }
 

@@ -157,6 +157,41 @@ describe('settings-written', () => {
     expect([...readWrittenHookIds()]).toEqual(['h']);
   });
 
+  it('records a hash of each nested object entry, never its name or value', async () => {
+    const { readWrittenEntryIds, recordWrittenSettingsKeys } =
+      await import('./settings-written.ts');
+    const { nestedEntryId } = await import('./settings-guard.ts');
+    recordWrittenSettingsKeys({
+      model: 'x',
+      env: { K: 'v' },
+      hooks: { Stop: [] },
+      mk: { a: 1, foo: { ref: 'secretish' } },
+    });
+    expect(readWrittenEntryIds()).toEqual(
+      new Set([
+        nestedEntryId(['mk', 'a'], 1),
+        nestedEntryId(['mk', 'foo'], { ref: 'secretish' }),
+        nestedEntryId(['mk', 'foo', 'ref'], 'secretish'),
+      ]),
+    );
+    const text = readFileSync(recordPath, 'utf8');
+    expect(text).not.toContain('secretish');
+    expect(text).not.toContain('"ref"');
+  });
+
+  it('readWrittenEntryIds is empty for no record or a record without entryIds, and keeps only strings', async () => {
+    const { readWrittenEntryIds, SETTINGS_WRITTEN_KIND } = await import('./settings-written.ts');
+    expect(readWrittenEntryIds().size).toBe(0);
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(recordPath, JSON.stringify({ kind: SETTINGS_WRITTEN_KIND, keys: {} }));
+    expect(readWrittenEntryIds().size).toBe(0);
+    writeFileSync(
+      recordPath,
+      JSON.stringify({ kind: SETTINGS_WRITTEN_KIND, keys: {}, entryIds: [42, 'e'] }),
+    );
+    expect([...readWrittenEntryIds()]).toEqual(['e']);
+  });
+
   it('creates ~/.cache/claude-nomad/ when it does not exist yet', async () => {
     expect(existsSync(join(testHome, '.cache'))).toBe(false);
     const { recordWrittenSettingsKeys } = await import('./settings-written.ts');

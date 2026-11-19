@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   blockedSettingsKeys,
+  nestedEntryId,
   credentialOverwriteCount,
   credentialOverwriteMessage,
   removedSettingsKeys,
   settingsBlockedMessage,
   settingsRemovedMessage,
   settingValueHash,
+  splitNestedEntries,
   stillAsWritten,
 } from './settings-guard.ts';
 import { hookEntryContents } from './hooks-entries.ts';
@@ -519,5 +521,125 @@ describe('nested entries under a shared object key', () => {
   it('keeps the sub-keys blocked when the key was edited since the write', () => {
     const written = rec({ mk: { a: 1 } });
     expect(blockedSettingsKeys(merged, live, {}, written)).toEqual(['mk.b']);
+  });
+
+  it('removes a depth-three entry when preMerged held the same value, launcher paths normalized', () => {
+    const m = { mk: { foo: { source: {} } } };
+    const l = { mk: { foo: { source: { cmd: '/x/bin/node' } } } };
+    const pre = { mk: { foo: { source: { cmd: 'node' } } } };
+    expect(blockedSettingsKeys(m, l, pre)).toEqual([]);
+    expect(removedSettingsKeys(m, l, pre, null)).toEqual(['mk.foo.source.cmd']);
+  });
+
+  it('keeps a depth-three entry blocked when preMerged held a different value', () => {
+    const m = { mk: { foo: { source: {} } } };
+    const l = { mk: { foo: { source: { ref: 'v2' } } } };
+    const pre = { mk: { foo: { source: { ref: 'v1' } } } };
+    expect(blockedSettingsKeys(m, l, pre)).toEqual(['mk.foo.source.ref']);
+  });
+
+  describe('per-entry written ids', () => {
+    const m = { mk: { a: 1 } };
+    const ids = new Set([nestedEntryId(['mk', 'a'], 1), nestedEntryId(['mk', 'gone'], 2)]);
+
+    it('refuses only the entry added here and removes the one the repo dropped', () => {
+      const l = { mk: { a: 1, gone: 2, fresh: 3 } };
+      const written = rec({ mk: { a: 1, gone: 2 } });
+      expect(blockedSettingsKeys(m, l, {}, written, new Set(), ids)).toEqual(['mk.fresh']);
+      expect(removedSettingsKeys(m, l, {}, written, new Set(), ids)).toEqual(['mk.gone']);
+    });
+
+    it('keeps an entry blocked when its value was edited since the write', () => {
+      const l = { mk: { a: 1, gone: 5 } };
+      expect(blockedSettingsKeys(m, l, {}, rec({ mk: { a: 1, gone: 2 } }), new Set(), ids)).toEqual(
+        ['mk.gone'],
+      );
+    });
+
+    it('removes an entry whose launcher path was rewritten after the write', () => {
+      const wrote = new Set([
+        nestedEntryId(['mk', 'foo'], { cmd: 'node x.js' }),
+        nestedEntryId(['mk', 'foo', 'cmd'], 'node x.js'),
+      ]);
+      const l = { mk: { a: 1, foo: { cmd: '/usr/bin/node x.js' } } };
+      expect(blockedSettingsKeys(m, l, {}, null, new Set(), wrote)).toEqual([]);
+      expect(removedSettingsKeys(m, l, {}, null, new Set(), wrote)).toEqual(['mk.foo']);
+    });
+
+    describe('a blocked branch holding entries the last write produced', () => {
+      const wrote = new Set([
+        nestedEntryId(['mk', 'a'], 1),
+        nestedEntryId(['mk', 'foo'], { c: 1 }),
+        nestedEntryId(['mk', 'foo', 'c'], 1),
+      ]);
+
+      it('keeps the new part blocked and reports the written part removed', () => {
+        const l = { mk: { a: 1, foo: { c: 1, e: 3 } } };
+        const split = splitNestedEntries(m, l, {}, null, wrote);
+        expect(split.blocked).toEqual([
+          { path: ['mk', 'foo'], key: 'mk', label: 'mk.foo', value: { e: 3 } },
+        ]);
+        expect(split.removed).toEqual([
+          { path: ['mk', 'foo', 'c'], key: 'mk', label: 'mk.foo.c', value: 1 },
+        ]);
+        expect(l.mk.foo).toEqual({ c: 1, e: 3 });
+      });
+
+      it('moves the whole entry to removed when nothing new is left', () => {
+        const written = new Set([nestedEntryId(['mk', 'foo', 'c'], 1)]);
+        const split = splitNestedEntries(m, { mk: { a: 1, foo: { c: 1 } } }, {}, null, written);
+        expect(split.blocked).toEqual([]);
+        expect(split.removed.map((e) => e.label)).toEqual(['mk.foo']);
+        expect(split.removed[0].value).toEqual({ c: 1 });
+      });
+
+      it('removes a matched descendant whole, not its children', () => {
+        const written = new Set([nestedEntryId(['mk', 'foo', 'x'], { y: 1 })]);
+        const l = { mk: { a: 1, foo: { x: { y: 1 }, e: 3 } } };
+        const split = splitNestedEntries(m, l, {}, null, written);
+        expect(split.blocked.map((e) => e.value)).toEqual([{ e: 3 }]);
+        expect(split.removed.map((e) => e.label)).toEqual(['mk.foo.x']);
+      });
+
+      it('leaves prototype-pollution keys out of the pruned copy', () => {
+        const foo = JSON.parse('{"__proto__":{"p":1},"c":1,"e":3}') as object;
+        const split = splitNestedEntries(m, { mk: { a: 1, foo } }, {}, null, wrote);
+        const value = split.blocked[0].value as Record<string, unknown>;
+        expect(Object.keys(value)).toEqual(['e']);
+        expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+      });
+
+      it('keeps an empty branch blocked, since nothing was pruned from it', () => {
+        const split = splitNestedEntries(m, { mk: { a: 1, foo: {} } }, {}, null, wrote);
+        expect(split.blocked.map((e) => e.label)).toEqual(['mk.foo']);
+        expect(split.removed).toEqual([]);
+      });
+
+      it('drops a child object left empty once its written fields are pruned', () => {
+        const written = new Set([
+          nestedEntryId(['mk', 'foo', 'source', 'a'], 1),
+          nestedEntryId(['mk', 'foo', 'source', 'b'], 2),
+        ]);
+        // Reordered keys change the parent hashes, so only the leaf ids match.
+        const l = { mk: { a: 1, foo: { source: { b: 2, a: 1 }, e: 3 } } };
+        const split = splitNestedEntries(m, l, {}, null, written);
+        expect(split.blocked.map((e) => e.value)).toEqual([{ e: 3 }]);
+        expect(split.removed.map((e) => e.label)).toEqual(['mk.foo.source.a', 'mk.foo.source.b']);
+        const only = { mk: { a: 1, foo: { source: { b: 2, a: 1 } } } };
+        expect(splitNestedEntries(m, only, {}, null, written).blocked).toEqual([]);
+      });
+
+      it('keeps a child object that was already empty', () => {
+        const l = { mk: { a: 1, foo: { d: {}, c: 1, e: 3 } } };
+        const split = splitNestedEntries(m, l, {}, null, wrote);
+        expect(split.blocked.map((e) => e.value)).toEqual([{ d: {}, e: 3 }]);
+      });
+    });
+
+    it('falls back to the whole-key record when no entry ids exist', () => {
+      const l = { mk: { a: 1, x: 2, y: 3 } };
+      expect(removedSettingsKeys(m, l, {}, rec({ mk: l.mk }))).toEqual(['mk.x', 'mk.y']);
+      expect(blockedSettingsKeys(m, l, {}, rec({ mk: { a: 1 } }))).toEqual(['mk.x', 'mk.y']);
+    });
   });
 });

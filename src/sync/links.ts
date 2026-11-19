@@ -22,6 +22,7 @@ import {
 } from './settings-guard.ts';
 import { preRebaseSettingsMerge } from './settings-upstream.ts';
 import {
+  readWrittenEntryIds,
   readWrittenHookIds,
   readWrittenSettingsKeys,
   recordWrittenSettingsKeys,
@@ -231,7 +232,6 @@ function readExistingSettings(settingsPath: string): {
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD (see `blockedSettingsKeys`).
  * @param written - The written-settings record; see `blockedSettingsKeys`.
- * @param writtenHookIds - Hashes of each hook entry's content from the last write.
  * @returns The blocked keys, so the caller can skip the write, and the keys
  *   the write removes (empty when blocked).
  */
@@ -240,9 +240,10 @@ function reportSettingsDrift(
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
-  writtenHookIds: ReadonlySet<string>,
 ): { blocked: string[]; removed: string[] } {
-  const blocked = blockedSettingsKeys(merged, existing, preMerged, written, writtenHookIds);
+  const hookIds = readWrittenHookIds();
+  const entryIds = readWrittenEntryIds();
+  const blocked = blockedSettingsKeys(merged, existing, preMerged, written, hookIds, entryIds);
   if (blocked.length > 0) {
     fail(settingsBlockedMessage(blocked, 'left unchanged'));
     return { blocked, removed: [] };
@@ -259,7 +260,7 @@ function reportSettingsDrift(
   if (credentials > 0) warn(credentialOverwriteMessage(credentials));
   return {
     blocked,
-    removed: removedSettingsKeys(merged, existing, preMerged, written, writtenHookIds),
+    removed: removedSettingsKeys(merged, existing, preMerged, written, hookIds, entryIds),
   };
 }
 
@@ -343,7 +344,6 @@ export function regenerateSettings(
         existing,
         preRebaseSettingsMerge(repo, opts.prePostHeads),
         readWrittenSettingsKeys(),
-        readWrittenHookIds(),
       ));
     }
   }

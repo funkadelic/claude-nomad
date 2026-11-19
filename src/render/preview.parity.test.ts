@@ -137,6 +137,84 @@ describe('settings preview and wet pull parity', () => {
     expect(regenerateSettings('20260516-000000').blocked).toEqual(['theme']);
   });
 
+  it('one nested entry added here and another dropped upstream: both sides refuse only the added one', async () => {
+    writeFileSync(basePath, JSON.stringify({ mk: { a: 1, gone: 2 } }) + '\n');
+    const { regenerateSettings } = await import('../sync/links.ts');
+    regenerateSettings('20260516-000000');
+
+    writeFileSync(settingsPath, JSON.stringify({ mk: { a: 1, gone: 2, fresh: 3 } }) + '\n');
+    writeFileSync(basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+    const { previewSettings } = await import('./preview.ts');
+    const { readWrittenEntryIds, readWrittenHookIds, readWrittenSettingsKeys } =
+      await import('../sync/settings-written.ts');
+    const preview = previewSettings(
+      basePath,
+      hostPath,
+      settingsPath,
+      {},
+      readWrittenSettingsKeys(),
+      readWrittenHookIds(),
+      readWrittenEntryIds(),
+    );
+    const note = preview.notes.find((n) => n.includes('would be left unchanged')) ?? '';
+    expect(note).toContain('mk.fresh');
+    expect(note).not.toContain('mk.gone');
+
+    expect(regenerateSettings('20260516-000001').blocked).toEqual(['mk.fresh']);
+  });
+
+  it('a depth-three entry added here is refused and one the repo dropped is removed, through a real write', async () => {
+    const source = { repo: 'a', ref: 'v1' };
+    writeFileSync(basePath, JSON.stringify({ mk: { foo: { source } } }) + '\n');
+    const { regenerateSettings } = await import('../sync/links.ts');
+    regenerateSettings('20260516-000000');
+
+    writeFileSync(settingsPath, JSON.stringify({ mk: { foo: { source, x: 1 } } }) + '\n');
+    writeFileSync(basePath, JSON.stringify({ mk: { foo: { source: { repo: 'a' } } } }) + '\n');
+    const { readWrittenEntryIds, readWrittenHookIds, readWrittenSettingsKeys } =
+      await import('../sync/settings-written.ts');
+    const { blockedSettingsKeys, removedSettingsKeys } = await import('../sync/settings-guard.ts');
+    const merged = JSON.parse(readFileSync(basePath, 'utf8')) as Record<string, unknown>;
+    const live = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+    const args = [
+      {},
+      readWrittenSettingsKeys(),
+      readWrittenHookIds(),
+      readWrittenEntryIds(),
+    ] as const;
+    expect(blockedSettingsKeys(merged, live, ...args)).toEqual(['mk.foo.x']);
+    expect(removedSettingsKeys(merged, live, ...args)).toEqual(['mk.foo.source.ref']);
+    expect(regenerateSettings('20260516-000001').blocked).toEqual(['mk.foo.x']);
+
+    // Once the local field is gone, the real pull writes the repo value and names the removal.
+    writeFileSync(settingsPath, JSON.stringify({ mk: { foo: { source } } }) + '\n');
+    expect(regenerateSettings('20260516-000002').removed).toEqual(['mk.foo.source.ref']);
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({
+      mk: { foo: { source: { repo: 'a' } } },
+    });
+  });
+
+  it('a record without entry ids still removes every live-only entry under an unchanged key', async () => {
+    writeFileSync(basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+    writeFileSync(settingsPath, JSON.stringify({ mk: { a: 1, b: 2 } }) + '\n');
+    const { settingValueHash } = await import('../sync/settings-guard.ts');
+    const { SETTINGS_WRITTEN_KIND } = await import('../sync/settings-written.ts');
+    const { settingsWrittenPath } = await import('../core/config.ts');
+    mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+    writeFileSync(
+      settingsWrittenPath(),
+      JSON.stringify({
+        kind: SETTINGS_WRITTEN_KIND,
+        keys: { mk: settingValueHash({ a: 1, b: 2 }) },
+      }),
+    );
+
+    const { regenerateSettings } = await import('../sync/links.ts');
+    const wet = regenerateSettings('20260516-000000');
+    expect(wet.blocked).toEqual([]);
+    expect(wet.removed).toEqual(['mk.b']);
+  });
+
   it('malformed host file: the preview names no refusal the wet pull cannot reach', async () => {
     writeFileSync(basePath, JSON.stringify({ model: 'sonnet' }) + '\n');
     writeFileSync(hostPath, '{ malformed json');

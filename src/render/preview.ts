@@ -17,7 +17,11 @@ import {
   type WrittenSettings,
 } from '../sync/settings-guard.ts';
 import { preRebaseSettingsMerge } from '../sync/settings-upstream.ts';
-import { readWrittenHookIds, readWrittenSettingsKeys } from '../sync/settings-written.ts';
+import {
+  readWrittenEntryIds,
+  readWrittenHookIds,
+  readWrittenSettingsKeys,
+} from '../sync/settings-written.ts';
 import { buildSkillsPreviewSection } from './preview.skills.ts';
 import { type RemapPullPreviewEvent, remapPull, scanLocalOnly } from '../sync/remap.ts';
 import { summaryRow } from './summary.ts';
@@ -158,6 +162,7 @@ function readJsonOrNull(path: string): Record<string, unknown> | null {
  * @param preMerged - The merge at the pre-pull HEAD (`preRebaseSettingsMerge`).
  * @param written - The written-settings record; see `blockedSettingsKeys`.
  * @param writtenHookIds - Hashes of each hook entry's content from the last write.
+ * @param writtenEntryIds - Hashes of each nested entry from the last write.
  * @returns The unified diff (`''` for none) and any notes.
  */
 export function previewSettings(
@@ -167,6 +172,7 @@ export function previewSettings(
   preMerged: Record<string, unknown> = {},
   written: WrittenSettings | null = null,
   writtenHookIds: ReadonlySet<string> = new Set(),
+  writtenEntryIds: ReadonlySet<string> = new Set(),
 ): { diff: string; notes: string[] } {
   const base = readJsonOrNull(basePath);
   if (base === null) {
@@ -192,7 +198,14 @@ export function previewSettings(
 
   // Classify the same two objects regenerateSettings classifies (unstripped
   // merge, raw current), so this preview cannot disagree with the wet path.
-  const blocked = blockedSettingsKeys(rawMerged, current ?? {}, preMerged, written, writtenHookIds);
+  const blocked = blockedSettingsKeys(
+    rawMerged,
+    current ?? {},
+    preMerged,
+    written,
+    writtenHookIds,
+    writtenEntryIds,
+  );
   if (blocked.length > 0) {
     return { diff: '', notes: [settingsBlockedMessage(blocked, 'would be left unchanged')] };
   }
@@ -203,7 +216,14 @@ export function previewSettings(
     JSON.stringify(sortKeysDeep(merged), null, 2),
   );
   const notes = diff === '' && !rawEqual ? [CANONICAL_ORDER_NOTE] : [];
-  const removed = removedSettingsKeys(rawMerged, current ?? {}, preMerged, written, writtenHookIds);
+  const removed = removedSettingsKeys(
+    rawMerged,
+    current ?? {},
+    preMerged,
+    written,
+    writtenHookIds,
+    writtenEntryIds,
+  );
   if (removed.length > 0) notes.push(settingsRemovedMessage(removed));
   return { diff, notes };
 }
@@ -463,6 +483,7 @@ export function computePreview(
     preRebaseSettingsMerge(repo, prePostHeads),
     readWrittenSettingsKeys(),
     readWrittenHookIds(),
+    readWrittenEntryIds(),
   );
   const settingsSection = buildSettingsSectionForPreview(settingsResult);
 
