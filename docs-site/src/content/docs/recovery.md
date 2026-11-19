@@ -366,9 +366,7 @@ Transcript-only suppressions, scoped to synced session transcripts
 - Claude Code's beta-flag list (`oauth-<date>` followed by another dated flag such as
   `interleaved-thinking-2025-05-14`), recorded on every turn, which `generic-api-key` reads as a key
   name and a secret. A second copy covers local transcripts so Redact leaves those lines alone too,
-  including when you use a `.gitleaks.overlay.toml`. The one exception is an overlay written with
-  the older single `[allowlist]` table instead of `[[allowlists]]`: Redact then also replaces those
-  flag values (harmless, the line stays valid).
+  including when you use a `.gitleaks.overlay.toml`.
 
 Structurally anchored suppressions, scoped to both synced transcripts and committed skill content
 (`shared/skills/<name>/...`, any nesting depth). Each carries surrounding structure a bare
@@ -444,7 +442,14 @@ How it works, briefly: on `nomad push`, when the overlay is present, nomad gener
 config that extends the bundled `.gitleaks.toml` (which itself extends the gitleaks default),
 appends your overlay body, scans with that combined config, then deletes the throwaway file. The
 merge is gitleaks' own `[extend]` append, so your allowlist entries add to the shipped and default
-ones rather than replacing them.
+ones rather than replacing them. One difference: the Redact re-scan checks one local file at a
+time (a session transcript, memory file, or skill file under `~/.claude/`) by its full path, and
+skips a legacy `[allowlist]` table and every `[[allowlists]]` block without a `targetRules` line.
+So Redact may replace a value such a block allows at push. To keep an allow in effect for Redact
+too, add a second copy of the block with `targetRules = ["<rule-id>"]` (the rule named in the
+finding) and `paths` that match that local file, the way the bundled beta-flag entry does. If the
+allow is a legacy `[allowlist]` table, first rewrite it as an `[[allowlists]]` block: gitleaks
+cannot load an overlay that mixes the two.
 
 Three rules:
 

@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { repoHome } from '../../core/config.ts';
 import { packageRoot } from '../../core/package-root.ts';
 import { NomadFatal, warn } from '../../core/utils.ts';
-import { assertOverlaySafe } from './gitleaks.overlay-guard.ts';
+import { assertOverlaySafe, stripGlobalAllowlists } from './gitleaks.overlay-guard.ts';
 
 /**
  * Two-tier `.gitleaks.toml` lookup: returns `REPO_HOME/.gitleaks.toml` when
@@ -162,6 +162,7 @@ function buildOverlayTempConfig(
  *     the overlay syncs across hosts, disable scanning fleet-wide.
  *   - Overlay present, bundled base resolvable: generates the temp config and
  *     returns `{ path: tempPath, tempPath }`.
+ *   - Single-file mode drops global overlay blocks after the safety guard ran.
  *   - Generation failure for any reason: if reading the overlay or the bundled
  *     base, or writing the temp, throws (ENOSPC, EACCES, EROFS, missing tmpdir, unreadable overlay,
  *     etc.), `warn` once and fall back to the BUNDLED base path so the scan STILL
@@ -170,10 +171,16 @@ function buildOverlayTempConfig(
  *     try, so it is never swallowed by this catch, as is the broken-install
  *     `NomadFatal` from the `resolveTomlPath` call that precedes it.
  *
+ * @param options.singleFile True for a one-file scan (`scanFile`): global overlay
+ *   blocks (no `targetRules`) are dropped, since single-file detect would skip the
+ *   whole file on a path match. The legacy `[allowlist]` table goes too, so the
+ *   bundled targetRules blocks are carried.
  * @returns A `TomlConfigResult`; the caller passes `path` to `--config` (omitting
  *   the flag on `null`) and removes a non-null `tempPath` in a `finally`.
  */
-export function resolveTomlConfig(): TomlConfigResult {
+export function resolveTomlConfig({
+  singleFile = false,
+}: { singleFile?: boolean } = {}): TomlConfigResult {
   const repo = repoHome();
   const overlayPath = join(repo, '.gitleaks.overlay.toml');
   const repoToml = join(repo, '.gitleaks.toml');
@@ -203,7 +210,8 @@ export function resolveTomlConfig(): TomlConfigResult {
   try {
     const overlayBody = readFileSync(overlayPath, 'utf8');
     const { legacy } = assertOverlaySafe(overlayBody);
-    const { configPath, tempPath } = buildOverlayTempConfig(overlayBody, bundled, legacy);
+    const body = singleFile ? stripGlobalAllowlists(overlayBody) : overlayBody;
+    const { configPath, tempPath } = buildOverlayTempConfig(body, bundled, legacy && !singleFile);
     return { path: configPath, tempPath };
   } catch (err) {
     if (err instanceof NomadFatal) throw err;
