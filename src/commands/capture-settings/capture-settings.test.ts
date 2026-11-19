@@ -1061,8 +1061,55 @@ describe('cmdCaptureSettings', () => {
       const { cmdCaptureSettings } = await import('./capture-settings.ts');
       await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
       expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
-      expect(errs.join('\n')).toContain('not saving new mk.foo entries');
+      expect(errs.join('\n')).toContain('not saving new mk entries');
       expect(errs.join('\n')).toContain('it sets mk to a value that is not an object');
+    });
+
+    it('prints one warning when two parents fail on the same non-object prefix', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: 5 }) + '\n');
+      writeFileSync(
+        join(env.hostsDir, 'test-host.json'),
+        JSON.stringify({ mk: { foo: { x: 1 }, bar: { y: 1 } } }),
+      );
+      writeFileSync(
+        env.settingsPath,
+        JSON.stringify({ mk: { foo: { x: 1, z: 2 }, bar: { y: 1, w: 2 } } }) + '\n',
+      );
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(errs.filter((e) => e.includes('not saving new'))).toHaveLength(1);
+    });
+
+    it('saves only the new part of a branch the repo dropped, and removes the rest', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1, foo: { c: 1 } } }) + '\n');
+      writeFileSync(env.settingsPath, '{}\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      regenerateSettings('20261101-000001');
+
+      writeFileSync(env.settingsPath, JSON.stringify({ mk: { a: 1, foo: { c: 1, e: 3 } } }) + '\n');
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+      expect(regenerateSettings('20261101-000002').blocked).toEqual(['mk.foo']);
+
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const read = (p: string) => JSON.parse(readFileSync(p, 'utf8')) as { mk: object };
+      expect(read(env.basePath).mk).toEqual({ a: 1, foo: { e: 3 } });
+      expect(read(env.settingsPath).mk).toEqual({ a: 1, foo: { e: 3 } });
+      expect(errs.join('\n')).toContain('this capture also removed');
+      expect(errs.join('\n')).toContain('mk.foo.c');
     });
 
     it('saves the entry added here but never the one the repo dropped, and names the removal', async () => {

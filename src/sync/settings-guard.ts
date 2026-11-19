@@ -17,6 +17,7 @@ import {
   type NestedEntry,
 } from './settings-classify.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
+import { pruneBlockedEntries } from './settings-prune.ts';
 import {
   hookEntryContents,
   hookEntryLabel,
@@ -37,13 +38,14 @@ export function settingValueHash(value: unknown): string {
 }
 
 /**
- * Id of one nested settings entry: the hash of its full path and value, so a
- * live value edited since the write never matches.
+ * Id of one nested settings entry: the hash of its full path and value (node
+ * launcher paths normalized, as the write-time and live sides both compare), so
+ * a live value edited since the write never matches.
  * @param path - The entry's key path from the top level.
  * @param value - The entry's value.
  */
 export function nestedEntryId(path: readonly string[], value: unknown): string {
-  return settingValueHash([path, value]);
+  return settingValueHash([path, normalizeNodePathsDeep(value)]);
 }
 
 /**
@@ -139,7 +141,9 @@ export function blockedHookEntries(
  * Split live-only entries under a shared object key into those a pull refuses
  * (`blocked`) and those it deletes as removed upstream (`removed`): `preMerged`
  * held the same value, the last write produced the entry, or (for a record
- * without entry ids) the whole key still matches it.
+ * without entry ids) the whole key still matches it. A blocked entry's own
+ * descendants the last write produced move to `removed`, and its `value` is a
+ * copy without them.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
  * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
@@ -162,7 +166,10 @@ export function splitNestedEntries(
       normalizeNodePathsDeep(valueAtPath(preMerged, e.path)),
       normalizeNodePathsDeep(e.value),
     );
-  return partition(liveOnlyNestedEntries(merged, existing), removedUpstream);
+  const split = partition(liveOnlyNestedEntries(merged, existing), removedUpstream);
+  return pruneBlockedEntries(split, (path, value) =>
+    writtenEntryIds.has(nestedEntryId(path, value)),
+  );
 }
 
 /**

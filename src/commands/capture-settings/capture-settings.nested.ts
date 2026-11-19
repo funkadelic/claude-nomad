@@ -50,24 +50,28 @@ export function nestedCaptureEntries(
   const all = blockedNestedEntries(sources.merged, sources.settings, {}, written, entryIds);
   // With --host the merge holds each path as an object, so the host file cannot clash.
   if (useHost) return { entries: all, clashed: false };
-  const failing = new Map<string, string[]>();
+  const failing = new Set<string>();
   const kept: NestedEntry[] = [];
   for (const e of all) {
     const prefix = firstNonObjectPrefix(sources.base, e.path.slice(0, -1));
     if (prefix === null) kept.push(e);
-    else failing.set(e.path.slice(0, -1).join('.'), prefix);
+    else failing.add(clashWarning(sources.base, prefix));
   }
-  for (const [parentLabel, prefix] of failing) {
-    const why =
-      valueAtPath(sources.base, prefix) === undefined
-        ? `only hosts/${HOST}.json has ${parentLabel}, so saving would add it for every host`
-        : `it sets ${prefix.join('.')} to a value that is not an object, which saving would replace`;
-    warn(
-      `not saving new ${parentLabel} entries to shared/settings.base.json: ${why}; run ` +
-        `'nomad capture-settings --host' to save them there`,
-    );
-  }
+  for (const message of failing) warn(message);
   return { entries: kept, clashed: failing.size > 0 };
+}
+
+/** The warning for new entries under `prefix`, the first path the base does not hold as an object. */
+function clashWarning(base: Record<string, unknown>, prefix: string[]): string {
+  const label = prefix.join('.');
+  const why =
+    valueAtPath(base, prefix) === undefined
+      ? `only hosts/${HOST}.json has ${label}, so saving would add it for every host`
+      : `it sets ${label} to a value that is not an object, which saving would replace`;
+  return (
+    `not saving new ${label} entries to shared/settings.base.json: ${why}; run ` +
+    `'nomad capture-settings --host' to save them there`
+  );
 }
 
 /**
