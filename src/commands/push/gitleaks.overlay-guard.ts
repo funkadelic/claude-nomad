@@ -27,7 +27,7 @@ function canaryPaths(): string[] {
     ...['qk', 'md', 'json', 'jsonl', 'toml', 'txt', 'yml'].flatMap((ext) => [
       `nomad-canary-q7z/zz9.${ext}`,
       `/nomad-canary-q7z/zz9.${ext}`,
-      `C:\\nomad-canary-q7z\\zz9.${ext}`,
+      String.raw`C:\nomad-canary-q7z\zz9.${ext}`,
       join(local, `zz9.${ext}`),
     ]),
   ];
