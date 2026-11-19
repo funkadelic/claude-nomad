@@ -5,20 +5,33 @@
  * strips the global blocks a single-file scan cannot scope.
  */
 
+import { join } from 'node:path';
+
 import { parse, stringify, type TomlError } from 'smol-toml';
 
+import { claudeHome } from '../../core/config.ts';
 import { NomadFatal } from '../../core/utils.ts';
 import { GITLEAKS_DEFAULT_RULE_IDS } from './gitleaks.default-rule-ids.ts';
 
 type Table = Record<string, unknown>;
 
-/** Paths no scoped pattern should match, including one per common synced file type. */
-const CANARY_PATHS = [
-  'zz9q7.qk',
-  ...['qk', 'md', 'json', 'jsonl', 'toml', 'txt', 'yml'].map(
-    (ext) => `nomad-canary-q7z/zz9.${ext}`,
-  ),
-];
+/**
+ * Paths no scoped pattern should match: one per common synced file type, as a
+ * repo-relative path (push), and as absolute paths at the filesystem root and
+ * under this host's Claude projects dir (the Redact re-scan matches absolute paths).
+ */
+function canaryPaths(): string[] {
+  const local = join(claudeHome(), 'projects', 'nomad-canary-q7z');
+  return [
+    'zz9q7.qk',
+    ...['qk', 'md', 'json', 'jsonl', 'toml', 'txt', 'yml'].flatMap((ext) => [
+      `nomad-canary-q7z/zz9.${ext}`,
+      `/nomad-canary-q7z/zz9.${ext}`,
+      `C:\\nomad-canary-q7z\\zz9.${ext}`,
+      join(local, `zz9.${ext}`),
+    ]),
+  ];
+}
 
 /** Text no specific `regexes` pattern should match. */
 const CANARY_MATCHES = ['nomad-canary-zz9q7', ''];
@@ -26,7 +39,7 @@ const CANARY_MATCHES = ['nomad-canary-zz9q7', ''];
 /** Keys that narrow an allowlist to specific matches rather than whole files. */
 const MATCHER_KEYS = ['regexes', 'stopwords', 'commits'];
 
-/** Top-level keys an overlay may set; anything else could reach gitleaks' `extend` table. */
+/** Top-level keys an overlay may set; anything else could change gitleaks' settings. */
 const ROOT_KEYS = new Set([
   'title',
   'description',
@@ -38,6 +51,9 @@ const ROOT_KEYS = new Set([
 
 /** Top-level block keys, which must be written in lowercase. */
 const BLOCK_KEYS = new Set(['allowlist', 'allowlists', 'rules']);
+
+/** Top-level metadata keys, which gitleaks only loads as strings. */
+const TEXT_KEYS = ['title', 'description', 'minversion'];
 
 /**
  * True for a TOML table (not an array or scalar).
@@ -187,7 +203,7 @@ function assertRuleIdNew(rule: Table): void {
   }
   if (GITLEAKS_DEFAULT_RULE_IDS.has(id.toLowerCase())) {
     throw new NomadFatal(
-      `.gitleaks.overlay.toml rule ${JSON.stringify(id)} reuses a built-in gitleaks rule id, which would replace that rule on every host. Give your rule a new id.`,
+      `.gitleaks.overlay.toml rule ${JSON.stringify(id)} matches a built-in gitleaks rule id (compared ignoring case); reusing one would replace that rule on every host. Give your rule a new id.`,
     );
   }
 }
@@ -198,7 +214,18 @@ function assertRuleIdNew(rule: Table): void {
  * @param allowlist One allowlist table with lowercased keys.
  */
 function assertAllowlistScoped(allowlist: Table): void {
-  const regexes: unknown[] = [allowlist.regexes].flat().filter((p) => p !== undefined);
+  // gitleaks splits a single string on commas, so `'''x,.'''` would load a `.` catch-all.
+  const notList = MATCHER_KEYS.find(
+    (key) =>
+      key in allowlist &&
+      !(Array.isArray(allowlist[key]) && allowlist[key].every((v) => typeof v === 'string')),
+  );
+  if (notList !== undefined) {
+    throw new NomadFatal(
+      `.gitleaks.overlay.toml allowlist \`${notList}\` must be a list of strings, like ${notList} = ['''...'''].`,
+    );
+  }
+  const regexes = (allowlist.regexes ?? []) as string[];
   const broadRegex = regexes.find((p) => isBroad(p, CANARY_MATCHES));
   if (broadRegex !== undefined) {
     throw new NomadFatal(
@@ -210,7 +237,7 @@ function assertAllowlistScoped(allowlist: Table): void {
       '.gitleaks.overlay.toml allowlist must be path-scoped: every [[allowlists]] block needs a `paths` entry so it cannot suppress findings repo-wide. Anchor `paths` to the files you intend to allow (e.g. shared/projects/<logical>/...jsonl).',
     );
   }
-  const broad: unknown = allowlist.paths.find((p) => isBroad(p, CANARY_PATHS));
+  const broad: unknown = allowlist.paths.find((p) => isBroad(p, canaryPaths()));
   if (broad !== undefined) {
     throw new NomadFatal(
       `.gitleaks.overlay.toml allowlist path ${JSON.stringify(broad)} is a catch-all: it matches unrelated files, or nomad cannot check its regex syntax. Anchor it to the files you intend to allow.`,
@@ -242,6 +269,12 @@ function assertRootKeys(raw: Table, doc: Table): void {
       `.gitleaks.overlay.toml has an unsupported top-level key ${JSON.stringify(unknown)}; put settings inside [[allowlists]] or [[rules]] blocks.`,
     );
   }
+  const notText = TEXT_KEYS.find((key) => key in doc && typeof doc[key] !== 'string');
+  if (notText !== undefined) {
+    throw new NomadFatal(
+      `.gitleaks.overlay.toml top-level ${JSON.stringify(notText)} must be text, like ${notText} = "...".`,
+    );
+  }
   // Only the block keys collide with the [[allowlists]] nomad appends; `minVersion` may stay camelCase.
   const mixed = Object.keys(raw).find(
     (key) => BLOCK_KEYS.has(key.toLowerCase()) && key !== key.toLowerCase(),
@@ -260,6 +293,14 @@ function assertRootKeys(raw: Table, doc: Table): void {
  * @param overlayBody The already-read overlay file contents.
  */
 export function assertOverlaySafe(overlayBody: string): { legacy: boolean } {
+  // Parsing cannot tell `allowlists = [...]` from `[[allowlists]]`; only the latter
+  // can take the blocks nomad appends. Keys before the first header are top-level.
+  const preamble = overlayBody.split(/^[ \t]*\[/m, 1).join('');
+  if (/^[ \t]*(["']?)allowlists\1[ \t]*=/im.test(preamble)) {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml writes allowlists as an inline list, which gitleaks cannot load next to the blocks nomad adds; use [[allowlists]] blocks.',
+    );
+  }
   const raw = parseOverlay(overlayBody);
   const doc = lowerKeys(raw);
   assertRootKeys(raw, doc);
