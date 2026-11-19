@@ -202,10 +202,10 @@ function runLocalPreviewScan(section: DoctorSection): void {
 /**
  * Run the `--check-shared` preflight and append its rows to `section`.
  *
- * Thin orchestrator: `ensureGitleaksReady` gates entry (a missing binary
- * WARN-skips, a probe failure FAILs) -- this and an unsafe overlay
- * (`ensureOverlaySafe`, which every scan below would reject anyway) are the
- * only paths that skip the rest of the function. `runLocalPreviewScan` runs the local, not-yet-pushed
+ * Thin orchestrator: an unsafe overlay (`ensureOverlaySafe`, checked first so
+ * it FAILs even without gitleaks) and `ensureGitleaksReady` (a missing binary
+ * WARN-skips, a probe failure FAILs) are the only paths that skip the rest of
+ * the function. `runLocalPreviewScan` runs the local, not-yet-pushed
  * transcript preflight (FAIL semantics, unchanged) guarded by a `try/catch`:
  * its own `mkdirSync`/`finally rmSync` are unguarded, so a throw there is
  * caught here, reported as a FAIL row, and `process.exitCode` is set, rather
@@ -225,8 +225,9 @@ function runLocalPreviewScan(section: DoctorSection): void {
  * when omitted (the standalone contract) this reporter probes for itself.
  */
 export function reportCheckShared(section: DoctorSection, gitleaksReady?: boolean): void {
-  if (!ensureGitleaksReady(section, gitleaksReady)) return;
+  // Overlay first: validating it needs no gitleaks binary, so a missing one must not hide it.
   if (!ensureOverlaySafe(section)) return;
+  if (!ensureGitleaksReady(section, gitleaksReady)) return;
   try {
     runLocalPreviewScan(section);
   } catch (err) {

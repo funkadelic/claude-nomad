@@ -2,7 +2,9 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type * as cpModule from 'node:child_process';
 
 import { failGlyph } from '../../../render/color.ts';
 import {
@@ -42,6 +44,7 @@ describe('reportCheckShared overlay validation', () => {
   });
 
   afterEach(() => {
+    vi.doUnmock('node:child_process');
     restoreEnv(snapshot, testHome);
   });
 
@@ -75,6 +78,21 @@ describe('reportCheckShared overlay validation', () => {
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
     writeOverlay(testHome, UNSAFE_OVERLAY);
     expectRejected(await run());
+  });
+
+  it('fails an unsafe overlay even when gitleaks is not on PATH', async () => {
+    testHome = makeEnv().testHome;
+    writeOverlay(testHome, UNSAFE_OVERLAY);
+    vi.doMock('node:child_process', async (importOriginal) => ({
+      ...(await importOriginal<typeof cpModule>()),
+      execFileSync: vi.fn(() => {
+        throw Object.assign(new Error('spawn gitleaks ENOENT'), { code: 'ENOENT' });
+      }),
+    }));
+    const { reportCheckShared } = await import('./shared.ts');
+    const section: Section = { header: 'Shared scan', items: [] };
+    reportCheckShared(section);
+    expectRejected(section);
   });
 
   it('passes a safe overlay and removes its generated temp config', async () => {

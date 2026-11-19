@@ -14,6 +14,7 @@ export type EnvSnapshot = {
   home: string | undefined;
   nomadHost: string | undefined;
   noColor: string | undefined;
+  nomadRepo: string | undefined;
 };
 
 /**
@@ -49,7 +50,7 @@ export function writePathMap(testHome: string, projects: PathMap['projects']): v
 }
 
 /**
- * Snapshot HOME / NOMAD_HOST / NO_COLOR, force `NO_COLOR=1`, reset
+ * Snapshot HOME / NOMAD_HOST / NO_COLOR / NOMAD_REPO, clear NOMAD_REPO, force `NO_COLOR=1`, reset
  * `process.exitCode`, reset the module cache, and spy console.log to a no-op
  * (suppressing the `copyDirJsonlOnly` skip lines). Call in `beforeEach`.
  *
@@ -60,7 +61,10 @@ export function saveEnv(): EnvSnapshot {
     home: process.env.HOME,
     nomadHost: process.env.NOMAD_HOST,
     noColor: process.env.NO_COLOR,
+    nomadRepo: process.env.NOMAD_REPO,
   };
+  // An inherited NOMAD_REPO would point the reporter away from the sandbox repo.
+  delete process.env.NOMAD_REPO;
   process.env.NO_COLOR = '1';
   process.exitCode = 0;
   vi.resetModules();
@@ -88,6 +92,8 @@ export function restoreEnv(snapshot: EnvSnapshot, testHome: string | undefined):
   else process.env.NOMAD_HOST = snapshot.nomadHost;
   if (snapshot.noColor === undefined) delete process.env.NO_COLOR;
   else process.env.NO_COLOR = snapshot.noColor;
+  if (snapshot.nomadRepo === undefined) delete process.env.NOMAD_REPO;
+  else process.env.NOMAD_REPO = snapshot.nomadRepo;
   if (testHome !== undefined) rmSync(testHome, { recursive: true, force: true });
 }
 
