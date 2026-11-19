@@ -14,7 +14,8 @@ import type * as fsModule from 'node:fs';
  * `[extend]` NomadFatal, successful temp generation, and the
  * temp-write-failure fallback. Uses a real tmpdir HOME so REPO_HOME resolves to
  * a writable path, and `vi.doMock('node:fs')` for the branches that need
- * synthesized existsSync / writeFileSync outcomes.
+ * synthesized existsSync / writeFileSync outcomes. Also pins the once-per-process
+ * notice dedupe and the quiet mode that returns the notice instead of printing.
  */
 describe('resolveTomlConfig (overlay merge logic)', () => {
   let originalHome: string | undefined;
@@ -353,6 +354,86 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     const { resolveTomlConfig } = await import('./gitleaks.config.ts');
     const { NomadFatal } = await import('../../core/utils.ts');
     expect(() => resolveTomlConfig()).toThrow(NomadFatal);
+  });
+
+  /** Write a full repo toml plus a safe overlay so the precedence notice fires. */
+  function writePrecedenceFixture(): void {
+    writeFileSync(join(repoHome, '.gitleaks.toml'), '[extend]\nuseDefault = true\n');
+    writeFileSync(
+      join(repoHome, '.gitleaks.overlay.toml'),
+      '[[allowlists]]\nregexes = ["X"]\npaths = ["x.txt"]\ncondition = "AND"\n',
+    );
+  }
+
+  /** Mock `node:fs` so the temp-config write fails with a different message each call. */
+  function mockWriteFailsWithCounter(): void {
+    let n = 0;
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        existsSync: vi.fn((p: unknown) => String(p) !== join(repoHome, '.gitleaks.toml')),
+        readFileSync: vi.fn(
+          () => '[[allowlists]]\nregexes = ["T"]\npaths = ["x.txt"]\ncondition = "AND"\n',
+        ),
+        writeFileSync: vi.fn(() => {
+          throw new Error(`ENOSPC attempt ${++n}`);
+        }),
+      };
+    });
+  }
+
+  it('prints the precedence notice once across repeated non-quiet calls', async () => {
+    writePrecedenceFixture();
+    const { resolveTomlConfig } = await import('./gitleaks.config.ts');
+    const first = resolveTomlConfig();
+    const second = resolveTomlConfig();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(first.path).toBe(join(repoHome, '.gitleaks.toml'));
+    expect(second.path).toBe(first.path);
+    expect(first.notice).toBeUndefined();
+    expect(second.notice).toBeUndefined();
+  });
+
+  it('quiet precedence returns the notice, and a later non-quiet call stays silent', async () => {
+    writePrecedenceFixture();
+    const { resolveTomlConfig } = await import('./gitleaks.config.ts');
+    const quiet = resolveTomlConfig({ quiet: true });
+    expect(quiet.notice).toContain('takes precedence');
+    expect(quiet.path).toBe(join(repoHome, '.gitleaks.toml'));
+    expect(quiet.tempPath).toBeNull();
+    const loud = resolveTomlConfig();
+    expect(loud.path).toBe(quiet.path);
+    expect(loud.notice).toBeUndefined();
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('dedupes the merge-failure notice by kind even when its text differs per call', async () => {
+    mockWriteFailsWithCounter();
+    const { resolveTomlConfig, resolveTomlPath } = await import('./gitleaks.config.ts');
+    const bundledPath = resolveTomlPath()!;
+    const a = resolveTomlConfig();
+    const b = resolveTomlConfig();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect([a.path, b.path]).toEqual([bundledPath, bundledPath]);
+    expect([a.tempPath, b.tempPath]).toEqual([null, null]);
+  });
+
+  it('quiet merge failure returns the notice and prints nothing', async () => {
+    mockWriteFailsWithCounter();
+    const { resolveTomlConfig, resolveTomlPath } = await import('./gitleaks.config.ts');
+    const result = resolveTomlConfig({ quiet: true });
+    expect(result.notice).toContain('falling back to the bundled allowlist');
+    expect(result.path).toBe(resolveTomlPath());
+    expect(result.tempPath).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('quiet mode still throws NomadFatal for an overlay with its own [extend]', async () => {
+    writeFileSync(join(repoHome, '.gitleaks.overlay.toml'), '[extend]\nuseDefault = true\n');
+    const { resolveTomlConfig } = await import('./gitleaks.config.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
+    expect(() => resolveTomlConfig({ quiet: true })).toThrow(NomadFatal);
   });
 
   /**
