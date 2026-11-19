@@ -105,9 +105,7 @@ save it back.
 
 When the repo already carries a setting that holds named entries, such as `extraKnownMarketplaces`,
 and this machine's live settings add another entry inside it, pull stops the same way and names it
-as `extraKnownMarketplaces.<name>`. A new field counts at any depth, as long as every level
-above it is an object (for example `extraKnownMarketplaces.<name>.source.ref`); anything inside a
-list, a new item or a field inside an existing item, is not covered yet. `nomad capture-settings` adds it to the repo's copy of that setting (with `--host`, to
+as `extraKnownMarketplaces.<name>`. A new field counts at any depth, as long as every level above it is an object (for example `extraKnownMarketplaces.<name>.source.ref`). A new item in a list the repo also has, such as a rule added to `permissions.allow`, counts too and is named like `permissions.allow["Bash(ls:*)"]`; an item counts as new when the repo's list has no identical one, so an edited item reads as a new one, while a reordered list or a removed item does not stop the pull. `nomad capture-settings` adds it to the repo's copy of that setting (with `--host`, to
 this machine's host file) and never changes an entry the repo already has. When only this machine's
 host file has that setting, capture saves the entry only with `--host`. An entry another machine
 removed from the repo is removed here too and named by the pull, or by capture when it updates
@@ -397,8 +395,11 @@ writing the destination file, `capture-settings` calls `regenerateSettings` so t
 remain the command exits cleanly with a message and writes nothing.
 
 It also saves an entry added inside an object setting the repo already carries, such as a new
-marketplace under `extraKnownMarketplaces` or a new field nested inside one (not inside a
-list), without changing the entries already there.
+marketplace under `extraKnownMarketplaces` or a new field nested inside one, without changing the
+entries already there. A new list item is added to the end of the repo's list. When this machine's
+host file sets that list itself, a plain capture skips it and tells you to add `--host`; a `--host`
+capture of a list only the shared file has copies the whole list into the host file and warns that
+later shared edits to it will not reach this machine.
 
 Because the default destination (`shared/settings.base.json`) syncs to every host, the command
 shows the destination and the keys it will promote and asks for confirmation before writing. Pass

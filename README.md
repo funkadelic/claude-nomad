@@ -246,12 +246,15 @@ hooks for every other event reach this machine again, and capture warns about th
 When the repo already has a setting that holds named entries, such as `extraKnownMarketplaces`, and
 this machine adds another entry inside it, `nomad pull` stops the same way and names it as
 `extraKnownMarketplaces.<name>`. A new field counts at any depth, as long as every level above it is
-an object (for example `extraKnownMarketplaces.<name>.source.ref`); anything inside a list, a new
-item or a field inside an existing item, is not covered yet. `nomad capture-settings` adds it to the
-repo's copy of that setting (with `--host`, to this machine's host file) and never changes an entry
-the repo already has. When only this machine's host file has that setting, capture saves the entry
-only with `--host`. An entry another machine removed from the repo is removed here too and named by
-the pull, or by capture when it updates `settings.json`.
+an object (for example `extraKnownMarketplaces.<name>.source.ref`). A new item in a list the repo
+also has, such as a rule added to `permissions.allow`, counts too and is named like
+`permissions.allow["Bash(ls:*)"]`; an item counts as new when the repo's list has no identical one,
+so an edited item reads as a new one, while a reordered list or a removed item does not stop the
+pull. `nomad capture-settings` adds it to the repo's copy of that setting (with `--host`, to this
+machine's host file) and never changes an entry the repo already has. When only this machine's host
+file has that setting, capture saves the entry only with `--host`. An entry another machine removed
+from the repo is removed here too and named by the pull, or by capture when it updates
+`settings.json`.
 
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
