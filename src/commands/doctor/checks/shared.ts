@@ -137,12 +137,15 @@ function ensureGitleaksReady(section: DoctorSection, gitleaksReady?: boolean): b
 /**
  * Validate `.gitleaks.overlay.toml` the way every push scan does, before
  * anything is staged, so an unsafe overlay FAILs doctor even on a host with
- * nothing to scan. Returns false after emitting the FAIL row.
+ * nothing to scan. Returns false after emitting the FAIL row. Also surfaces an
+ * ignored-overlay or merge-fallback notice as a WARN row; running first keeps
+ * the later scans in this process silent.
  */
 function ensureOverlaySafe(section: DoctorSection): boolean {
   try {
-    const { tempPath } = resolveTomlConfig();
+    const { tempPath, notice } = resolveTomlConfig({ quiet: true });
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
+    if (notice !== undefined) addItem(section, `${yellow(warnGlyph)} ${notice}`);
     return true;
   } catch (err) {
     addItem(section, `${red(failGlyph)} gitleaks overlay rejected: ${(err as Error).message}`);

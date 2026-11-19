@@ -12,7 +12,7 @@
  * `gitleaks.overlay-guard.ts`, so there is no cycle.
  */
 
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -71,8 +71,36 @@ export function resolveTomlPath(repo: string = repoHome()): string | null {
  *     recursively (`rmSync(tempPath, { recursive: true, force: true })`) in a
  *     `finally` once gitleaks has run.
  */
-export type TomlConfigResult =
-  { path: string | null; tempPath: null } | { path: string; tempPath: string };
+export type TomlConfigResult = (
+  { path: string | null; tempPath: null } | { path: string; tempPath: string }
+) & {
+  /** Set only in quiet mode: the overlay notice the caller should render itself. */
+  notice?: string;
+};
+
+/** Notice kinds already surfaced this process; keyed by kind since merge-failure text varies. */
+const emittedNotices = new Set<'precedence' | 'merge-failed'>();
+
+/**
+ * Surface an overlay notice at most once per process. Quiet mode returns the
+ * message (always) for the caller to render; otherwise it is warned the first
+ * time and `undefined` is returned.
+ *
+ * @param kind Which notice this is, used as the dedupe key.
+ * @param message The notice text.
+ * @param quiet True when the caller renders the notice itself.
+ */
+function notify(
+  kind: 'precedence' | 'merge-failed',
+  message: string,
+  quiet: boolean,
+): string | undefined {
+  const seen = emittedNotices.has(kind);
+  emittedNotices.add(kind);
+  if (quiet) return message;
+  if (!seen) warn(message);
+  return undefined;
+}
 
 /** An allowlist table header in the bundled file: `[allowlist]` or `[[allowlists]]`. */
 const ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*(["']?)allowlists?\1\s*\]\]?/;
@@ -106,11 +134,13 @@ function targetRulesBlocks(tomlBody: string): string {
  * followed by every bundled `[[allowlists]]` block with a `targetRules` key
  * (gitleaks drops those from an extended parent), skipped when the overlay uses
  * a legacy `[allowlist]` table. It is written as `config.toml` inside a private
- * directory created atomically with `mkdtempSync` (mode 0o700) under `tmpdir()` with a `nomad-gitleaks-cfg-` prefix
- * (CWE-377: the private dir plus the `wx` exclusive-create flag defeat a
- * symlink-redirect in the world-writable temp dir). The config file is written
- * mode 0o600. The `extend` path is the ABSOLUTE bundled path because the
- * scan CWD is uncontrolled at the `scanFile` and `probeGitleaks` sites.
+ * directory created atomically with `mkdtempSync` (mode 0o700) under `tmpdir()`
+ * with a `nomad-gitleaks-cfg-` prefix (CWE-377: the private dir plus the `wx`
+ * exclusive-create flag defeat a symlink-redirect in the world-writable temp
+ * dir). The config file is written mode 0o600. If the write fails the directory
+ * is removed before the error is rethrown. The `extend` path is the ABSOLUTE
+ * bundled path because the scan CWD is uncontrolled at the `scanFile` and
+ * `probeGitleaks` sites.
  *
  * @param overlayBody The already-read overlay body (read once by the caller so a
  *   single buffer is both guarded and spliced, closing the guard/build TOCTOU).
@@ -128,7 +158,12 @@ function buildOverlayTempConfig(
   const tempBody = `extend = { path = ${JSON.stringify(bundled)} }\n\n${overlayBody}\n${carried}`;
   const tempPath = mkdtempSync(join(tmpdir(), 'nomad-gitleaks-cfg-'));
   const configPath = join(tempPath, 'config.toml');
-  writeFileSync(configPath, tempBody, { mode: 0o600, flag: 'wx' });
+  try {
+    writeFileSync(configPath, tempBody, { mode: 0o600, flag: 'wx' });
+  } catch (err) {
+    rmSync(tempPath, { recursive: true, force: true });
+    throw err;
+  }
   return { configPath, tempPath };
 }
 
@@ -147,10 +182,11 @@ function buildOverlayTempConfig(
  *   - No overlay file: delegates to `resolveTomlPath()`, `tempPath: null`. Byte
  *     identical to the pre-overlay behavior.
  *   - S-01 precedence: if a full `REPO_HOME/.gitleaks.toml` exists,
- *     `resolveTomlPath()` returns IT first; the overlay is ignored with a single
- *     `warn`, `tempPath: null`. A full repo toml signals manual control and may
- *     itself `[extend]`, so interposing the overlay would risk the depth-3 silent
- *     drop; the repo toml wins outright to keep the chain at the safe depth-2 max.
+ *     `resolveTomlPath()` returns IT first; the overlay is ignored with a
+ *     notice (warned once per process), `tempPath: null`. A full repo toml
+ *     signals manual control and may itself `[extend]`, so interposing the
+ *     overlay would risk the depth-3 silent drop; the repo toml wins outright
+ *     to keep the chain at the safe depth-2 max.
  *   - Overlay present, no full repo toml, bundled base absent: falls back to
  *     `{ path: null, tempPath: null }` so gitleaks still runs with its default
  *     ruleset (never no-scan, never skipped).
@@ -165,23 +201,28 @@ function buildOverlayTempConfig(
  *     returns `{ path: tempPath, tempPath }`.
  *   - Single-file mode drops global overlay blocks after the safety guard ran.
  *   - Generation failure for any reason: if reading the overlay or the bundled
- *     base, or writing the temp, throws (ENOSPC, EACCES, EROFS, missing tmpdir, unreadable overlay,
- *     etc.), `warn` once and fall back to the BUNDLED base path so the scan STILL
- *     runs with the full bundled allowlist. Never returns `path: null` here, and
+ *     base, or writing the temp, throws (ENOSPC, EACCES, EROFS, missing tmpdir,
+ *     unreadable overlay, etc.), emit a notice (once per process) and fall back
+ *     to the BUNDLED base path so the scan STILL runs with the full bundled
+ *     allowlist. Never returns `path: null` here, and
  *     never skips. The `[extend]` `NomadFatal` is thrown outside the fallback
  *     try, so it is never swallowed by this catch, as is the broken-install
  *     `NomadFatal` from the `resolveTomlPath` call that precedes it.
+ *
+ * In quiet mode each notice is returned on the result instead of being printed.
  *
  * @param options.singleFile True for a one-file scan (`scanFile`): global overlay
  *   blocks (no `targetRules`) are dropped, since single-file detect would skip the
  *   whole file on a path match. The legacy `[allowlist]` table goes too, so the
  *   bundled targetRules blocks are carried.
+ * @param options.quiet Return the notice on the result instead of printing it.
  * @returns A `TomlConfigResult`; the caller passes `path` to `--config` (omitting
  *   the flag on `null`) and removes a non-null `tempPath` in a `finally`.
  */
 export function resolveTomlConfig({
   singleFile = false,
-}: { singleFile?: boolean } = {}): TomlConfigResult {
+  quiet = false,
+}: { singleFile?: boolean; quiet?: boolean } = {}): TomlConfigResult {
   const repo = repoHome();
   const overlayPath = join(repo, '.gitleaks.overlay.toml');
   const repoToml = join(repo, '.gitleaks.toml');
@@ -193,10 +234,12 @@ export function resolveTomlConfig({
   // it before the bundled copy, so compare to detect that case and short-circuit
   // before generating a temp (keeps the chain at the safe depth-2 max).
   if (bundled === repoToml) {
-    warn(
-      '.gitleaks.overlay.toml ignored: REPO_HOME/.gitleaks.toml takes precedence (full manual control)',
+    const notice = notify(
+      'precedence',
+      `.gitleaks.overlay.toml ignored: ${repoToml} takes precedence. Delete .gitleaks.toml to use the overlay, or delete the overlay to silence this notice.`,
+      quiet,
     );
-    return { path: bundled, tempPath: null };
+    return { path: bundled, tempPath: null, notice };
   }
   // No bundled base to chain onto; run with the default ruleset, never skip.
   if (bundled === null) {
@@ -216,9 +259,11 @@ export function resolveTomlConfig({
     return { path: configPath, tempPath };
   } catch (err) {
     if (err instanceof NomadFatal) throw err;
-    warn(
+    const notice = notify(
+      'merge-failed',
       `.gitleaks.overlay.toml merge failed (${(err as Error).message}); falling back to the bundled allowlist`,
+      quiet,
     );
-    return { path: bundled, tempPath: null };
+    return { path: bundled, tempPath: null, notice };
   }
 }
