@@ -105,11 +105,13 @@ save it back.
 
 When the repo already carries a setting that holds named entries, such as `extraKnownMarketplaces`,
 and this machine's live settings add another entry inside it, pull stops the same way and names it
-as `extraKnownMarketplaces.<name>`. `nomad capture-settings` adds it to the repo's copy of that
-setting (with `--host`, to this machine's host file) and never changes an entry the repo already
-has. When only this machine's host file has that setting, capture saves the entry only with
-`--host`. An entry another machine removed from the repo is removed here too and named by the pull,
-or by capture when it updates `settings.json`.
+as `extraKnownMarketplaces.<name>`. A new field at any depth inside the setting counts, not only one
+level down (for example `extraKnownMarketplaces.<name>.source.ref`); new items inside a list are not
+covered yet. `nomad capture-settings` adds it to the repo's copy of that setting (with `--host`, to
+this machine's host file) and never changes an entry the repo already has. When only this machine's
+host file has that setting, capture saves the entry only with `--host`. An entry another machine
+removed from the repo is removed here too and named by the pull, or by capture when it updates
+`settings.json`.
 
 Credential settings are the one exception. Keys that can hold a secret (`env`, `apiKeyHelper`,
 `awsAuthRefresh`, `awsCredentialExport`, `otelHeadersHelper`) are never printed, so pull cannot list
@@ -395,7 +397,8 @@ writing the destination file, `capture-settings` calls `regenerateSettings` so t
 remain the command exits cleanly with a message and writes nothing.
 
 It also saves an entry added inside an object setting the repo already carries, such as a new
-marketplace under `extraKnownMarketplaces`, without changing the entries already there.
+marketplace under `extraKnownMarketplaces` or a new field at any depth inside one, without
+changing the entries already there.
 
 Because the default destination (`shared/settings.base.json`) syncs to every host, the command
 shows the destination and the keys it will promote and asks for confirmation before writing. Pass
