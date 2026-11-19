@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   blockedSettingsKeys,
+  nestedEntryId,
   credentialOverwriteCount,
   credentialOverwriteMessage,
   removedSettingsKeys,
@@ -534,5 +535,30 @@ describe('nested entries under a shared object key', () => {
     const l = { mk: { foo: { source: { ref: 'v2' } } } };
     const pre = { mk: { foo: { source: { ref: 'v1' } } } };
     expect(blockedSettingsKeys(m, l, pre)).toEqual(['mk.foo.source.ref']);
+  });
+
+  describe('per-entry written ids', () => {
+    const m = { mk: { a: 1 } };
+    const ids = new Set([nestedEntryId(['mk', 'a'], 1), nestedEntryId(['mk', 'gone'], 2)]);
+
+    it('refuses only the entry added here and removes the one the repo dropped', () => {
+      const l = { mk: { a: 1, gone: 2, fresh: 3 } };
+      const written = rec({ mk: { a: 1, gone: 2 } });
+      expect(blockedSettingsKeys(m, l, {}, written, new Set(), ids)).toEqual(['mk.fresh']);
+      expect(removedSettingsKeys(m, l, {}, written, new Set(), ids)).toEqual(['mk.gone']);
+    });
+
+    it('keeps an entry blocked when its value was edited since the write', () => {
+      const l = { mk: { a: 1, gone: 5 } };
+      expect(blockedSettingsKeys(m, l, {}, rec({ mk: { a: 1, gone: 2 } }), new Set(), ids)).toEqual(
+        ['mk.gone'],
+      );
+    });
+
+    it('falls back to the whole-key record when no entry ids exist', () => {
+      const l = { mk: { a: 1, x: 2, y: 3 } };
+      expect(removedSettingsKeys(m, l, {}, rec({ mk: l.mk }))).toEqual(['mk.x', 'mk.y']);
+      expect(blockedSettingsKeys(m, l, {}, rec({ mk: { a: 1 } }))).toEqual(['mk.x', 'mk.y']);
+    });
   });
 });
