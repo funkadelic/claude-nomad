@@ -195,6 +195,9 @@ overwrite local with the repo while editing the base or host file keeps the loca
 comparison normalizes node launcher paths first, so a hook that differs only by a bare `node`
 versus an absolute `/.../bin/node` path (the host-specific churn an external installer writes) is
 not reported as drift.
+If the only difference is a new field inside an object setting, such as a marketplace's `source`,
+pull refuses instead and `nomad capture-settings` can save it; see
+[pull](/claude-nomad/commands/#pull).
 
 `nomad doctor` also surfaces three conditions that are easy to miss on a fresh clone or after a
 project moves. When the sync repo has no git committer identity configured (`user.name` or
