@@ -110,9 +110,8 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     expect(result.path).toBe(join(result.tempPath!, 'config.toml'));
     expect(writtenPath).toBe(result.path);
     // Body extends the absolute bundled path via JSON.stringify and includes the overlay body.
-    expect(writtenBody).toMatch(/^\[extend\]\npath = "/);
-    expect(writtenBody).toContain(`path = ${JSON.stringify(bundled)}`);
-    expect(writtenBody.startsWith('/')).toBe(false); // sanity: starts with [extend]
+    // An inline `extend` table keeps the overlay's leading bare keys out of `extend`.
+    expect(writtenBody.startsWith(`extend = { path = ${JSON.stringify(bundled)} }\n`)).toBe(true);
     expect(writtenBody).toContain('MY_TOKEN');
     expect(writtenOpts).toEqual({ mode: 0o600, flag: 'wx' });
   });
@@ -417,8 +416,8 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     expect(body.match(keyLine)).toHaveLength((await bundledCount()) + 1);
   });
 
-  it('single-file matches [[Allowlists]] and TargetRules in any letter case', async () => {
-    const overlay = `${globalBlock('zzglobal').replace('allowlists', 'Allowlists')}\n${scopedBlock('zzkept', '[[Allowlists]]', 'TargetRules')}`;
+  it('single-file matches TargetRules in any letter case', async () => {
+    const overlay = `${globalBlock('zzglobal')}\n${scopedBlock('zzkept', '[[allowlists]]', 'TargetRules')}`;
     const body = await generatedBody(overlay, true);
     expect(body).not.toContain('zzglobal');
     expect(body).toContain('zzkept');
@@ -442,7 +441,7 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     },
   );
 
-  it.each(['[allowlist]', '["allowlist"]', "[ 'allowlist' ]", '[Allowlist]'])(
+  it.each(['[allowlist]', '["allowlist"]', "[ 'allowlist' ]"])(
     'single-file drops a legacy %s overlay and carries the bundled blocks',
     async (header) => {
       const body = await generatedBody(

@@ -39,8 +39,13 @@ documented here as accepted trade-offs rather than defended in code.
   the scan is meant to protect. The overlay is the one part that is constrained: each of its
   allowlist blocks must be path-scoped (a block with no `paths`, a pattern that matches anything or
   every file of a common synced type, or `regexes` without `condition = "AND"` stops `nomad push`
-  with an error, and `nomad doctor --check-shared` too), so it can add narrow exceptions but cannot be used
-  to silently turn scanning off fleet-wide. `.gitleaks.toml` and `.gitleaksignore` remain fully trusted.
+  with an error, and `nomad doctor --check-shared` too), each `[[rules]]` block must use a new
+  `id` rather than a gitleaks built-in rule id (reusing one would replace that rule), and only
+  plain ASCII keys and a few known top-level settings are accepted. These checks catch an
+  accidental catch-all, not a deliberate one: the breadth test runs each pattern against a fixed
+  set of sample paths, and a pattern written to miss them can still allow most files. Treat write
+  access to the overlay like write access to `.gitleaks.toml` and `.gitleaksignore`, which remain
+  fully trusted.
 
 - **`nomad update` runs `npm install` in the local checkout.** Updating executes the dependency
   tree's lifecycle scripts, so a compromised upstream repo (or a malicious dependency) can run

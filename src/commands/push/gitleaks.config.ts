@@ -1,7 +1,7 @@
 /**
  * Resolves the gitleaks `--config` path for every scan site, layering a
  * user-owned `REPO_HOME/.gitleaks.overlay.toml` allowlist ON TOP of the
- * package-bundled `.gitleaks.toml` via a generated temp `[extend]` chain.
+ * package-bundled `.gitleaks.toml` via a generated temp config that `extend`s it.
  *
  * Owns both tiers of gitleaks `--config` resolution: the two-tier
  * `resolveTomlPath` base lookup and the `resolveTomlConfig` overlay merge built
@@ -101,14 +101,15 @@ function targetRulesBlocks(tomlBody: string): string {
  * here: it runs in `resolveTomlConfig` BEFORE this call so its `NomadFatal` is
  * never swallowed by the generation-failure fallback catch.
  *
- * The temp body is `[extend]\npath = <bundled abs path JSON>\n\n<overlay body>`
+ * The temp body is `extend = { path = <bundled abs path JSON> }\n\n<overlay body>` (an
+ * inline table, so the overlay's leading bare keys stay top-level, not in `extend`)
  * followed by every bundled `[[allowlists]]` block with a `targetRules` key
  * (gitleaks drops those from an extended parent), skipped when the overlay uses
  * a legacy `[allowlist]` table. It is written as `config.toml` inside a private
  * directory created atomically with `mkdtempSync` (mode 0o700) under `tmpdir()` with a `nomad-gitleaks-cfg-` prefix
  * (CWE-377: the private dir plus the `wx` exclusive-create flag defeat a
  * symlink-redirect in the world-writable temp dir). The config file is written
- * mode 0o600. The `[extend] path` is the ABSOLUTE bundled path because the
+ * mode 0o600. The `extend` path is the ABSOLUTE bundled path because the
  * scan CWD is uncontrolled at the `scanFile` and `probeGitleaks` sites.
  *
  * @param overlayBody The already-read overlay body (read once by the caller so a
@@ -124,7 +125,7 @@ function buildOverlayTempConfig(
 ): { configPath: string; tempPath: string } {
   // gitleaks rejects a file mixing `[allowlist]` and `[[allowlists]]`.
   const carried = legacy ? '' : targetRulesBlocks(readFileSync(bundled, 'utf8'));
-  const tempBody = `[extend]\npath = ${JSON.stringify(bundled)}\n\n${overlayBody}\n${carried}`;
+  const tempBody = `extend = { path = ${JSON.stringify(bundled)} }\n\n${overlayBody}\n${carried}`;
   const tempPath = mkdtempSync(join(tmpdir(), 'nomad-gitleaks-cfg-'));
   const configPath = join(tempPath, 'config.toml');
   writeFileSync(configPath, tempBody, { mode: 0o600, flag: 'wx' });
@@ -136,7 +137,7 @@ function buildOverlayTempConfig(
  * `REPO_HOME/.gitleaks.overlay.toml` allowlist ON TOP of the package-bundled
  * `.gitleaks.toml` (which itself `[extend] useDefault = true` chains the gitleaks
  * default ruleset). Implements Approach A (chain), empirically verified at
- * gitleaks 8.30.1: the generated temp config `[extend] path = <bundled abs>` plus
+ * gitleaks 8.30.1: the generated temp config `extend = { path = <bundled abs> }` plus
  * the overlay body loads as temp -> bundled(useDefault) -> default, exactly the
  * depth-2 `maxExtendDepth` limit (depth 3 SILENTLY drops the default ruleset).
  * The caller owns cleanup: when `tempPath` is non-null it MUST be removed in a
