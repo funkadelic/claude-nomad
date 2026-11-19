@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -365,14 +365,28 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     );
   }
 
-  /** Mock `node:fs` so the temp-config write fails with a different message each call. */
-  function mockWriteFailsWithCounter(): void {
+  /**
+   * Mock `node:fs` so the temp-config write fails with a different message each call.
+   * `repoTomlPresent` decides whether the repo `.gitleaks.toml` appears to exist, and
+   * `created` collects the temp dirs `mkdtempSync` makes.
+   */
+  function mockWriteFailsWithCounter(
+    repoTomlPresent: () => boolean = () => false,
+    created: string[] = [],
+  ): void {
     let n = 0;
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
         ...actual,
-        existsSync: vi.fn((p: unknown) => String(p) !== join(repoHome, '.gitleaks.toml')),
+        mkdtempSync: vi.fn((prefix: string) => {
+          const dir = actual.mkdtempSync(prefix);
+          created.push(dir);
+          return dir;
+        }),
+        existsSync: vi.fn((p: unknown) =>
+          String(p) === join(repoHome, '.gitleaks.toml') ? repoTomlPresent() : true,
+        ),
         readFileSync: vi.fn(
           () => '[[allowlists]]\nregexes = ["T"]\npaths = ["x.txt"]\ncondition = "AND"\n',
         ),
@@ -417,6 +431,26 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect([a.path, b.path]).toEqual([bundledPath, bundledPath]);
     expect([a.tempPath, b.tempPath]).toEqual([null, null]);
+  });
+
+  it('a quiet precedence notice does not suppress a later merge-failure warning', async () => {
+    let repoTomlPresent = true;
+    mockWriteFailsWithCounter(() => repoTomlPresent);
+    const { resolveTomlConfig } = await import('./gitleaks.config.ts');
+    expect(resolveTomlConfig({ quiet: true }).notice).toContain('takes precedence');
+    repoTomlPresent = false;
+    resolveTomlConfig();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('merge failed'));
+  });
+
+  it('removes the temp directory when writing the generated config fails', async () => {
+    const created: string[] = [];
+    mockWriteFailsWithCounter(() => false, created);
+    const { resolveTomlConfig } = await import('./gitleaks.config.ts');
+    resolveTomlConfig({ quiet: true });
+    expect(created).toHaveLength(1);
+    expect(existsSync(created[0])).toBe(false);
   });
 
   it('quiet merge failure returns the notice and prints nothing', async () => {

@@ -12,7 +12,7 @@
  * `gitleaks.overlay-guard.ts`, so there is no cycle.
  */
 
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -78,7 +78,7 @@ export type TomlConfigResult = (
   notice?: string;
 };
 
-/** Notice kinds already surfaced this process; keyed by kind because the merge-failure text varies. */
+/** Notice kinds already surfaced this process; keyed by kind since merge-failure text varies. */
 const emittedNotices = new Set<'precedence' | 'merge-failed'>();
 
 /**
@@ -134,11 +134,13 @@ function targetRulesBlocks(tomlBody: string): string {
  * followed by every bundled `[[allowlists]]` block with a `targetRules` key
  * (gitleaks drops those from an extended parent), skipped when the overlay uses
  * a legacy `[allowlist]` table. It is written as `config.toml` inside a private
- * directory created atomically with `mkdtempSync` (mode 0o700) under `tmpdir()` with a `nomad-gitleaks-cfg-` prefix
- * (CWE-377: the private dir plus the `wx` exclusive-create flag defeat a
- * symlink-redirect in the world-writable temp dir). The config file is written
- * mode 0o600. The `extend` path is the ABSOLUTE bundled path because the
- * scan CWD is uncontrolled at the `scanFile` and `probeGitleaks` sites.
+ * directory created atomically with `mkdtempSync` (mode 0o700) under `tmpdir()`
+ * with a `nomad-gitleaks-cfg-` prefix (CWE-377: the private dir plus the `wx`
+ * exclusive-create flag defeat a symlink-redirect in the world-writable temp
+ * dir). The config file is written mode 0o600. If the write fails the directory
+ * is removed before the error is rethrown. The `extend` path is the ABSOLUTE
+ * bundled path because the scan CWD is uncontrolled at the `scanFile` and
+ * `probeGitleaks` sites.
  *
  * @param overlayBody The already-read overlay body (read once by the caller so a
  *   single buffer is both guarded and spliced, closing the guard/build TOCTOU).
@@ -156,7 +158,12 @@ function buildOverlayTempConfig(
   const tempBody = `extend = { path = ${JSON.stringify(bundled)} }\n\n${overlayBody}\n${carried}`;
   const tempPath = mkdtempSync(join(tmpdir(), 'nomad-gitleaks-cfg-'));
   const configPath = join(tempPath, 'config.toml');
-  writeFileSync(configPath, tempBody, { mode: 0o600, flag: 'wx' });
+  try {
+    writeFileSync(configPath, tempBody, { mode: 0o600, flag: 'wx' });
+  } catch (err) {
+    rmSync(tempPath, { recursive: true, force: true });
+    throw err;
+  }
   return { configPath, tempPath };
 }
 
@@ -177,8 +184,9 @@ function buildOverlayTempConfig(
  *   - S-01 precedence: if a full `REPO_HOME/.gitleaks.toml` exists,
  *     `resolveTomlPath()` returns IT first; the overlay is ignored with a
  *     notice (warned once per process), `tempPath: null`. A full repo toml
- *     signals manual control and may itself `[extend]`, so interposing the overlay would risk the depth-3 silent
- *     drop; the repo toml wins outright to keep the chain at the safe depth-2 max.
+ *     signals manual control and may itself `[extend]`, so interposing the
+ *     overlay would risk the depth-3 silent drop; the repo toml wins outright
+ *     to keep the chain at the safe depth-2 max.
  *   - Overlay present, no full repo toml, bundled base absent: falls back to
  *     `{ path: null, tempPath: null }` so gitleaks still runs with its default
  *     ruleset (never no-scan, never skipped).
@@ -193,12 +201,15 @@ function buildOverlayTempConfig(
  *     returns `{ path: tempPath, tempPath }`.
  *   - Single-file mode drops global overlay blocks after the safety guard ran.
  *   - Generation failure for any reason: if reading the overlay or the bundled
- *     base, or writing the temp, throws (ENOSPC, EACCES, EROFS, missing tmpdir, unreadable overlay,
- *     etc.), emit a notice (once per process) and fall back to the BUNDLED base path so the scan STILL
- *     runs with the full bundled allowlist. Never returns `path: null` here, and
+ *     base, or writing the temp, throws (ENOSPC, EACCES, EROFS, missing tmpdir,
+ *     unreadable overlay, etc.), emit a notice (once per process) and fall back
+ *     to the BUNDLED base path so the scan STILL runs with the full bundled
+ *     allowlist. Never returns `path: null` here, and
  *     never skips. The `[extend]` `NomadFatal` is thrown outside the fallback
  *     try, so it is never swallowed by this catch, as is the broken-install
  *     `NomadFatal` from the `resolveTomlPath` call that precedes it.
+ *
+ * In quiet mode each notice is returned on the result instead of being printed.
  *
  * @param options.singleFile True for a one-file scan (`scanFile`): global overlay
  *   blocks (no `targetRules`) are dropped, since single-file detect would skip the
@@ -225,7 +236,7 @@ export function resolveTomlConfig({
   if (bundled === repoToml) {
     const notice = notify(
       'precedence',
-      '.gitleaks.overlay.toml ignored: REPO_HOME/.gitleaks.toml takes precedence (full manual control)',
+      `.gitleaks.overlay.toml ignored: ${repoToml} takes precedence. Delete .gitleaks.toml to use the overlay, or delete the overlay to keep full manual control.`,
       quiet,
     );
     return { path: bundled, tempPath: null, notice };
