@@ -520,4 +520,19 @@ describe('nested entries under a shared object key', () => {
     const written = rec({ mk: { a: 1 } });
     expect(blockedSettingsKeys(merged, live, {}, written)).toEqual(['mk.b']);
   });
+
+  it('removes a depth-three entry when preMerged held the same value, launcher paths normalized', () => {
+    const m = { mk: { foo: { source: {} } } };
+    const l = { mk: { foo: { source: { cmd: '/x/bin/node' } } } };
+    const pre = { mk: { foo: { source: { cmd: 'node' } } } };
+    expect(blockedSettingsKeys(m, l, pre)).toEqual([]);
+    expect(removedSettingsKeys(m, l, pre, null)).toEqual(['mk.foo.source.cmd']);
+  });
+
+  it('keeps a depth-three entry blocked when preMerged held a different value', () => {
+    const m = { mk: { foo: { source: {} } } };
+    const l = { mk: { foo: { source: { ref: 'v2' } } } };
+    const pre = { mk: { foo: { source: { ref: 'v1' } } } };
+    expect(blockedSettingsKeys(m, l, pre)).toEqual(['mk.foo.source.ref']);
+  });
 });

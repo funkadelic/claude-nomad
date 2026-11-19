@@ -363,54 +363,100 @@ export function buildCaptureSubset(
   return out;
 }
 
-/** A live-only entry inside a top-level object key the merge also carries. */
-export type NestedEntry = { key: string; sub: string; label: string; value: unknown };
+/** An object entry nested under a top-level key, addressed by its full path. */
+export type NestedEntry = { path: string[]; key: string; label: string; value: unknown };
 
 /**
- * Live-only entries inside a top-level object key present on both sides, such
- * as a marketplace under `extraKnownMarketplaces`. Skips `hooks` (handled per
- * entry elsewhere), credential keys, prototype-pollution names, and any sub-key
- * the merge already has, so a changed value is never listed.
+ * The value at `path` inside `obj`, following own properties of plain objects
+ * only; `undefined` when any step is absent or not an object.
+ *
+ * @param obj - The object to read from.
+ * @param path - Key segments from the top level down.
+ * @returns The value at the path, or `undefined`.
+ */
+export function valueAtPath(obj: Record<string, unknown>, path: readonly string[]): unknown {
+  let node: unknown = obj;
+  for (const seg of path) {
+    const cur = asPlainObject(node);
+    if (cur === null || !Object.hasOwn(cur, seg)) return undefined;
+    node = cur[seg];
+  }
+  return node;
+}
+
+/** Push one entry per sub-key of `obj` at `path`, recursing into plain-object values. */
+function collectEntries(obj: Record<string, unknown>, path: string[], out: NestedEntry[]): void {
+  for (const [sub, value] of Object.entries(obj)) {
+    if (isProtoPollutionKey(sub)) continue;
+    const full = [...path, sub];
+    out.push({ path: full, key: full[0], label: full.join('.'), value });
+    const child = asPlainObject(value);
+    if (child !== null) collectEntries(child, full, out);
+  }
+}
+
+/**
+ * Every object sub-path under the top-level object keys of `settings`, at any
+ * depth. Skips `hooks`, credential keys and prototype-pollution names.
+ *
+ * @param settings - A parsed settings object.
+ * @returns One entry per sub-key, parents before children.
+ */
+export function nestedEntries(settings: Record<string, unknown>): NestedEntry[] {
+  const out: NestedEntry[] = [];
+  for (const [key, value] of Object.entries(settings)) {
+    if (key === 'hooks' || CAPTURE_EXCLUDED_KEYS.has(key) || isProtoPollutionKey(key)) continue;
+    const obj = asPlainObject(value);
+    if (obj !== null) collectEntries(obj, [key], out);
+  }
+  return out;
+}
+
+/**
+ * Live-only entries at any depth inside an object the merge also carries, such
+ * as a marketplace under `extraKnownMarketplaces` or a field under its
+ * `source`. An entry counts only when its parent is an object on both sides and
+ * the merge lacks the entry, so a changed scalar or array is never listed.
  *
  * @param merged - Recomputed `deepMerge(base, host)` object.
  * @param settings - Parsed `~/.claude/settings.json` object.
- * @returns Entries sorted by `key.sub` label.
+ * @returns Entries sorted by dotted label.
  */
 export function liveOnlyNestedEntries(
   merged: Record<string, unknown>,
   settings: Record<string, unknown>,
 ): NestedEntry[] {
   const mergedObj = stripGsdHookEntries(merged);
-  const out: NestedEntry[] = [];
-  for (const [key, liveVal] of Object.entries(stripGsdHookEntries(settings))) {
-    if (key === 'hooks' || CAPTURE_EXCLUDED_KEYS.has(key)) continue;
-    const mergedSub = asPlainObject(mergedObj[key]);
-    const liveSub = asPlainObject(liveVal);
-    if (mergedSub === null || liveSub === null) continue;
-    for (const [sub, value] of Object.entries(liveSub)) {
-      if (isProtoPollutionKey(sub) || Object.hasOwn(mergedSub, sub)) continue;
-      out.push({ key, sub, label: `${key}.${sub}`, value });
-    }
-  }
-  return out.sort((a, b) => a.label.localeCompare(b.label, 'en'));
+  return nestedEntries(stripGsdHookEntries(settings))
+    .filter((e) => {
+      const parent = asPlainObject(valueAtPath(mergedObj, e.path.slice(0, -1)));
+      return parent !== null && !Object.hasOwn(parent, e.path[e.path.length - 1]);
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, 'en'));
+}
+
+/** Copy of `obj` without the entry at `path`, copying each level it passes through. */
+function withoutPath(
+  obj: Record<string, unknown>,
+  path: readonly string[],
+): Record<string, unknown> {
+  const [head, ...rest] = path;
+  if (rest.length === 0) return Object.fromEntries(Object.entries(obj).filter(([k]) => k !== head));
+  const child = asPlainObject(obj[head]);
+  return child === null ? obj : { ...obj, [head]: withoutPath(child, rest) };
 }
 
 /**
  * `settings` with the given nested entries removed, so drift on their parent
- * key reflects only edits a pull would overwrite.
+ * key reflects only edits a pull would overwrite. The input is not mutated.
  *
  * @param settings - Parsed `~/.claude/settings.json` object.
  * @param entries - Entries from `liveOnlyNestedEntries`.
- * @returns A shallow copy without those entries.
+ * @returns A copy without those entries.
  */
 export function withoutNestedEntries(
   settings: Record<string, unknown>,
   entries: NestedEntry[],
 ): Record<string, unknown> {
-  const out = { ...settings };
-  for (const e of entries) {
-    const group = out[e.key] as Record<string, unknown>;
-    out[e.key] = Object.fromEntries(Object.entries(group).filter(([k]) => k !== e.sub));
-  }
-  return out;
+  return entries.reduce((acc, e) => withoutPath(acc, e.path), settings);
 }

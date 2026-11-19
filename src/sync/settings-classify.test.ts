@@ -7,8 +7,11 @@ import {
   classifySettingsDrift,
   describeSettings,
   liveOnlyNestedEntries,
+  nestedEntries,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
+  valueAtPath,
+  withoutNestedEntries,
 } from './settings-classify.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { deepMerge } from '../core/utils.json.ts';
@@ -664,8 +667,8 @@ describe('liveOnlyNestedEntries', () => {
     const merged = { mk: { a: 1 } };
     const live = { mk: { a: 1, c: { r: 'x' }, b: 2 } };
     expect(liveOnlyNestedEntries(merged, live)).toEqual([
-      { key: 'mk', sub: 'b', label: 'mk.b', value: 2 },
-      { key: 'mk', sub: 'c', label: 'mk.c', value: { r: 'x' } },
+      { path: ['mk', 'b'], key: 'mk', label: 'mk.b', value: 2 },
+      { path: ['mk', 'c'], key: 'mk', label: 'mk.c', value: { r: 'x' } },
     ]);
   });
 
@@ -694,5 +697,79 @@ describe('liveOnlyNestedEntries', () => {
     const merged = JSON.parse('{"__proto__":{}}') as Record<string, unknown>;
     const live = JSON.parse('{"__proto__":{"x":1}}') as Record<string, unknown>;
     expect(liveOnlyNestedEntries(merged, live)).toEqual([]);
+  });
+});
+
+describe('liveOnlyNestedEntries at depth', () => {
+  it('lists a field added three levels down by its full path', () => {
+    const merged = { mk: { foo: { source: { repo: 'a' } } } };
+    const live = { mk: { foo: { source: { repo: 'a', ref: 'v1' } } } };
+    expect(liveOnlyNestedEntries(merged, live)).toEqual([
+      { path: ['mk', 'foo', 'source', 'ref'], key: 'mk', label: 'mk.foo.source.ref', value: 'v1' },
+    ]);
+  });
+
+  it('lists a new branch once, not its descendants', () => {
+    const live = { mk: { a: 1, foo: { x: { y: 1 } } } };
+    expect(liveOnlyNestedEntries({ mk: { a: 1 } }, live).map((e) => e.label)).toEqual(['mk.foo']);
+  });
+
+  it('lists nothing when either side holds a scalar or array at that level', () => {
+    expect(liveOnlyNestedEntries({ mk: { foo: { x: 1 } } }, { mk: { foo: [1] } })).toEqual([]);
+    expect(liveOnlyNestedEntries({ mk: { foo: [1] } }, { mk: { foo: { x: 1 } } })).toEqual([]);
+  });
+
+  it('skips a nested __proto__ sub-key and keeps its sibling', () => {
+    const live = JSON.parse('{"mk":{"foo":{"__proto__":{"x":1},"ok":1}}}') as Record<
+      string,
+      unknown
+    >;
+    expect(liveOnlyNestedEntries({ mk: { foo: {} } }, live).map((e) => e.label)).toEqual([
+      'mk.foo.ok',
+    ]);
+  });
+});
+
+describe('nestedEntries', () => {
+  it('lists every object sub-path, skipping env, hooks and scalars', () => {
+    const settings = {
+      model: 'x',
+      env: { K: 'v' },
+      hooks: { Stop: [] },
+      mk: { a: 1, foo: { ref: 'r' } },
+    };
+    expect(nestedEntries(settings).map((e) => e.label)).toEqual(['mk.a', 'mk.foo', 'mk.foo.ref']);
+  });
+});
+
+describe('valueAtPath', () => {
+  it('reads own values through plain objects and returns undefined past a non-object', () => {
+    const obj = { a: { b: { c: 1 } }, arr: [1], n: null };
+    expect(valueAtPath(obj, ['a', 'b', 'c'])).toBe(1);
+    expect(valueAtPath(obj, ['a', 'x'])).toBeUndefined();
+    expect(valueAtPath(obj, ['arr', '0'])).toBeUndefined();
+    expect(valueAtPath(obj, ['n', 'x'])).toBeUndefined();
+    expect(valueAtPath(obj, ['a', 'toString'])).toBeUndefined();
+  });
+});
+
+describe('withoutNestedEntries', () => {
+  it('removes a depth-three entry, keeps siblings and leaves the input untouched', () => {
+    const settings = { mk: { a: 1, foo: { x: 1, source: { repo: 'a', ref: 'v1' } } }, theme: 'd' };
+    const before = JSON.stringify(settings);
+    const entry = liveOnlyNestedEntries(
+      { mk: { a: 1, foo: { x: 1, source: { repo: 'a' } } } },
+      settings,
+    );
+    expect(withoutNestedEntries(settings, entry)).toEqual({
+      mk: { a: 1, foo: { x: 1, source: { repo: 'a' } } },
+      theme: 'd',
+    });
+    expect(JSON.stringify(settings)).toBe(before);
+  });
+
+  it('returns an entry unchanged when its parent is no longer an object', () => {
+    const entry = { path: ['mk', 'foo', 'x'], key: 'mk', label: 'mk.foo.x', value: 1 };
+    expect(withoutNestedEntries({ mk: { foo: 5 } }, [entry])).toEqual({ mk: { foo: 5 } });
   });
 });

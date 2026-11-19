@@ -13,9 +13,10 @@ import {
   liveOnlyNestedEntries,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
+  valueAtPath,
   type NestedEntry,
 } from './settings-classify.ts';
-import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
+import { stripGsdHookEntries } from './hooks-filter.ts';
 import {
   hookEntryContents,
   hookEntryLabel,
@@ -135,12 +136,10 @@ function splitNestedEntries(
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
 ): { blocked: NestedEntry[]; removed: NestedEntry[] } {
-  const pre = stripGsdHookEntries(preMerged);
-  // The record is whole-key: once the key is also edited locally, an entry dropped upstream reads as local.
   const removedUpstream = (e: NestedEntry): boolean =>
     stillAsWritten(written, existing, e.key) ||
     deepEqual(
-      normalizeNodePathsDeep(asPlainObject(pre[e.key])?.[e.sub]),
+      normalizeNodePathsDeep(valueAtPath(preMerged, e.path)),
       normalizeNodePathsDeep(e.value),
     );
   return partition(liveOnlyNestedEntries(merged, existing), removedUpstream);

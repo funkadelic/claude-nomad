@@ -989,5 +989,80 @@ describe('cmdCaptureSettings', () => {
       expect(base.mk).toEqual({ a: 1 });
       expect(regenerateSettings('20261101-000002').removed).toEqual(['mk.gone']);
     });
+
+    it('refuses a pull for a field added deep inside an entry, then saves it at its full path', async () => {
+      const source = { source: 'github', repo: 'a/foo' };
+      writeFileSync(
+        env.basePath,
+        JSON.stringify({ extraKnownMarketplaces: { foo: { source } } }) + '\n',
+      );
+      const live = { extraKnownMarketplaces: { foo: { source: { ...source, ref: 'v1' } } } };
+      const liveText = JSON.stringify(live) + '\n';
+      writeFileSync(env.settingsPath, liveText);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      expect(regenerateSettings('20261101-000000').blocked).toEqual([
+        'extraKnownMarketplaces.foo.source.ref',
+      ]);
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(liveText);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const read = (p: string): unknown => JSON.parse(readFileSync(p, 'utf8'));
+      expect(read(env.basePath)).toEqual(live);
+      expect(read(env.settingsPath)).toEqual(live);
+    });
+
+    it('sends a new entry under a path only the host file has to --host, then saves it there', async () => {
+      const baseText = JSON.stringify({ mk: { a: 1 } }) + '\n';
+      writeFileSync(env.basePath, baseText);
+      writeFileSync(
+        join(env.hostsDir, 'test-host.json'),
+        JSON.stringify({ mk: { foo: { x: 1 } } }),
+      );
+      const liveText = JSON.stringify({ mk: { a: 1, foo: { x: 1, y: 2 } } }) + '\n';
+      writeFileSync(env.settingsPath, liveText);
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
+      expect(readFileSync(env.settingsPath, 'utf8')).toBe(liveText);
+      expect(errs.join('\n')).toContain('not saving new mk.foo entries');
+      expect(errs.join('\n')).toContain('only hosts/test-host.json has mk.foo');
+
+      await cmdCaptureSettings({ host: true, dryRun: false, yes: true });
+      const host = JSON.parse(readFileSync(join(env.hostsDir, 'test-host.json'), 'utf8')) as {
+        mk: unknown;
+      };
+      expect(host.mk).toEqual({ foo: { x: 1, y: 2 } });
+    });
+
+    it('names the shallower non-object prefix when the base holds one above the entry', async () => {
+      const baseText = JSON.stringify({ mk: null }) + '\n';
+      writeFileSync(env.basePath, baseText);
+      writeFileSync(
+        join(env.hostsDir, 'test-host.json'),
+        JSON.stringify({ mk: { foo: { x: 1 } } }),
+      );
+      writeFileSync(env.settingsPath, JSON.stringify({ mk: { foo: { x: 1, y: 2 } } }) + '\n');
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      expect(readFileSync(env.basePath, 'utf8')).toBe(baseText);
+      expect(errs.join('\n')).toContain('not saving new mk.foo entries');
+      expect(errs.join('\n')).toContain('it sets mk to a value that is not an object');
+    });
   });
 });
