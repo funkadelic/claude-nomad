@@ -442,12 +442,14 @@ How it works, briefly: on `nomad push`, when the overlay is present, nomad gener
 config that extends the bundled `.gitleaks.toml` (which itself extends the gitleaks default),
 appends your overlay body, scans with that combined config, then deletes the throwaway file. The
 merge is gitleaks' own `[extend]` append, so your allowlist entries add to the shipped and default
-ones rather than replacing them. One difference: the Redact re-scan checks one local transcript
-at a time, by its full path under `~/.claude/projects/`, and skips a legacy `[allowlist]` table and
-every `[[allowlists]]` block without a `targetRules` line. So Redact may replace a value such a
-block allows at push. To keep an allow in effect for Redact too, add a second copy of the block
-with `targetRules = ["<rule-id>"]` (the rule named in the finding) and `paths` that match local
-transcripts, the way the bundled beta-flag entry does.
+ones rather than replacing them. One difference: the Redact re-scan checks one local file at a
+time (a session transcript, memory file, or skill file under `~/.claude/`) by its full path, and
+skips a legacy `[allowlist]` table and every `[[allowlists]]` block without a `targetRules` line.
+So Redact may replace a value such a block allows at push. To keep an allow in effect for Redact
+too, add a second copy of the block with `targetRules = ["<rule-id>"]` (the rule named in the
+finding) and `paths` that match that local file, the way the bundled beta-flag entry does. If the
+allow is a legacy `[allowlist]` table, first rewrite it as an `[[allowlists]]` block: gitleaks
+cannot load an overlay that mixes the two.
 
 Three rules:
 
