@@ -8,7 +8,11 @@ import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entr
 import { regenerateSettings } from '../../sync/links.ts';
 import { blockedHookEntries, removedSettingsKeys } from '../../sync/settings-guard.ts';
 import { addNestedEntries, nestedCaptureEntries } from './capture-settings.nested.ts';
-import { readWrittenHookIds, readWrittenSettingsKeys } from '../../sync/settings-written.ts';
+import {
+  readWrittenEntryIds,
+  readWrittenHookIds,
+  readWrittenSettingsKeys,
+} from '../../sync/settings-written.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
 import { deepMerge, readJson } from '../../core/utils.json.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
@@ -111,8 +115,9 @@ function collectCapture(
   // Leave out entries a pull deletes as removed upstream, so capture never undoes that removal.
   const written = readWrittenSettingsKeys();
   const hookIds = readWrittenHookIds();
+  const entryIds = readWrittenEntryIds();
   const entries = blockedHookEntries(sources.merged, sources.settings, {}, written, hookIds);
-  const { entries: nested, clashed } = nestedCaptureEntries(sources, useHost, written);
+  const { entries: nested, clashed } = nestedCaptureEntries(sources, useHost, written, entryIds);
   const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
   for (const event of skipped) {
@@ -149,7 +154,14 @@ function collectCapture(
 
   // Entries the repo dropped that this capture does not save back; the resync deletes them.
   const captured = new Set(keys);
-  const removed = removedSettingsKeys(sources.merged, sources.settings, {}, written, hookIds);
+  const removed = removedSettingsKeys(
+    sources.merged,
+    sources.settings,
+    {},
+    written,
+    hookIds,
+    entryIds,
+  );
   return { subset, keys, skipped, clashed, removed: removed.filter((k) => !captured.has(k)) };
 }
 

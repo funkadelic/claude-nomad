@@ -1064,5 +1064,31 @@ describe('cmdCaptureSettings', () => {
       expect(errs.join('\n')).toContain('not saving new mk.foo entries');
       expect(errs.join('\n')).toContain('it sets mk to a value that is not an object');
     });
+
+    it('saves the entry added here but never the one the repo dropped, and names the removal', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1, gone: 2 } }) + '\n');
+      writeFileSync(env.settingsPath, '{}\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      regenerateSettings('20261101-000001');
+
+      writeFileSync(env.settingsPath, JSON.stringify({ mk: { a: 1, gone: 2, fresh: 3 } }) + '\n');
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+      expect(regenerateSettings('20261101-000002').blocked).toEqual(['mk.fresh']);
+
+      const errs: string[] = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+        errs.push(a.map(String).join(' '));
+      });
+      const { cmdCaptureSettings } = await import('./capture-settings.ts');
+      await cmdCaptureSettings({ host: false, dryRun: false, yes: true });
+      const read = (p: string) => JSON.parse(readFileSync(p, 'utf8')) as { mk: object };
+      expect(read(env.basePath).mk).toEqual({ a: 1, fresh: 3 });
+      expect(read(env.settingsPath).mk).toEqual({ a: 1, fresh: 3 });
+      expect(errs.join('\n')).toContain('this capture also removed');
+      expect(errs.join('\n')).toContain('mk.gone');
+    });
   });
 });

@@ -140,8 +140,14 @@ export function blockedHookEntries(
  * (`blocked`) and those it deletes as removed upstream (`removed`): `preMerged`
  * held the same value, the last write produced the entry, or (for a record
  * without entry ids) the whole key still matches it.
+ * @param merged - The base + host merge about to be written.
+ * @param existing - The parsed live settings.json.
+ * @param preMerged - The merge at the pre-pull HEAD; `{}` excludes nothing.
+ * @param written - The written-settings record, or `null`.
+ * @param writtenEntryIds - Hashes of each nested entry from the last write.
+ * @returns The blocked/removed partition.
  */
-function splitNestedEntries(
+export function splitNestedEntries(
   merged: Record<string, unknown>,
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
@@ -173,7 +179,7 @@ export function blockedNestedEntries(
   existing: Record<string, unknown>,
   preMerged: Record<string, unknown>,
   written: WrittenSettings | null,
-  writtenEntryIds: ReadonlySet<string> = new Set(),
+  writtenEntryIds: ReadonlySet<string>,
 ): NestedEntry[] {
   return splitNestedEntries(merged, existing, preMerged, written, writtenEntryIds).blocked;
 }

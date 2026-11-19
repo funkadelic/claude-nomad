@@ -38,14 +38,16 @@ function firstNonObjectPrefix(base: Record<string, unknown>, parent: string[]): 
  * @param sources - Base, merge and live settings.
  * @param useHost - True when capturing into the host file (never clashes).
  * @param written - The written-settings record, or `null`.
+ * @param entryIds - Hashes of each nested entry from the last write.
  * @returns The entries to save and whether any were left out.
  */
 export function nestedCaptureEntries(
   sources: NestedSources,
   useHost: boolean,
   written: WrittenSettings | null,
+  entryIds: ReadonlySet<string>,
 ): { entries: NestedEntry[]; clashed: boolean } {
-  const all = blockedNestedEntries(sources.merged, sources.settings, {}, written);
+  const all = blockedNestedEntries(sources.merged, sources.settings, {}, written, entryIds);
   // With --host the merge holds each path as an object, so the host file cannot clash.
   if (useHost) return { entries: all, clashed: false };
   const failing = new Map<string, string[]>();

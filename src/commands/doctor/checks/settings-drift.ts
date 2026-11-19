@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import {
   classifySettingsDrift,
-  liveOnlyNestedEntries,
   partitionByCaptureExclusion,
   withoutNestedEntries,
 } from '../../../sync/settings-classify.ts';
@@ -12,8 +11,8 @@ import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
 import { baseHasGsdHookEntries } from '../../../sync/hooks-filter.ts';
 import { deepMerge } from '../../../core/utils.json.ts';
-import { stillAsWritten } from '../../../sync/settings-guard.ts';
-import { readWrittenSettingsKeys } from '../../../sync/settings-written.ts';
+import { splitNestedEntries, stillAsWritten } from '../../../sync/settings-guard.ts';
+import { readWrittenEntryIds, readWrittenSettingsKeys } from '../../../sync/settings-written.ts';
 
 /**
  * Drift check for `nomad doctor`: recomputes `deepMerge(base, host)` and
@@ -206,16 +205,20 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
   const merged = deepMerge(base, hostObj ?? {});
 
   // New entries under a shared object key are capture candidates, not a pull-overwrites change.
-  const nested = liveOnlyNestedEntries(merged, settings);
+  const written = readWrittenSettingsKeys();
+  const { blocked: nestedCandidates, removed: nestedDropped } = splitNestedEntries(
+    merged,
+    settings,
+    {},
+    written,
+    readWrittenEntryIds(),
+  );
   const { missing, changed, extra } = diffMergedSettings(
     merged,
-    withoutNestedEntries(settings, nested),
+    withoutNestedEntries(settings, [...nestedCandidates, ...nestedDropped]),
   );
   const { promotable, excluded } = partitionByCaptureExclusion(extra);
-  const written = readWrittenSettingsKeys();
   const asWritten = (key: string): boolean => stillAsWritten(written, settings, key);
-  const nestedDropped = nested.filter((e) => asWritten(e.key));
-  const nestedCandidates = nested.filter((e) => !asWritten(e.key));
   const topDropped = promotable.filter(asWritten);
   const dropped = [...topDropped, ...nestedDropped.map((e) => e.label)];
   const nestedLabels = nestedCandidates.map((e) => e.label);

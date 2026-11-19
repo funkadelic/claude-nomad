@@ -8,7 +8,7 @@ import {
   partitionByCaptureExclusion,
 } from '../../sync/settings-classify.ts';
 import { blockedNestedEntries } from '../../sync/settings-guard.ts';
-import { readWrittenSettingsKeys } from '../../sync/settings-written.ts';
+import { readWrittenEntryIds, readWrittenSettingsKeys } from '../../sync/settings-written.ts';
 import { baseHasGsdHookEntries, stripGsdHookEntries } from '../../sync/hooks-filter.ts';
 import { warn } from '../../core/utils.ts';
 import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/utils.fs.ts';
@@ -77,7 +77,13 @@ export function reportSettingsAheadDrift(repo: string): void {
     const { ahead } = classifySettingsDrift(merged, settings);
     const promotable = [
       ...partitionByCaptureExclusion(ahead).promotable,
-      ...blockedNestedEntries(merged, settings, {}, readWrittenSettingsKeys()).map((e) => e.label),
+      ...blockedNestedEntries(
+        merged,
+        settings,
+        {},
+        readWrittenSettingsKeys(),
+        readWrittenEntryIds(),
+      ).map((e) => e.label),
     ];
     if (promotable.length === 0) return;
     const { phrase, pronoun, verb } = describeSettings(promotable);
