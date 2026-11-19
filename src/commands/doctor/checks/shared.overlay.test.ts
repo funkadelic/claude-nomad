@@ -1,10 +1,10 @@
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as cpModule from 'node:child_process';
+import type * as fsModule from 'node:fs';
 
 import { failGlyph } from '../../../render/color.ts';
 import {
@@ -45,6 +45,7 @@ describe('reportCheckShared overlay validation', () => {
 
   afterEach(() => {
     vi.doUnmock('node:child_process');
+    vi.doUnmock('node:fs');
     restoreEnv(snapshot, testHome);
   });
 
@@ -98,11 +99,23 @@ describe('reportCheckShared overlay validation', () => {
   it('passes a safe overlay and removes its generated temp config', async () => {
     testHome = makeEnv().testHome;
     writeOverlay(testHome, SAFE_OVERLAY);
-    const before = readdirSync(tmpdir()).filter((n) => n.startsWith('nomad-gitleaks-cfg-'));
+    // Record only the dirs this run creates, so a parallel worker's temp dirs cannot interfere.
+    const created: string[] = [];
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        mkdtempSync: vi.fn((prefix: string) => {
+          const dir = actual.mkdtempSync(prefix);
+          if (prefix.includes('nomad-gitleaks-cfg-')) created.push(dir);
+          return dir;
+        }),
+      };
+    });
     const section = await run();
-    const after = readdirSync(tmpdir()).filter((n) => n.startsWith('nomad-gitleaks-cfg-'));
     expect(section.items.some((r) => r.includes('overlay rejected'))).toBe(false);
     expect(process.exitCode).toBe(0);
-    expect(after.filter((n) => !before.includes(n))).toEqual([]);
+    expect(created.length).toBeGreaterThan(0);
+    expect(created.filter((d) => existsSync(d))).toEqual([]);
   });
 });
