@@ -144,6 +144,20 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(local)?.map((f) => f.Secret)).toEqual([realToken]);
     });
 
+    it('applies only rule-scoped overlay blocks in the redact re-scan', () => {
+      rmSync(join(repoUnderHome, '.gitleaks.toml'));
+      const paths = String.raw`paths = ['''abc123\.jsonl$''']`;
+      writeFileSync(
+        join(repoUnderHome, '.gitleaks.overlay.toml'),
+        `[[allowlists]]\nregexes = ['''zzneverseen''']\n${paths}\ncondition = "AND"\n\n` +
+          `[[allowlists]]\ntargetRules = ["github-pat"]\nregexes = ['''${patFor(0)}''']\n${paths}\ncondition = "AND"\n`,
+      );
+      const local = join(testHome, '.claude', 'projects', '-enc', 'abc123.jsonl');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, `token ${patFor(0)}\ntoken ${patFor(1)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(1)]);
+    });
+
     it('still fires in the redact re-scan outside ~/.claude/projects', () => {
       write('elsewhere/s.jsonl', betasLine(flag));
       expect(scanFile(join(scanRoot, 'elsewhere', 's.jsonl'))?.length).toBe(1);

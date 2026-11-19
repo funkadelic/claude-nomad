@@ -293,7 +293,7 @@ export function scanFile(
   // Resolve the config (which may generate its own temp file) BEFORE creating
   // the scratch dir: if resolveTomlConfig throws, no reportDir exists yet, so
   // the finally below cannot orphan an empty scratch dir under the cache.
-  const { path: toml, tempPath } = resolveTomlConfig();
+  const { path: toml, tempPath } = resolveTomlConfig({ singleFile: true });
   // Create the scratch report dir INSIDE the try so a mkdtempSync failure still
   // runs the finally and cleans up the temp config resolveTomlConfig may have
   // generated (tempPath); otherwise that artifact would be orphaned. reportDir/
