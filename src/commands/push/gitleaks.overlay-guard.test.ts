@@ -53,6 +53,7 @@ describe('assertOverlaySafe', () => {
     ['an upper-case allowlists table', "[[ALLOWLISTS]]\npaths = ['''^a''']\n", /in lowercase/],
     ['a mixed-case allowlists table', "[[Allowlists]]\npaths = ['''^a''']\n", /"allowlists"/],
     ['a single [allowlists] table', "[allowlists]\npaths = ['''^a''']\n", /double brackets/],
+    ['a legacy allowlist array', "allowlist = [{ paths = ['''^a'''] }]\n", /single table/],
     [
       'a legacy [allowlist] mixed with [[allowlists]]',
       `${SCOPED.replace('[[allowlists]]', '[allowlist]')}${SCOPED}`,

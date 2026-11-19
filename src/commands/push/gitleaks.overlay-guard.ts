@@ -141,6 +141,11 @@ function allowlistTables(doc: Table): Table[] {
       '.gitleaks.overlay.toml has a single [allowlists] table, which gitleaks cannot load; use [[allowlists]] blocks (double brackets).',
     );
   }
+  if (doc.allowlist !== undefined && !isTable(doc.allowlist)) {
+    throw new NomadFatal(
+      '.gitleaks.overlay.toml has a legacy allowlist that is not a single table, which gitleaks cannot load; use [[allowlists]] blocks.',
+    );
+  }
   if (doc.allowlist !== undefined && doc.allowlists !== undefined) {
     throw new NomadFatal(
       '.gitleaks.overlay.toml mixes a legacy [allowlist] table with [[allowlists]] blocks, which gitleaks cannot load; turn the [allowlist] table into an [[allowlists]] block.',
@@ -220,7 +225,7 @@ function assertAllowlistScoped(allowlist: Table): void {
 }
 
 /**
- * Reject an `extend` key, an unknown top-level key, or a known one not written in
+ * Reject an `extend` key, an unknown top-level key, or a block key not written in
  * lowercase (a `[[Allowlists]]` header collides with the bundled blocks nomad appends).
  * @param raw The parsed overlay with its keys as written.
  * @param doc The same overlay with lowercased top-level keys.
