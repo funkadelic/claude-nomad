@@ -236,7 +236,7 @@ export function resolveTomlConfig({
   if (bundled === repoToml) {
     const notice = notify(
       'precedence',
-      `.gitleaks.overlay.toml ignored: ${repoToml} takes precedence. Delete .gitleaks.toml to use the overlay, or delete the overlay to keep full manual control.`,
+      `.gitleaks.overlay.toml ignored: ${repoToml} takes precedence. Delete .gitleaks.toml to use the overlay, or delete the overlay to silence this notice.`,
       quiet,
     );
     return { path: bundled, tempPath: null, notice };
