@@ -1,6 +1,7 @@
 import { failGlyph, red } from '../../render/color.ts';
 import { addItem, type DoctorSection } from '../../render/output-tree.ts';
 import { readJson } from '../../core/utils.json.ts';
+import { escapeUnsafe } from '../../sync/settings-classify.ts';
 
 export {
   section,
@@ -21,7 +22,10 @@ export function readJsonSafe<T>(path: string, label: string, section: DoctorSect
   try {
     return readJson<T>(path);
   } catch (err) {
-    addItem(section, `${red(failGlyph)} ${label} malformed JSON: ${(err as Error).message}`);
+    addItem(
+      section,
+      `${red(failGlyph)} ${label} malformed JSON: ${escapeUnsafe((err as Error).message)}`,
+    );
     process.exitCode = 1;
     return null;
   }

@@ -9,6 +9,7 @@ import { planSharedLinkDeletions, type SharedLinkDeletion } from '../sync/links.
 import { stageLocalSharedEdits, type MirrorPreviewEvent } from '../sync/links.mirror.ts';
 import { type LinkPreviewEvent, applySharedLinks } from '../sync/links.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
+import { escapeUnsafe } from '../sync/settings-classify.ts';
 import {
   blockedSettingsKeys,
   removedSettingsKeys,
@@ -77,6 +78,11 @@ export type SharedLinkPlans = {
   derivedSharedDirs: unknown;
 };
 
+/** `text` with unsafe characters escaped line by line, keeping its line breaks. */
+function escapeLines(text: string): string {
+  return text.split('\n').map(escapeUnsafe).join('\n');
+}
+
 /**
  * LCS line diff for two pre-stringified JSON documents via jsdiff. Returns a
  * unified-diff style string: the two literal header lines
@@ -96,7 +102,7 @@ export function diffJsonStrings(currentJsonText: string, newJsonText: string): s
   const lines: string[] = [
     '--- ~/.claude/settings.json',
     '+++ would write',
-    ...diffLinesToUnified(currentJsonText, newJsonText),
+    ...diffLinesToUnified(escapeLines(currentJsonText), escapeLines(newJsonText)),
   ];
   return lines.join('\n');
 }

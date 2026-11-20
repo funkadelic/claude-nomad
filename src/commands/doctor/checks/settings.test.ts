@@ -58,6 +58,18 @@ describe('cmdDoctor settings.json schema sanity', () => {
     expect(out).toContain(`${warnGlyph} settings.json has unknown keys`);
     expect(out).toContain('newAnthropicFeature');
   });
+
+  it('names an unknown key holding a control character by a hash', async () => {
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'sonnet', 'x\u001b[2J': true }) + '\n',
+    );
+    const { cmdDoctor } = await import('../doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toMatch(/unknown keys \(schema drift\?\): \(key [0-9a-f]{8}\)/);
+    expect(out).not.toContain('\u001b[2J');
+  });
 });
 
 describe('cmdDoctor host-override-missing diagnostic', () => {
@@ -153,6 +165,37 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     const { cmdDoctor } = await import('../doctor.ts');
     cmdDoctor({ verbose: true });
     expect(joinedLog(env.logSpy)).toContain('unbased keys 1 credential or host-local key(s)');
+  });
+
+  const writeDriftWithCandidate = (name: string): void => {
+    process.env.NOMAD_HOST = 'nonexistent-host';
+    writeFileSync(join(env.testHome, 'claude-nomad', 'hosts', name), '{}\n');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ statusLine: { type: 'command' } }) + '\n',
+    );
+  };
+
+  // Windows filenames cannot hold control characters.
+  it.skipIf(process.platform === 'win32')(
+    'escapes a control character in a candidate host filename',
+    async () => {
+      writeDriftWithCandidate('a\u001b[2Jb.json');
+      const { cmdDoctor } = await import('../doctor.ts');
+      cmdDoctor({ verbose: true });
+      const out = joinedLog(env.logSpy);
+      expect(out).toContain('candidates: a\\u001b[2Jb.json');
+      expect(out).not.toContain('\u001b[2J');
+    },
+  );
+
+  it('escapes a bidi character in a candidate host filename', async () => {
+    writeDriftWithCandidate('a\u202eb.json');
+    const { cmdDoctor } = await import('../doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('candidates: a\\u202eb.json');
+    expect(out).not.toContain('\u202e');
   });
 
   it('FAILs without a candidates line when hostFile missing, settings drift, AND hosts/ dir absent', async () => {

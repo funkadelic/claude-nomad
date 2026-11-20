@@ -10,6 +10,7 @@ import {
   classifySettingsDrift,
   deepEqual,
   describeSettings,
+  keyLabel,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from './settings-classify.ts';
@@ -225,7 +226,7 @@ export function blockedSettingsKeys(
   writtenEntryIds: ReadonlySet<string> = new Set(),
 ): string[] {
   return [
-    ...splitAheadKeys(merged, existing, preMerged, written).blocked,
+    ...splitAheadKeys(merged, existing, preMerged, written).blocked.map(keyLabel),
     ...splitNestedEntries(merged, existing, preMerged, written, writtenEntryIds).blocked.map(
       (e) => e.label,
     ),
@@ -256,7 +257,7 @@ export function removedSettingsKeys(
   writtenEntryIds: ReadonlySet<string> = new Set(),
 ): string[] {
   return [
-    ...splitAheadKeys(merged, existing, preMerged, written).removed,
+    ...splitAheadKeys(merged, existing, preMerged, written).removed.map(keyLabel),
     ...splitNestedEntries(merged, existing, preMerged, written, writtenEntryIds).removed.map(
       (e) => e.label,
     ),

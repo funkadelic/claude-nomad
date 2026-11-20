@@ -6,6 +6,9 @@ import {
   CAPTURE_EXCLUDED_KEYS,
   classifySettingsDrift,
   describeSettings,
+  escapeUnsafe,
+  keyLabel,
+  keyList,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from './settings-classify.ts';
@@ -655,5 +658,49 @@ describe('prototype-pollution guard over repo-supplied settings', () => {
     ) as Record<string, Record<string, unknown>>;
     expect(Object.getPrototypeOf(out.hooks)).toBe(Object.prototype);
     expect(Object.keys(out.hooks)).toEqual(['kept']);
+  });
+});
+
+describe('keyLabel', () => {
+  it('leaves a printable key or label as is', () => {
+    expect(keyList(['model', 'mk.café', 'list["Bash(ls:*)"]'])).toBe(
+      'model, mk.café, list["Bash(ls:*)"]',
+    );
+  });
+
+  it('names a key holding an escape, bidi or line-separator character by a hash', () => {
+    for (const key of ['\u001b]0;x\u0007', 'a\u202eb', 'a\u2028b']) {
+      expect(keyLabel(key)).toMatch(/^\(key [0-9a-f]{8}\)$/);
+    }
+    expect(keyLabel('a\u202eb')).not.toBe(keyLabel('b\u202ea'));
+  });
+
+  it('hashes a key spelled like a hashed name, so that form always means hashed', () => {
+    const label = keyLabel('(key 0123abcd)');
+    expect(label).toMatch(/^\(key [0-9a-f]{8}\)$/);
+    expect(label).not.toBe('(key 0123abcd)');
+    expect(keyLabel('mk.(key 0123abcd)')).toBe('mk.(key 0123abcd)');
+  });
+
+  it('keeps a label keyLabel built when keyList joins it', () => {
+    for (const raw of ['\u001b[2J', '(key 0123abcd)']) {
+      expect(keyList([keyLabel(raw)])).toBe(keyLabel(raw));
+    }
+  });
+
+  it('screens the names describeSettings prints', () => {
+    expect(describeSettings(['\u001b[2J']).phrase).toMatch(/^1 setting \(\(key [0-9a-f]{8}\)\)$/);
+  });
+});
+
+describe('escapeUnsafe', () => {
+  it('writes bidi, zero-width, DEL, C1 and astral format characters as JSON escapes', () => {
+    const text = '"a\u202eb\u200b\u007f\u009b\u{e0001}"';
+    expect(escapeUnsafe(text)).toBe('"a\\u202eb\\u200b\\u007f\\u009b\\udb40\\udc01"');
+    expect(JSON.parse(escapeUnsafe(text))).toBe(JSON.parse(text));
+  });
+
+  it('escapes a newline and keeps printable text, non-ASCII included', () => {
+    expect(escapeUnsafe('a\nb café')).toBe('a\\u000ab café');
   });
 });

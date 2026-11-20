@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { buildSessionsSection, buildSettingsSection } from './sections.ts';
 
 describe('buildSettingsSection', () => {
+  it('names a blocked or removed key holding a control character by a hash', () => {
+    const blocked = buildSettingsSection('x', ['\u001b[2J']).items[0];
+    const removed = buildSettingsSection('x', [], ['a\u202eb']).items[0];
+    expect(blocked).toMatch(/\(\(key [0-9a-f]{8}\) not in the repo/);
+    expect(removed).toMatch(/removed \(key [0-9a-f]{8}\), no longer/);
+  });
+
   it('renders the existing ok row unchanged when nothing is blocked', () => {
     const s = buildSettingsSection('no host overrides', []);
     expect(s.items).toHaveLength(1);

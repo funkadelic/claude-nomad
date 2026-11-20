@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
-import { buildCaptureSubset, describeSettings } from '../../sync/settings-classify.ts';
+import {
+  buildCaptureSubset,
+  describeSettings,
+  keyLabel,
+  keyList,
+} from '../../sync/settings-classify.ts';
+import { pathLabel } from '../../sync/settings-entries.ts';
 import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
 import { blockedHookEntries, removedSettingsKeys } from '../../sync/settings-guard.ts';
@@ -56,7 +62,7 @@ async function confirmCapture(destLabel: string, keys: string[]): Promise<boolea
     );
     return false;
   }
-  log(`About to promote ${keys.length} setting(s) into ${destLabel}: ${keys.join(', ')}`);
+  log(`About to promote ${keys.length} setting(s) into ${destLabel}: ${keyList(keys)}`);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const answer = await rl.question('Proceed? [y/N] ');
@@ -120,14 +126,14 @@ function collectCapture(
   const { entries: nested, clashed } = nestedCaptureEntries(sources, useHost, written, entryIds);
   const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
-  for (const event of skipped) {
+  for (const event of skipped.map(keyLabel)) {
     warn(
       `not saving ${event} hooks to shared/settings.base.json: hosts/${HOST}.json overrides ` +
         `them on this host, so the shared ones never reach it; run 'nomad capture-settings ` +
         `--host' to save them there`,
     );
   }
-  for (const event of shadowed) {
+  for (const event of shadowed.map(keyLabel)) {
     warn(
       `hosts/${HOST}.json will carry this host's full ${event} hook list, so later edits to ` +
         `${event} hooks in shared/settings.base.json will not reach this host`,
@@ -147,8 +153,8 @@ function collectCapture(
   addNestedEntries(subset, nested, sources.merged, useHost);
 
   const keys = [
-    ...Object.keys(topSubset),
-    ...hookEventKeys.map((e) => `hooks.${e}`),
+    ...Object.keys(topSubset).map(keyLabel),
+    ...hookEventKeys.map((e) => pathLabel(['hooks', e])),
     ...nested.map((e) => e.label),
   ].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
 
@@ -255,7 +261,7 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     const dest = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
 
     if (dryRun) {
-      log(`dry-run: would write ${dest} with keys: ${keys.join(', ')}`);
+      log(`dry-run: would write ${dest} with keys: ${keyList(keys)}`);
       return;
     }
 

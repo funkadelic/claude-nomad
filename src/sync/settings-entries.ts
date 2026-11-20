@@ -8,7 +8,13 @@ import { createHash } from 'node:crypto';
 
 import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
-import { CAPTURE_EXCLUDED_KEYS, deepEqual, normalizeNodePathsDeep } from './settings-classify.ts';
+import {
+  CAPTURE_EXCLUDED_KEYS,
+  deepEqual,
+  hasUnsafeChar,
+  keyLabel,
+  normalizeNodePathsDeep,
+} from './settings-classify.ts';
 
 /**
  * An entry below the top level. An object entry's `path` ends at its own key;
@@ -58,8 +64,18 @@ export function holdsEntry(obj: Record<string, unknown>, e: NestedEntry): boolea
   return Array.isArray(at) && at.some((v) => sameValue(v, e.value));
 }
 
-/** Up to 200 characters with no control, format (bidi, zero-width) or line-separator characters. */
-const READABLE_MEMBER_RE = /^[^\p{Cc}\p{Cf}\u2028\u2029]{0,200}$/u;
+/** Up to 200 characters, none of them unsafe for the terminal. */
+function isReadable(text: string): boolean {
+  return [...text].length <= 200 && !hasUnsafeChar(text);
+}
+
+/**
+ * `path` joined with dots for the terminal, each key through `keyLabel`.
+ * @param path - Key segments from the top level down.
+ */
+export function pathLabel(path: readonly string[]): string {
+  return path.map(keyLabel).join('.');
+}
 
 /** JSON with object keys sorted, so key order never changes a hash. */
 function canonicalJson(value: unknown): string {
@@ -74,7 +90,7 @@ function canonicalJson(value: unknown): string {
 /**
  * The entry for `value` as member `position` (1-based) of the array at `path`.
  * The label shows a readable member in full, else its position and a hash
- * prefix, so no long or control-character member reaches the terminal (key names are not screened).
+ * prefix, so no long or control-character member reaches the terminal.
  * @param path - The array's key path.
  * @param value - The member.
  * @param position - The member's 1-based position in that array.
@@ -82,11 +98,13 @@ function canonicalJson(value: unknown): string {
 export function elementEntry(path: string[], value: unknown, position: number): NestedEntry {
   const json = JSON.stringify(value);
   const text = typeof value === 'string' ? value : json;
-  const hash = createHash('sha256').update(canonicalJson(normalizeNodePathsDeep(value)));
-  const shown = READABLE_MEMBER_RE.test(text)
+  const shown = isReadable(text)
     ? json
-    : `item ${position}, ${hash.digest('hex').slice(0, 8)}`;
-  return { path, key: path[0], label: `${path.join('.')}[${shown}]`, value, element: true };
+    : `item ${position}, ${createHash('sha256')
+        .update(canonicalJson(normalizeNodePathsDeep(value)))
+        .digest('hex')
+        .slice(0, 8)}`;
+  return { path, key: path[0], label: `${pathLabel(path)}[${shown}]`, value, element: true };
 }
 
 /** Push one element entry per distinct member of `arr`, the array at `path`. */
@@ -104,7 +122,7 @@ function collectEntries(obj: Record<string, unknown>, path: string[], out: Neste
   for (const [sub, value] of Object.entries(obj)) {
     if (isProtoPollutionKey(sub)) continue;
     const full = [...path, sub];
-    out.push({ path: full, key: full[0], label: full.join('.'), value });
+    out.push({ path: full, key: full[0], label: pathLabel(full), value });
     const child = asPlainObject(value);
     if (child !== null) collectEntries(child, full, out);
     else if (Array.isArray(value)) collectElements(full, value, out);

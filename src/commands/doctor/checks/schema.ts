@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
+import { keyLabel, keyList } from '../../../sync/settings-classify.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
 import { claudeHome, SETTINGS_SCHEMA_URL } from '../../../core/config.ts';
 import { fetchUrl } from '../../../core/http-fetch.ts';
@@ -65,7 +66,7 @@ export function reportCheckSchema(section: DoctorSection): void {
   } else {
     addItem(
       section,
-      `${yellow(warnGlyph)} settings.json keys absent from published schema (APP_ONLY_KEYS candidates): ${candidates.join(', ')}`,
+      `${yellow(warnGlyph)} settings.json keys absent from published schema (APP_ONLY_KEYS candidates): ${keyList(candidates.map(keyLabel))}`,
     );
   }
 }

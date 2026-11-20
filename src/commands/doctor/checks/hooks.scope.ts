@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
+import { escapeUnsafe } from '../../../sync/settings-classify.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome } from '../../../core/config.ts';
 
@@ -206,7 +207,7 @@ export function reportHookScopeCheck(section: DoctorSection): void {
     if (fam === 'unknown' || fam === eff) continue;
     addItem(
       section,
-      `${yellow(warnGlyph)} hooks/${name}: ${fam} source loads as ${eff} (${remedy(fam)})`,
+      `${yellow(warnGlyph)} hooks/${escapeUnsafe(name)}: ${fam} source loads as ${eff} (${remedy(fam)})`,
     );
     anyWarn = true;
   }

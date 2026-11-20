@@ -76,6 +76,16 @@ describe('diffJsonStrings', () => {
     expect(out).not.toMatch(/\x1b\[/);
   });
 
+  it('writes a bidi character in a key or value as its escape, never raw', async () => {
+    const current = JSON.stringify({ model: 'sonnet' }, null, 2);
+    const next = JSON.stringify({ model: 'a\u202eb', 'k\u200b': 1 }, null, 2);
+    const { diffJsonStrings } = await import('./preview.ts');
+    const out = diffJsonStrings(current, next);
+    expect(out).toContain('+  "model": "a\\u202eb"');
+    expect(out).toContain('"k\\u200b": 1');
+    expect(out).not.toMatch(/[\u202e\u200b]/u);
+  });
+
   it('returns an empty string when the two inputs are byte-identical', async () => {
     const s = JSON.stringify({ model: 'sonnet' }, null, 2);
     const { diffJsonStrings } = await import('./preview.ts');

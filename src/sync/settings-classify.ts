@@ -4,6 +4,8 @@
  * changed, which are excluded from capture, and the subset capture promotes.
  */
 
+import { createHash } from 'node:crypto';
+
 import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 
@@ -213,6 +215,53 @@ export function partitionByCaptureExclusion(keys: string[]): {
   return { promotable, excluded };
 }
 
+/** A control, format (bidi, zero-width) or line-separator character. */
+const UNSAFE_CHAR_RE = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+const UNSAFE_CHARS_RE = new RegExp(UNSAFE_CHAR_RE.source, 'gu');
+/** A whole name in the `(key <hash>)` form, so a key spelled that way is hashed too. */
+const HASHED_KEY_RE = /^\(key [0-9a-f]{8}\)$/;
+
+/**
+ * Whether `text` holds a character that could rewrite or hide terminal output.
+ * @param text - Any text bound for the terminal.
+ */
+export function hasUnsafeChar(text: string): boolean {
+  return UNSAFE_CHAR_RE.test(text);
+}
+
+/**
+ * `text` with each unsafe character, newline included, written as a `\uXXXX`
+ * escape. JSON text stays valid; in a raw path or message a literal `\uXXXX`
+ * reads the same as an escaped character.
+ * @param text - JSON text, a path or a message bound for the terminal.
+ */
+export function escapeUnsafe(text: string): string {
+  const escape = (u: string): string =>
+    String.raw`\u${Number(u.codePointAt(0)).toString(16).padStart(4, '0')}`;
+  return text.replace(UNSAFE_CHARS_RE, (c) => c.split('').map(escape).join(''));
+}
+
+/**
+ * `key` for the terminal: as is, or `(key <8 hex of its sha256>)` when it holds
+ * a character that could rewrite or hide terminal output, or reads like a hashed
+ * name itself. A label is left as is. No length cap: a key prints whole, as typed.
+ * @param key - A settings key name or an already-built label.
+ */
+export function keyLabel(key: string): string {
+  if (!hasUnsafeChar(key) && !HASHED_KEY_RE.test(key)) return key;
+  return `(key ${createHash('sha256').update(key).digest('hex').slice(0, 8)})`;
+}
+
+/**
+ * Labels joined with commas for the terminal. A raw key must already be through
+ * `keyLabel`, so a `(key <hash>)` label is never hashed twice; unsafe text is
+ * still hashed here as a backstop.
+ * @param labels - Labels, or raw keys already passed through `keyLabel`.
+ */
+export function keyList(labels: readonly string[]): string {
+  return labels.map((l) => (hasUnsafeChar(l) ? keyLabel(l) : l)).join(', ');
+}
+
 /**
  * Render a settings-key list for a user-facing drift message in plain language:
  * a count, the noun pluralized to match, and the names in parentheses (no JSON
@@ -231,7 +280,7 @@ export function describeSettings(keys: string[]): {
 } {
   const one = keys.length === 1;
   return {
-    phrase: `${keys.length} ${one ? 'setting' : 'settings'} (${keys.join(', ')})`,
+    phrase: `${keys.length} ${one ? 'setting' : 'settings'} (${keyList(keys)})`,
     pronoun: one ? 'it' : 'them',
     verb: one ? 'is' : 'are',
   };

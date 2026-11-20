@@ -103,6 +103,15 @@ describe('reportHooksTargetCheck', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('escapes a control character in a missing target path', async () => {
+    writeSettings(env.testHome, {
+      hooks: { PostToolUse: [{ type: 'command', command: `~/.claude/hooks/m\u001b[2J.sh` }] },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain('m\\u001b[2J.sh (run nomad pull)');
+    expect(out).not.toContain('\u001b[2J');
+  });
+
   it('FAILs when ~/.claude target is missing (tilde prefix)', async () => {
     writeSettings(env.testHome, {
       hooks: {
@@ -328,6 +337,13 @@ describe('reportHooksTargetCheck', () => {
     const { out } = await runCheck();
     expect(out).toContain(failGlyph);
     expect(out).toContain('malformed JSON');
+  });
+
+  it('escapes a bidi character quoted in the malformed-JSON message', async () => {
+    writeFileSync(join(env.testHome, '.claude', 'settings.json'), '{"a": x\u202e}\n');
+    const { out } = await runCheck();
+    expect(out).toContain(String.raw`x\u202e}`);
+    expect(out).not.toContain('\u202e');
   });
 
   it('emits OK (not FAIL) when hooks block is null', async () => {
