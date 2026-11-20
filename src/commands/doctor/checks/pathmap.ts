@@ -43,7 +43,7 @@ function reportMappedProjects(section: DoctorSection, map: PathMap): void {
  * `~/.claude/projects/<encoded>/` dir with no path-map entry for this host.
  * These are what `nomad push` reports as "N unmapped" (left alone in both
  * directions); listing them here closes the loop on the push summary's
- * "run nomad doctor to list" hint. Silent when every local dir is mapped or
+ * "run nomad doctor -v to list" hint. Silent when every local dir is mapped or
  * the local projects dir does not exist.
  */
 function reportUnmappedProjects(section: DoctorSection, map: PathMap): void {

@@ -128,7 +128,7 @@ push on host=workstation
 Sessions
   ├ ✓ claude-nomad
   ├ ✓ my-side-project
-  └ ℹ︎ 4 not in path-map (run nomad doctor to list)
+  └ ℹ︎ 4 not in path-map (run nomad doctor -v to list)
 Extras
   └ ✓ claude-nomad/.planning
 Leak scan
@@ -157,7 +157,7 @@ Settings
   └ ✓ settings.json (base + workstation.json)
 Sessions
   ├ ✓ claude-nomad
-  └ ℹ︎ 2 not in path-map (run nomad doctor to list)
+  └ ℹ︎ 2 not in path-map (run nomad doctor -v to list)
 Extras
   └ ✓ claude-nomad/.planning
 Summary
@@ -168,8 +168,8 @@ The `Summary` row is the final verdict for the run. It reads `✓ summary: clean
 synced, or a warning naming the counts when something was skipped:
 
 ```text
-⚠︎ summary: 3 unmapped on pull (run nomad doctor to list)
-⚠︎ summary: 2 unmapped on push, 1 collisions (run nomad doctor to list)
+⚠︎ summary: 3 unmapped on pull (run nomad doctor -v to list)
+⚠︎ summary: 2 unmapped on push, 1 collisions (run nomad doctor -v to list)
 ```
 
 Pass-glyph lines go to stdout; warning and fail-glyph lines go to stderr. An early, pre-tree

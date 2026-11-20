@@ -158,7 +158,7 @@ function buildPushSummaryRow(pull: WetPull, result: PushCoreResult): string {
 function buildSkipAndCollisionRows(pull: WetPull, result: PushCoreResult): string[] {
   const rows: string[] = [];
   if (pull.unmapped > 0) {
-    rows.push(`${dim(infoGlyph)} ${pull.unmapped} not in path-map (run nomad doctor to list)`);
+    rows.push(`${dim(infoGlyph)} ${pull.unmapped} not in path-map (run nomad doctor -v to list)`);
   }
   if (pull.extrasSkipped > 0) {
     rows.push(`${dim(infoGlyph)} ${pull.extrasSkipped} extras skipped`);
@@ -166,7 +166,7 @@ function buildSkipAndCollisionRows(pull: WetPull, result: PushCoreResult): strin
   const collisions = result.tag === 'dry' ? undefined : result.collisions;
   if (collisions !== undefined && collisions > 0) {
     const phrase = countNoun(collisions, 'collision', 'collisions');
-    rows.push(`${yellow(warnGlyph)} ${phrase} (run nomad doctor to list)`);
+    rows.push(`${yellow(warnGlyph)} ${phrase} (run nomad doctor -v to list)`);
   }
   return rows;
 }

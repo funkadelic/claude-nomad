@@ -38,7 +38,7 @@ import { keyList } from '../../sync/settings-classify.ts';
  *
  * @param n - The skip count (no row is produced when `0`).
  * @param noun - The collapsed-row phrasing after the count (e.g.
- *   `'not in path-map (run nomad doctor to list)'` or `'extras skipped'`).
+ *   `'not in path-map (run nomad doctor -v to list)'` or `'extras skipped'`).
  * @returns The rendered ℹ︎ count row, or `null` when `n` is `0`.
  */
 function collapsedSkipRow(n: number, noun: string): string | null {
@@ -104,7 +104,7 @@ export function buildSessionsSection(
 ): DoctorSection {
   const s = section('Sessions');
   for (const logical of items) addItem(s, `${green(okGlyph)} ${logical}`);
-  const skip = collapsedSkipRow(unmapped, 'not in path-map (run nomad doctor to list)');
+  const skip = collapsedSkipRow(unmapped, 'not in path-map (run nomad doctor -v to list)');
   if (skip !== null) addItem(s, skip);
   if (localOnly > 0) {
     addItem(

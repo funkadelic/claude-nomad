@@ -51,7 +51,7 @@ describe('emitSummary', () => {
 
   it('pull with three unmapped emits the unmapped-on-pull line via warn()', () => {
     emitSummary('pull', 3);
-    expect(erroredLine()).toBe('⚠︎ summary: 3 unmapped on pull (run nomad doctor to list)');
+    expect(erroredLine()).toBe('⚠︎ summary: 3 unmapped on pull (run nomad doctor -v to list)');
     expect(logSpy).not.toHaveBeenCalled();
   });
 
@@ -63,7 +63,7 @@ describe('emitSummary', () => {
 
   it('diff with two unmapped emits the unmapped-on-diff line via warn()', () => {
     emitSummary('diff', 2);
-    expect(erroredLine()).toBe('⚠︎ summary: 2 unmapped on diff (run nomad doctor to list)');
+    expect(erroredLine()).toBe('⚠︎ summary: 2 unmapped on diff (run nomad doctor -v to list)');
     expect(logSpy).not.toHaveBeenCalled();
   });
 
@@ -76,7 +76,7 @@ describe('emitSummary', () => {
   it('push with one unmapped and zero collisions emits the unmapped-on-push line via warn()', () => {
     emitSummary('push', 1, 0);
     expect(erroredLine()).toBe(
-      '⚠︎ summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
+      '⚠︎ summary: 1 unmapped on push, 0 collisions (run nomad doctor -v to list)',
     );
     expect(logSpy).not.toHaveBeenCalled();
   });
@@ -84,7 +84,7 @@ describe('emitSummary', () => {
   it('push with zero unmapped and two collisions emits the line with the collision count', () => {
     emitSummary('push', 0, 2);
     expect(erroredLine()).toBe(
-      '⚠︎ summary: 0 unmapped on push, 2 collisions (run nomad doctor to list)',
+      '⚠︎ summary: 0 unmapped on push, 2 collisions (run nomad doctor -v to list)',
     );
     expect(logSpy).not.toHaveBeenCalled();
   });
@@ -92,7 +92,7 @@ describe('emitSummary', () => {
   it('push with collisions parameter omitted defaults to zero', () => {
     emitSummary('push', 1);
     expect(erroredLine()).toBe(
-      '⚠︎ summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
+      '⚠︎ summary: 1 unmapped on push, 0 collisions (run nomad doctor -v to list)',
     );
     expect(logSpy).not.toHaveBeenCalled();
   });
@@ -116,7 +116,7 @@ describe('emitSummary', () => {
   it('pull with zero unmapped and two extras-skipped emits the extras-skipped WARN', () => {
     emitSummary('pull', 0, 0, 2);
     expect(erroredLine()).toBe(
-      '⚠︎ summary: 0 unmapped on pull, 2 extras skipped (run nomad doctor to list)',
+      '⚠︎ summary: 0 unmapped on pull, 2 extras skipped (run nomad doctor -v to list)',
     );
     expect(logSpy).not.toHaveBeenCalled();
   });
@@ -124,7 +124,7 @@ describe('emitSummary', () => {
   it('pull with one unmapped and two extras-skipped emits both counts in the WARN', () => {
     emitSummary('pull', 1, 0, 2);
     expect(erroredLine()).toBe(
-      '⚠︎ summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor to list)',
+      '⚠︎ summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor -v to list)',
     );
     expect(logSpy).not.toHaveBeenCalled();
   });
@@ -132,7 +132,7 @@ describe('emitSummary', () => {
   it('push with one extras-skipped folds into the existing collisions WARN line', () => {
     emitSummary('push', 0, 0, 1);
     expect(erroredLine()).toBe(
-      '⚠︎ summary: 0 unmapped on push, 0 collisions, 1 extras skipped (run nomad doctor to list)',
+      '⚠︎ summary: 0 unmapped on push, 0 collisions, 1 extras skipped (run nomad doctor -v to list)',
     );
     expect(logSpy).not.toHaveBeenCalled();
   });
@@ -167,14 +167,14 @@ describe('summaryText', () => {
 
   it('pull with unmapped returns the unmapped-on-pull text and clean=false', () => {
     expect(summaryText('pull', 3)).toEqual({
-      text: 'summary: 3 unmapped on pull (run nomad doctor to list)',
+      text: 'summary: 3 unmapped on pull (run nomad doctor -v to list)',
       clean: false,
     });
   });
 
   it('pull with extras-skipped folds the count into the warning text', () => {
     expect(summaryText('pull', 1, 0, 2)).toEqual({
-      text: 'summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor to list)',
+      text: 'summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor -v to list)',
       clean: false,
     });
   });
@@ -182,7 +182,7 @@ describe('summaryText', () => {
   it('diff clean and diff with unmapped phrase the same as pull but with the diff verb', () => {
     expect(summaryText('diff', 0)).toEqual({ text: 'summary: clean', clean: true });
     expect(summaryText('diff', 2)).toEqual({
-      text: 'summary: 2 unmapped on diff (run nomad doctor to list)',
+      text: 'summary: 2 unmapped on diff (run nomad doctor -v to list)',
       clean: false,
     });
   });
@@ -193,14 +193,14 @@ describe('summaryText', () => {
 
   it('push with collisions includes the collision count', () => {
     expect(summaryText('push', 1, 0)).toEqual({
-      text: 'summary: 1 unmapped on push, 0 collisions (run nomad doctor to list)',
+      text: 'summary: 1 unmapped on push, 0 collisions (run nomad doctor -v to list)',
       clean: false,
     });
   });
 
   it('push with collisions and extras-skipped includes both counts', () => {
     expect(summaryText('push', 0, 2, 1)).toEqual({
-      text: 'summary: 0 unmapped on push, 2 collisions, 1 extras skipped (run nomad doctor to list)',
+      text: 'summary: 0 unmapped on push, 2 collisions, 1 extras skipped (run nomad doctor -v to list)',
       clean: false,
     });
   });
@@ -210,7 +210,7 @@ describe('summaryText', () => {
   // report it as a non-clean WARN; push always passes 0 (phrasing unchanged).
   it('pull with only local-only present is non-clean and names the count + reconcile hint', () => {
     expect(summaryText('pull', 0, 0, 0, 2)).toEqual({
-      text: 'summary: 0 unmapped on pull (run nomad doctor to list), 2 local-only present (push to reconcile)',
+      text: 'summary: 0 unmapped on pull (run nomad doctor -v to list), 2 local-only present (push to reconcile)',
       clean: false,
     });
   });
@@ -221,14 +221,14 @@ describe('summaryText', () => {
 
   it('pull folds local-only alongside unmapped and extras-skipped', () => {
     expect(summaryText('pull', 1, 0, 2, 3)).toEqual({
-      text: 'summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor to list), 3 local-only present (push to reconcile)',
+      text: 'summary: 1 unmapped on pull, 2 extras skipped (run nomad doctor -v to list), 3 local-only present (push to reconcile)',
       clean: false,
     });
   });
 
   it('diff surfaces local-only the same way as pull', () => {
     expect(summaryText('diff', 0, 0, 0, 4)).toEqual({
-      text: 'summary: 0 unmapped on diff (run nomad doctor to list), 4 local-only present (push to reconcile)',
+      text: 'summary: 0 unmapped on diff (run nomad doctor -v to list), 4 local-only present (push to reconcile)',
       clean: false,
     });
   });
@@ -244,7 +244,7 @@ describe('summaryRow', () => {
   });
 
   it('renders a pull warning outcome as plain text', () => {
-    expect(summaryRow('pull', 3)).toBe('3 unmapped on pull (run nomad doctor to list)');
+    expect(summaryRow('pull', 3)).toBe('3 unmapped on pull (run nomad doctor -v to list)');
   });
 
   it('renders the push clean outcome as plain text', () => {
@@ -253,7 +253,7 @@ describe('summaryRow', () => {
 
   it('renders a push warning outcome (collisions + extras) as plain text', () => {
     expect(summaryRow('push', 1, 2, 3)).toBe(
-      '1 unmapped on push, 2 collisions, 3 extras skipped (run nomad doctor to list)',
+      '1 unmapped on push, 2 collisions, 3 extras skipped (run nomad doctor -v to list)',
     );
   });
 
