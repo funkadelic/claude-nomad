@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.69.10](https://github.com/funkadelic/claude-nomad/compare/v0.69.9...v0.69.10) (2026-11-20)
+
+
+### What's new
+
+* `nomad pull` no longer overwrites settings you added on one machine, such as a new `permissions.allow` rule in a list or a new plugin marketplace inside an existing setting. Pull leaves `settings.json` alone, and `nomad doctor` and `nomad push` tell you to run `nomad capture-settings`. Capture saves your addition to the repo without bringing back anything another machine removed.
+* When a scan turns up thousands of findings, `nomad push` now lists every one. Before, it stopped at "scan failed". The beta-flag header Claude Code writes into every session transcript no longer counts as a leaked key, and a failed scan now says why it failed.
+* If you use a gitleaks overlay (`.gitleaks.overlay.toml`), push now stops with an error when the overlay could hide a real secret or switch off a built-in rule. An overlay that worked in 0.69.9 may now be refused. The error names what to change, and the docs now show a corrected example overlay. `nomad doctor --check-shared` flags these overlays on every host, including hosts with no sessions to scan.
+* `nomad redact` finds every secret even when you use an overlay, and it no longer rewrites Claude Code's beta flags.
+* Setting and hook names that contain terminal control characters now print as a short hash, so they can't change how your terminal displays text.
+
+
+### Fixed
+
+* **capture-settings:** save new entries added under an existing setting ([#708](https://github.com/funkadelic/claude-nomad/issues/708)) ([27c856f](https://github.com/funkadelic/claude-nomad/commit/27c856f1f275b8a983b32b8e0948be47bc3b29d0))
+* **doctor:** flag an unsafe gitleaks overlay on hosts with no sessions to scan ([#713](https://github.com/funkadelic/claude-nomad/issues/713)) ([532e637](https://github.com/funkadelic/claude-nomad/commit/532e637c004e5a5c7cb625d70b6e520d3ece487d))
+* **doctor:** show the ignored gitleaks overlay notice once ([#716](https://github.com/funkadelic/claude-nomad/issues/716)) ([b4d6a7a](https://github.com/funkadelic/claude-nomad/commit/b4d6a7aa221d580fde60c8eb0e45cf8e80256a34))
+* **push:** stop a gitleaks overlay from hiding real secrets ([#710](https://github.com/funkadelic/claude-nomad/issues/710)) ([ec4962e](https://github.com/funkadelic/claude-nomad/commit/ec4962e0084c8961cef2e39f91fce5842ebc36dc))
+* **push:** stop a gitleaks overlay from replacing or switching off built-in rules ([#715](https://github.com/funkadelic/claude-nomad/issues/715)) ([7cdbfb8](https://github.com/funkadelic/claude-nomad/commit/7cdbfb8bcdefe97ee33ec03c4ca2a64568527430))
+* **redact:** stop a gitleaks overlay from hiding secrets from Redact ([#714](https://github.com/funkadelic/claude-nomad/issues/714)) ([0769ccc](https://github.com/funkadelic/claude-nomad/commit/0769ccc27e3eb75aae38e3a24767e3ce644abd5e))
+* **redact:** stop rewriting Claude Code beta flags when you use a gitleaks overlay ([#709](https://github.com/funkadelic/claude-nomad/issues/709)) ([38fad44](https://github.com/funkadelic/claude-nomad/commit/38fad4444dfd66320bbd659b7a9589c614202c70))
+* **settings:** catch new settings fields at any depth ([#718](https://github.com/funkadelic/claude-nomad/issues/718)) ([86c7de4](https://github.com/funkadelic/claude-nomad/commit/86c7de4977d9e4d5f97ca53ab44fa1441a2be1fa))
+* **settings:** stop pull overwriting items added to a settings list ([#719](https://github.com/funkadelic/claude-nomad/issues/719)) ([f59aace](https://github.com/funkadelic/claude-nomad/commit/f59aace47b9f6f05fadfb847ac935c36ff67823e))
+* **settings:** stop setting names from printing terminal control characters ([#720](https://github.com/funkadelic/claude-nomad/issues/720)) ([cfb9479](https://github.com/funkadelic/claude-nomad/commit/cfb94798c44df88125f4a08050bab55c7a26ab65))
+* show leak findings on large pushes instead of "scan failed" ([#707](https://github.com/funkadelic/claude-nomad/issues/707)) ([5509d85](https://github.com/funkadelic/claude-nomad/commit/5509d850143b52819fb915b52190f53362443b76))
+
+
+### Changed
+
+* add weekly check for removable overrides ([#697](https://github.com/funkadelic/claude-nomad/issues/697)) ([f1a6772](https://github.com/funkadelic/claude-nomad/commit/f1a6772d6828d1e0459f251c1d1ea0e81718a438))
+* auto-merge Dependabot PRs with the App token so release-please runs ([82dee39](https://github.com/funkadelic/claude-nomad/commit/82dee39d49fc0386a24074cf76e758c84347793f))
+* let auto-merged Dependabot updates reach the release PR ([#702](https://github.com/funkadelic/claude-nomad/issues/702)) ([82dee39](https://github.com/funkadelic/claude-nomad/commit/82dee39d49fc0386a24074cf76e758c84347793f))
+* **settings:** check each pull-guard entry once ([#711](https://github.com/funkadelic/claude-nomad/issues/711)) ([1fe0eb9](https://github.com/funkadelic/claude-nomad/commit/1fe0eb9f3e91a98eb0e3a8779f77b7376a53e064))
+* **settings:** partition guard entries in one pass and reuse asPlainObject ([1fe0eb9](https://github.com/funkadelic/claude-nomad/commit/1fe0eb9f3e91a98eb0e3a8779f77b7376a53e064))
+
+
+### Documentation
+
+* fix the example gitleaks overlay and list its checks ([#712](https://github.com/funkadelic/claude-nomad/issues/712)) ([093a7d3](https://github.com/funkadelic/claude-nomad/commit/093a7d37ab87891488c12b207790ee90cae56be6))
+
+
+### Dependencies
+
+* bump amannn/action-semantic-pull-request from 6.1.1 to 6.1.2 in the actions group ([#704](https://github.com/funkadelic/claude-nomad/issues/704)) ([ec5121d](https://github.com/funkadelic/claude-nomad/commit/ec5121dded10a5921436399e7cbc4081767dea1e))
+* bump astro from 7.4.2 to 7.4.12 in /docs-site ([#701](https://github.com/funkadelic/claude-nomad/issues/701)) ([4f036e5](https://github.com/funkadelic/claude-nomad/commit/4f036e5e8af2bd95acf81e663146f7094cd8854c))
+* bump the actions group across 1 directory with 3 updates ([#700](https://github.com/funkadelic/claude-nomad/issues/700)) ([d9774fc](https://github.com/funkadelic/claude-nomad/commit/d9774fc1ca9dc80b5e4d7880c897be5faa8e66b5))
+* bump the dev-dependencies group across 1 directory with 2 updates ([#705](https://github.com/funkadelic/claude-nomad/issues/705)) ([274fa74](https://github.com/funkadelic/claude-nomad/commit/274fa742f25d095411dcaa36685684452c038b41))
+* bump the dev-dependencies group with 4 updates ([#699](https://github.com/funkadelic/claude-nomad/issues/699)) ([b3315c5](https://github.com/funkadelic/claude-nomad/commit/b3315c5d9ba5b3de359d758799fcc8583824ec89))
+
 ## [0.69.9](https://github.com/funkadelic/claude-nomad/compare/v0.69.8...v0.69.9) (2026-11-04)
 
 
