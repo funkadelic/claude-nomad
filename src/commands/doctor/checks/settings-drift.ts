@@ -262,8 +262,9 @@ function droppedRow(
       ? "the next 'nomad pull' removes them"
       : `a pull removes them once ${candidates.join(', ')} ${verb} captured or deleted`;
   const listNote = lists
-    ? '; for a list item, put the shared list plus the item there, since a host list replaces ' +
-      'the shared one and this machine then stops getting shared edits to that list'
+    ? '; for a list item, put the whole list the repo gives this machine now plus the item there, ' +
+      'since a host list replaces the shared one; if the list came only from the shared file, ' +
+      'this machine then stops getting shared edits to it'
     : '';
   const keep = nested
     ? `add them to hosts/${HOST}.json${listNote}`
