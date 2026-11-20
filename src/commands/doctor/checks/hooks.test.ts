@@ -339,6 +339,13 @@ describe('reportHooksTargetCheck', () => {
     expect(out).toContain('malformed JSON');
   });
 
+  it('escapes a bidi character quoted in the malformed-JSON message', async () => {
+    writeFileSync(join(env.testHome, '.claude', 'settings.json'), '{"a": x\u202e}\n');
+    const { out } = await runCheck();
+    expect(out).toContain(String.raw`x\u202e}`);
+    expect(out).not.toContain('\u202e');
+  });
+
   it('emits OK (not FAIL) when hooks block is null', async () => {
     // Kills the L166 ConditionalExpression mutation: with `hooks === null` the
     // null-guard in reportHooksTargetCheck must fire the early-return OK path.

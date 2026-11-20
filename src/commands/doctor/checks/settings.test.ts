@@ -167,23 +167,36 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     expect(joinedLog(env.logSpy)).toContain('unbased keys 1 credential or host-local key(s)');
   });
 
+  const writeDriftWithCandidate = (name: string): void => {
+    process.env.NOMAD_HOST = 'nonexistent-host';
+    writeFileSync(join(env.testHome, 'claude-nomad', 'hosts', name), '{}\n');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ statusLine: { type: 'command' } }) + '\n',
+    );
+  };
+
   // Windows filenames cannot hold control characters.
   it.skipIf(process.platform === 'win32')(
-    'escapes control and bidi characters in a candidate host filename',
+    'escapes a control character in a candidate host filename',
     async () => {
-      process.env.NOMAD_HOST = 'nonexistent-host';
-      writeFileSync(join(env.testHome, 'claude-nomad', 'hosts', 'a\u001b[2J\u202eb.json'), '{}\n');
-      writeFileSync(
-        join(env.testHome, '.claude', 'settings.json'),
-        JSON.stringify({ statusLine: { type: 'command' } }) + '\n',
-      );
+      writeDriftWithCandidate('a\u001b[2Jb.json');
       const { cmdDoctor } = await import('../doctor.ts');
       cmdDoctor({ verbose: true });
       const out = joinedLog(env.logSpy);
-      expect(out).toContain('candidates: a\\u001b[2J\\u202eb.json');
+      expect(out).toContain('candidates: a\\u001b[2Jb.json');
       expect(out).not.toContain('\u001b[2J');
     },
   );
+
+  it('escapes a bidi character in a candidate host filename', async () => {
+    writeDriftWithCandidate('a\u202eb.json');
+    const { cmdDoctor } = await import('../doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('candidates: a\\u202eb.json');
+    expect(out).not.toContain('\u202e');
+  });
 
   it('FAILs without a candidates line when hostFile missing, settings drift, AND hosts/ dir absent', async () => {
     process.env.NOMAD_HOST = 'nonexistent-host';

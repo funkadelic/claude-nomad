@@ -230,9 +230,10 @@ export function hasUnsafeChar(text: string): boolean {
 }
 
 /**
- * `text` with each unsafe character, newline included, written as its JSON
- * `\uXXXX` escape, so JSON text stays valid and shows what the file holds.
- * @param text - JSON text bound for the terminal.
+ * `text` with each unsafe character, newline included, written as a `\uXXXX`
+ * escape. JSON text stays valid; in a raw path or message a literal `\uXXXX`
+ * reads the same as an escaped character.
+ * @param text - JSON text, a path or a message bound for the terminal.
  */
 export function escapeUnsafe(text: string): string {
   const escape = (u: string): string =>

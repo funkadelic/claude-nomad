@@ -83,6 +83,16 @@ describe('reportHookScopeCheck', () => {
     rmSync(env.testHome, { recursive: true, force: true });
   });
 
+  it('escapes a bidi character in the hook filename', async () => {
+    buildHookTree(env.testHome, {
+      rootType: 'module',
+      files: { 'f\u202eoo.js': 'const y = require("y");\nmodule.exports = y;\n' },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain(String.raw`hooks/f\u202eoo.js:`);
+    expect(out).not.toContain('\u202e');
+  });
+
   it('warns on CJS-as-ESM: a require() hook under a realpath ancestor type:module', async () => {
     buildHookTree(env.testHome, {
       rootType: 'module',
