@@ -1236,5 +1236,36 @@ describe('cmdCaptureSettings', () => {
       await capture(false);
       expect(read(env.basePath)).toEqual({ mk: { a: 1, fresh: 3 } });
     });
+
+    it('after a refused pull on an old record, still saves an entry edited since the write', async () => {
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1, gone: 2 } }) + '\n');
+      writeFileSync(env.settingsPath, '{}\n');
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      vi.doMock('../../sync/settings-upstream.ts', () => ({
+        preRebaseSettingsMerge: () => ({ mk: { a: 1, gone: 2 } }),
+      }));
+      const { regenerateSettings } = await import('../../sync/links.ts');
+      regenerateSettings('20261101-000001');
+      // A record from before entry ids were kept.
+      const { settingsWrittenPath } = await import('../../core/config.ts');
+      const recordPath = settingsWrittenPath();
+      const record = read(recordPath);
+      delete record.entryIds;
+      writeFileSync(recordPath, JSON.stringify(record));
+
+      writeFileSync(env.settingsPath, JSON.stringify({ mk: { a: 1, gone: 9, fresh: 3 } }) + '\n');
+      writeFileSync(env.basePath, JSON.stringify({ mk: { a: 1 } }) + '\n');
+      const heads = { pre: 'p', post: 'q' };
+      expect(regenerateSettings('20261101-000002', { prePostHeads: heads }).blocked).toEqual([
+        'mk.fresh',
+        'mk.gone',
+      ]);
+      vi.doUnmock('../../sync/settings-upstream.ts');
+      await capture(false);
+      expect(read(env.basePath)).toEqual({ mk: { a: 1, fresh: 3, gone: 9 } });
+      expect(read(env.settingsPath)).toEqual({ mk: { a: 1, fresh: 3, gone: 9 } });
+    });
   });
 });
