@@ -13,7 +13,7 @@ import { writeJsonAtomic } from '../core/utils.fs.ts';
 import { warn } from '../core/utils.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { hookEntryContents } from './hooks-entries.ts';
-import { nestedEntries } from './settings-classify.ts';
+import { holdsEntry, nestedEntries } from './settings-entries.ts';
 import { nestedEntryId, settingValueHash, type WrittenSettings } from './settings-guard.ts';
 
 /**
@@ -69,8 +69,8 @@ export function readWrittenHookIds(): ReadonlySet<string> {
 }
 
 /**
- * Hashes of each nested settings entry (path and value) the last write
- * produced; empty for no record or a record written before these were kept.
+ * Hashes of each nested entry and array member (path and value) the last write
+ * produced, plus any a refused pull backfilled; empty for no record or an older one.
  */
 export function readWrittenEntryIds(): ReadonlySet<string> {
   return stringSet(readRecord()?.entryIds);
@@ -80,8 +80,8 @@ export function readWrittenEntryIds(): ReadonlySet<string> {
  * Record a hash of each top-level value of `written` (the object handed to
  * `writeJsonAtomic` for settings.json), stripped of gsd hook entries first
  * so a graft-restored `hooks` key never enters the record, plus a hash of
- * each hook entry's full content and of each nested object entry (path and
- * value) outside `hooks` and credential keys. Drops any previous
+ * each hook entry's full content and of each nested entry and array member
+ * (path and value) outside `hooks` and credential keys. Drops any previous
  * record before writing, so a failed write leaves none rather than a stale one.
  * Never throws: degrades to a warning on failure, since settings.json is
  * already written.
@@ -98,9 +98,38 @@ export function recordWrittenSettingsKeys(written: Record<string, unknown>): voi
       Object.entries(stripGsdHookEntries(written)).map(([k, v]) => [k, settingValueHash(v)]),
     );
     const hookIds = [...hookEntryContents(written)].map(settingValueHash);
-    const entryIds = nestedEntries(written).map((e) => nestedEntryId(e.path, e.value));
+    const entryIds = nestedEntries(written).map((e) =>
+      nestedEntryId(e.path, e.value, e.element === true),
+    );
     writeJsonAtomic(path, { kind: SETTINGS_WRITTEN_KIND, keys, hookIds, entryIds });
   } catch (err) {
     warn(`could not record the written settings keys: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * After a refused pull, add to the existing record the ids of pre-pull merge
+ * entries the live file still holds, so a capture treats them as removed when
+ * the repo dropped them. No record, or nothing new, writes nothing. Never throws.
+ * @param preMerged - The merge at the pre-pull HEAD.
+ * @param live - The parsed live settings.json.
+ */
+export function backfillWrittenEntryIds(
+  preMerged: Record<string, unknown>,
+  live: Record<string, unknown>,
+): void {
+  try {
+    const record = readRecord();
+    if (record === null) return;
+    const ids = new Set(stringSet(record.entryIds));
+    const before = ids.size;
+    for (const e of nestedEntries(preMerged)) {
+      if (holdsEntry(live, e)) ids.add(nestedEntryId(e.path, e.value, e.element === true));
+    }
+    if (ids.size === before) return;
+    const entryIds = [...ids];
+    writeJsonAtomic(settingsWrittenPath(), { kind: SETTINGS_WRITTEN_KIND, ...record, entryIds });
+  } catch (err) {
+    warn(`could not update the written settings keys: ${(err as Error).message}`);
   }
 }

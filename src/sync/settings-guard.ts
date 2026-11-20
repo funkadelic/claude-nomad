@@ -10,12 +10,10 @@ import {
   classifySettingsDrift,
   deepEqual,
   describeSettings,
-  liveOnlyNestedEntries,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
-  valueAtPath,
-  type NestedEntry,
 } from './settings-classify.ts';
+import { holdsEntry, liveOnlyNestedEntries, type NestedEntry } from './settings-entries.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 import { pruneBlockedEntries } from './settings-prune.ts';
 import {
@@ -38,14 +36,20 @@ export function settingValueHash(value: unknown): string {
 }
 
 /**
- * Id of one nested settings entry: the hash of its full path and value (node
- * launcher paths normalized, as the write-time and live sides both compare), so
- * a live value edited since the write never matches.
- * @param path - The entry's key path from the top level.
- * @param value - The entry's value.
+ * Id of one nested entry: the hash of its path and value (node launcher paths
+ * normalized), so a live value edited since the write never matches.
+ * @param path - The entry's key path, or the array's path for an element.
+ * @param value - The entry's value, or the array member.
+ * @param element - True for an array member.
  */
-export function nestedEntryId(path: readonly string[], value: unknown): string {
-  return settingValueHash([path, normalizeNodePathsDeep(value)]);
+export function nestedEntryId(path: readonly string[], value: unknown, element = false): string {
+  const id: unknown[] = [path, normalizeNodePathsDeep(value)];
+  return settingValueHash(element ? [...id, 'element'] : id);
+}
+
+/** `nestedEntryId` of an entry. */
+function entryId(e: NestedEntry): string {
+  return nestedEntryId(e.path, e.value, e.element === true);
 }
 
 /**
@@ -160,16 +164,11 @@ export function splitNestedEntries(
 ): { blocked: NestedEntry[]; removed: NestedEntry[] } {
   // Entry ids keep an upstream removal visible after a local edit to the same key.
   const removedUpstream = (e: NestedEntry): boolean =>
-    writtenEntryIds.has(nestedEntryId(e.path, e.value)) ||
+    writtenEntryIds.has(entryId(e)) ||
     stillAsWritten(written, existing, e.key) ||
-    deepEqual(
-      normalizeNodePathsDeep(valueAtPath(preMerged, e.path)),
-      normalizeNodePathsDeep(e.value),
-    );
+    holdsEntry(preMerged, e);
   const split = partition(liveOnlyNestedEntries(merged, existing), removedUpstream);
-  return pruneBlockedEntries(split, (path, value) =>
-    writtenEntryIds.has(nestedEntryId(path, value)),
-  );
+  return pruneBlockedEntries(split, (e) => writtenEntryIds.has(entryId(e)));
 }
 
 /**
@@ -202,7 +201,7 @@ function hookLabels(entries: HookEntry[]): string[] {
 
 /**
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
- * named), then one `key.sub` label per blocked live-only entry inside an object
+ * named), then one label per blocked live-only entry or array member inside a
  * key the merge also carries, then one label per blocked live-only hook entry
  * under a `hooks` key the merge also carries. A key `preMerged` or `written`
  * holds with the live value unchanged was removed upstream, so it is not blocked;
@@ -214,7 +213,7 @@ function hookLabels(entries: HookEntry[]): string[] {
  *   this host, or `null` for no record; see `stillAsWritten`.
  * @param writtenHookIds - Hashes of each hook entry's content from that write.
  * @param writtenEntryIds - Hashes of each nested entry from that write.
- * @returns The blocked keys, nested `key.sub` labels, then hook-entry labels,
+ * @returns The blocked keys, nested-entry labels, then hook-entry labels,
  *   sorted within each group.
  */
 export function blockedSettingsKeys(
@@ -236,8 +235,8 @@ export function blockedSettingsKeys(
 
 /**
  * Promotable live-only keys a pull deletes because the repo dropped them (the
- * complement of `blockedSettingsKeys`), then one `key.sub` label per nested
- * entry and one label per hook entry it deletes for the same reason.
+ * complement of `blockedSettingsKeys`), then one label per nested entry or
+ * array member and one label per hook entry it deletes for the same reason.
  * Credential keys are left to `credentialOverwriteCount`.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
@@ -245,7 +244,7 @@ export function blockedSettingsKeys(
  * @param written - The written-settings record, or `null`.
  * @param writtenHookIds - Hashes of each hook entry's content from that write.
  * @param writtenEntryIds - Hashes of each nested entry from that write.
- * @returns The removed keys, nested `key.sub` labels, then hook-entry labels,
+ * @returns The removed keys, nested-entry labels, then hook-entry labels,
  *   sorted within each group.
  */
 export function removedSettingsKeys(

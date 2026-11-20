@@ -483,7 +483,7 @@ describe('reportSettingsDriftCheck', () => {
     );
     const { items } = await runCheck();
     const row = items.find((i) => i.includes('nomad capture-settings')) ?? '';
-    expect(row).toContain('1 local-only key(s)');
+    expect(row).toContain('1 local-only setting(s)');
     expect(row).toContain('adding --host for host-specific values');
     expect(row).toContain('mk.b');
     expect(row).not.toContain('theme');
@@ -529,6 +529,39 @@ describe('reportSettingsDriftCheck', () => {
     expect(infoRow).not.toContain('mk.gone');
   });
 
+  it('lists a new array member as a capture candidate, not a pull-overwrites change', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(
+      join(repo, 'shared', 'settings.base.json'),
+      JSON.stringify({ permissions: { allow: ['a'] } }),
+    );
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ permissions: { allow: ['a', 'b'] } }),
+    );
+    const { items } = await runCheck();
+    const infoRow = items.find((i) => i.includes('nomad capture-settings')) ?? '';
+    expect(infoRow).toContain('permissions.allow["b"]');
+    expect(items.some((i) => i.includes('diverged'))).toBe(false);
+  });
+
+  it('says to copy the whole list when a dropped entry is a list item', async () => {
+    const repo = join(env.testHome, 'claude-nomad');
+    writeFileSync(join(repo, 'shared', 'settings.base.json'), JSON.stringify({ list: ['a'] }));
+    writeFileSync(join(repo, 'hosts', 'test-host.json'), '{}');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ list: ['a', 'b'] }),
+    );
+    const { recordWrittenSettingsKeys } = await import('../../../sync/settings-written.ts');
+    recordWrittenSettingsKeys({ list: ['a', 'b'] });
+    const { items } = await runCheck();
+    const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
+    expect(warnRow).toContain('list["b"]');
+    expect(warnRow).toContain('the whole list the repo gives this machine now plus the item');
+  });
+
   it('advises a host-file edit for a dropped nested entry and no put-back from capture', async () => {
     plantDropped({ model: 'sonnet', mk: { b: 2 }, theme: 'dark' }, ['mk']);
     const repo = join(env.testHome, 'claude-nomad');
@@ -541,6 +574,7 @@ describe('reportSettingsDriftCheck', () => {
     expect(warnRow).toContain('mk.b');
     expect(warnRow).toContain('add them to hosts/test-host.json');
     expect(warnRow).not.toContain('capture-settings --host');
+    expect(warnRow).not.toContain('plus the item');
     const infoRow = items.find((i) => i.includes('nomad capture-settings')) ?? '';
     expect(infoRow).toContain('theme');
     expect(infoRow).not.toContain('puts back');
