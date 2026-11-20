@@ -66,7 +66,7 @@ export function nestedCaptureEntries(
 /** Why a base capture cannot save `e`, or `null` when it can. */
 function baseClash(sources: NestedSources, e: NestedEntry): string | null {
   if (e.element === true) {
-    // With the host file silent here, the merge's array is the base's own.
+    // When the host file does not set this path, the merge's array is the base's.
     if (valueAtPath(sources.overrides, e.path) === undefined) return null;
     const label = e.path.join('.');
     return (

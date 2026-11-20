@@ -247,10 +247,10 @@ When the repo already has a setting that holds named entries, such as `extraKnow
 this machine adds another entry inside it, `nomad pull` stops the same way and names it as
 `extraKnownMarketplaces.<name>`. A new field counts at any depth, as long as every level above it is
 an object (for example `extraKnownMarketplaces.<name>.source.ref`). A new item in a list the repo
-also has, such as a rule added to `permissions.allow`, counts too and is named like
-`permissions.allow["Bash(ls:*)"]`; an item counts as new when the repo's list has no identical one,
-so an edited item reads as a new one, while a reordered list or a removed item does not stop the
-pull. `nomad capture-settings` adds it to the repo's copy of that setting (with `--host`, to this
+also has counts too, such as a rule added to `permissions.allow`, and pull names it like
+`permissions.allow["Bash(ls:*)"]`. An item is new when the repo's list has no identical one, so pull
+treats an edited item as a new one. Reordering a list or removing an item does not stop the pull.
+`nomad capture-settings` adds it to the repo's copy of that setting (with `--host`, to this
 machine's host file) and never changes an entry the repo already has. When only this machine's host
 file has that setting, capture saves the entry only with `--host`. An entry another machine removed
 from the repo is removed here too and named by the pull, or by capture when it updates

@@ -559,7 +559,7 @@ describe('reportSettingsDriftCheck', () => {
     const { items } = await runCheck();
     const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
     expect(warnRow).toContain('list["b"]');
-    expect(warnRow).toContain('copying the whole list');
+    expect(warnRow).toContain('copy the whole list');
   });
 
   it('advises a host-file edit for a dropped nested entry and no put-back from capture', async () => {
