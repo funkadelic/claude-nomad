@@ -33,11 +33,11 @@ top of `shared/settings.base.json`, with these rules:
 
 Almost always: the project is not in `path-map.json`. Only projects listed there sync; everything
 else is left alone in both directions, and push/pull fold those into a single info row like
-`ℹ︎ 4 not in path-map`. Run `nomad doctor` to list the unmapped projects by name, then add the
+`ℹ︎ 4 not in path-map`. Run `nomad doctor -v` to list the unmapped projects by name, then add the
 project to `path-map.json` with its absolute path on each host (see
 [How it works](/claude-nomad/how-it-works/) for the format), push, and pull on the other host.
 
-## `nomad doctor` lists "unmapped local projects" I don't recognize. Are they broken?
+## `nomad doctor -v` lists "unmapped local projects" I don't recognize. Are they broken?
 
 No, they are normal. In Claude Code, a **"project" is just any directory you have launched
 `claude` from**. The first time you run a session in a folder, Claude Code creates a matching

@@ -138,7 +138,7 @@ Summary
 ```
 
 The `ℹ︎ 4 not in path-map` row is the collapse: rather than printing one line per project that this
-host does not sync, push and pull show a single count and point you at `nomad doctor`, which
+host does not sync, push and pull show a single count and point you at `nomad doctor -v`, which
 lists those projects by name if you want the detail. The `Leak scan` section is the secret check
 that runs before anything is published: `✓ no leaks` when the staged transcripts are clean. If a
 secret IS found, that row turns into `✗ gitleaks detected secrets in N session transcript(s)` and
@@ -178,7 +178,7 @@ anything is staged) suppresses the tree entirely, so you do not see "summary: cl
 an error. A later leak-scan finding is different: by then the tree has already been built, so it
 still renders in full with a fail-glyph `Leak scan` row and the recovery block below it. Projects
 with no entry in `path-map.json` for this host count as unmapped and fold into the collapsed
-info-count row; the hint points at `nomad doctor`, which lists them by logical name.
+info-count row; the hint points at `nomad doctor -v`, which lists their directory names.
 
 Settings drift comes in two directions. When your live `~/.claude/settings.json` is missing keys
 that the repo merge would write, you are behind: `nomad pull` will restore them. When your live
