@@ -167,6 +167,20 @@ describe('cmdDoctor host-override-missing diagnostic', () => {
     expect(joinedLog(env.logSpy)).toContain('unbased keys 1 credential or host-local key(s)');
   });
 
+  it('escapes control and bidi characters in a candidate host filename', async () => {
+    process.env.NOMAD_HOST = 'nonexistent-host';
+    writeFileSync(join(env.testHome, 'claude-nomad', 'hosts', 'a\u001b[2J\u202eb.json'), '{}\n');
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ statusLine: { type: 'command' } }) + '\n',
+    );
+    const { cmdDoctor } = await import('../doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toContain('candidates: a\\u001b[2J\\u202eb.json');
+    expect(out).not.toContain('\u001b[2J');
+  });
+
   it('FAILs without a candidates line when hostFile missing, settings drift, AND hosts/ dir absent', async () => {
     process.env.NOMAD_HOST = 'nonexistent-host';
     // Remove the hosts/ dir so existsSync(hostsDir) takes its false path: the

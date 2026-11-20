@@ -218,6 +218,8 @@ export function partitionByCaptureExclusion(keys: string[]): {
 /** A control, format (bidi, zero-width) or line-separator character. */
 const UNSAFE_CHAR_RE = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
 const UNSAFE_CHARS_RE = new RegExp(UNSAFE_CHAR_RE.source, 'gu');
+/** A whole name in the `(key <hash>)` form, so a key spelled that way is hashed too. */
+const HASHED_KEY_RE = /^\(key [0-9a-f]{8}\)$/;
 
 /**
  * Whether `text` holds a character that could rewrite or hide terminal output.
@@ -239,11 +241,12 @@ export function escapeUnsafe(text: string): string {
 
 /**
  * `key` for the terminal: as is, or `(key <8 hex of its sha256>)` when it holds
- * a character that could rewrite or hide terminal output. A label is left as is.
+ * a character that could rewrite or hide terminal output, or reads like a hashed
+ * name itself. A label is left as is. No length cap: a key prints whole, as typed.
  * @param key - A settings key name or an already-built label.
  */
 export function keyLabel(key: string): string {
-  if (!hasUnsafeChar(key)) return key;
+  if (!hasUnsafeChar(key) && !HASHED_KEY_RE.test(key)) return key;
   return `(key ${createHash('sha256').update(key).digest('hex').slice(0, 8)})`;
 }
 

@@ -12,7 +12,12 @@ import {
   warnGlyph,
   yellow,
 } from '../../../render/color.ts';
-import { keyLabel, keyList, partitionByCaptureExclusion } from '../../../sync/settings-classify.ts';
+import {
+  escapeUnsafe,
+  keyLabel,
+  keyList,
+  partitionByCaptureExclusion,
+} from '../../../sync/settings-classify.ts';
 import { claudeHome, HOST, KNOWN_SETTINGS_KEYS, repoHome } from '../../../core/config.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
 
@@ -89,7 +94,11 @@ export function reportHostOverrides(
     const hostsDir = join(repo, 'hosts');
     if (existsSync(hostsDir)) {
       const cands = readdirSync(hostsDir).filter((f) => f.endsWith('.json'));
-      if (cands.length > 0) addItem(section, `${dim(infoGlyph)} candidates: ${keyList(cands)}`);
+      if (cands.length > 0)
+        addItem(
+          section,
+          `${dim(infoGlyph)} candidates: ${cands.map((f) => escapeUnsafe(JSON.stringify(f).slice(1, -1))).join(', ')}`,
+        );
     }
     process.exitCode = 1;
   } else {

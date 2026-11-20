@@ -675,6 +675,13 @@ describe('keyLabel', () => {
     expect(keyLabel('a\u202eb')).not.toBe(keyLabel('b\u202ea'));
   });
 
+  it('hashes a key spelled like a hashed name, so that form always means hashed', () => {
+    const label = keyLabel('(key 0123abcd)');
+    expect(label).toMatch(/^\(key [0-9a-f]{8}\)$/);
+    expect(label).not.toBe('(key 0123abcd)');
+    expect(keyLabel('mk.(key 0123abcd)')).toBe('mk.(key 0123abcd)');
+  });
+
   it('screens the names describeSettings prints', () => {
     expect(describeSettings(['\u001b[2J']).phrase).toMatch(/^1 setting \(\(key [0-9a-f]{8}\)\)$/);
   });
