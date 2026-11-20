@@ -103,6 +103,15 @@ describe('reportHooksTargetCheck', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('escapes a control character in a missing target path', async () => {
+    writeSettings(env.testHome, {
+      hooks: { PostToolUse: [{ type: 'command', command: `~/.claude/hooks/m\u001b[2J.sh` }] },
+    });
+    const { out } = await runCheck();
+    expect(out).toContain('m\\u001b[2J.sh (run nomad pull)');
+    expect(out).not.toContain('\u001b[2J');
+  });
+
   it('FAILs when ~/.claude target is missing (tilde prefix)', async () => {
     writeSettings(env.testHome, {
       hooks: {
