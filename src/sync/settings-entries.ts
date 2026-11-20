@@ -181,5 +181,5 @@ export function withoutNestedEntries(
   settings: Record<string, unknown>,
   entries: NestedEntry[],
 ): Record<string, unknown> {
-  return entries.reduce(withoutEntry, settings);
+  return entries.reduce((acc, e) => withoutEntry(acc, e), settings);
 }
