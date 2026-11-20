@@ -59,7 +59,21 @@ export function holdsEntry(obj: Record<string, unknown>, e: NestedEntry): boolea
 }
 
 /** Up to 200 characters with no control, format (bidi, zero-width) or line-separator characters. */
-const READABLE_MEMBER_RE = /^[^\p{Cc}\p{Cf}\u2028\u2029]{0,200}$/u;
+const READABLE_RE = /^[^\p{Cc}\p{Cf}\u2028\u2029]{0,200}$/u;
+
+/** The first 8 hex digits of the sha256 of `text`. */
+function hashPrefix(text: string): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, 8);
+}
+
+/**
+ * `path` joined with dots for the terminal, each unreadable key shown as
+ * `(key <hash>)` so no control or bidi character in a key name is printed.
+ * @param path - Key segments from the top level down.
+ */
+export function pathLabel(path: readonly string[]): string {
+  return path.map((k) => (READABLE_RE.test(k) ? k : `(key ${hashPrefix(k)})`)).join('.');
+}
 
 /** JSON with object keys sorted, so key order never changes a hash. */
 function canonicalJson(value: unknown): string {
@@ -74,7 +88,7 @@ function canonicalJson(value: unknown): string {
 /**
  * The entry for `value` as member `position` (1-based) of the array at `path`.
  * The label shows a readable member in full, else its position and a hash
- * prefix, so no long or control-character member reaches the terminal (key names are not screened).
+ * prefix, so no long or control-character member reaches the terminal.
  * @param path - The array's key path.
  * @param value - The member.
  * @param position - The member's 1-based position in that array.
@@ -82,11 +96,10 @@ function canonicalJson(value: unknown): string {
 export function elementEntry(path: string[], value: unknown, position: number): NestedEntry {
   const json = JSON.stringify(value);
   const text = typeof value === 'string' ? value : json;
-  const hash = createHash('sha256').update(canonicalJson(normalizeNodePathsDeep(value)));
-  const shown = READABLE_MEMBER_RE.test(text)
+  const shown = READABLE_RE.test(text)
     ? json
-    : `item ${position}, ${hash.digest('hex').slice(0, 8)}`;
-  return { path, key: path[0], label: `${path.join('.')}[${shown}]`, value, element: true };
+    : `item ${position}, ${hashPrefix(canonicalJson(normalizeNodePathsDeep(value)))}`;
+  return { path, key: path[0], label: `${pathLabel(path)}[${shown}]`, value, element: true };
 }
 
 /** Push one element entry per distinct member of `arr`, the array at `path`. */
@@ -104,7 +117,7 @@ function collectEntries(obj: Record<string, unknown>, path: string[], out: Neste
   for (const [sub, value] of Object.entries(obj)) {
     if (isProtoPollutionKey(sub)) continue;
     const full = [...path, sub];
-    out.push({ path: full, key: full[0], label: full.join('.'), value });
+    out.push({ path: full, key: full[0], label: pathLabel(full), value });
     const child = asPlainObject(value);
     if (child !== null) collectEntries(child, full, out);
     else if (Array.isArray(value)) collectElements(full, value, out);

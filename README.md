@@ -250,11 +250,12 @@ an object (for example `extraKnownMarketplaces.<name>.source.ref`). A new item i
 also has counts too, such as a rule added to `permissions.allow`, and pull names it like
 `permissions.allow["Bash(ls:*)"]`. An item longer than 200 characters, or one holding control or
 invisible characters (such as text-direction marks or line separators), is named by its position and
-a short hash instead, such as `permissions.allow[item 4, a48bcc82]`. An item is new when the repo's
-list has no identical one, so pull treats an edited item as a new one. Reordering a list or removing
-an item does not stop the pull. `nomad capture-settings` adds it to the repo's copy of that setting
-(with `--host`, to this machine's host file) and never changes an entry the repo already has. When
-only this machine's host file has that setting, capture saves the entry only with `--host`. An entry
+a short hash instead, such as `permissions.allow[item 4, a48bcc82]`. A key name holding such
+characters is shown as a hash too, such as `(key 1f3a9c2e)`. An item is new when the repo's list has
+no identical one, so pull treats an edited item as a new one. Reordering a list or removing an item
+does not stop the pull. `nomad capture-settings` adds it to the repo's copy of that setting (with
+`--host`, to this machine's host file) and never changes an entry the repo already has. When only
+this machine's host file has that setting, capture saves the entry only with `--host`. An entry
 another machine removed from the repo is removed here too and named by the pull, or by capture when
 it updates `settings.json`.
 

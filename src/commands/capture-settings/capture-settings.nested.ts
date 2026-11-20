@@ -1,7 +1,7 @@
 import { HOST } from '../../core/config.ts';
 import { asPlainObject } from '../../sync/hooks-filter.ts';
 import { normalizeNodePathsDeep } from '../../sync/settings-classify.ts';
-import { valueAtPath, type NestedEntry } from '../../sync/settings-entries.ts';
+import { pathLabel, valueAtPath, type NestedEntry } from '../../sync/settings-entries.ts';
 import { blockedNestedEntries, type WrittenSettings } from '../../sync/settings-guard.ts';
 import { warn } from '../../core/utils.ts';
 
@@ -51,7 +51,7 @@ export function nestedCaptureEntries(
     const problem = useHost ? null : baseClash(sources, e);
     if (problem === null) kept.push(e);
     else failing.add(problem);
-    if (useHost && shadowsBase(sources, e)) shadowed.add(e.path.join('.'));
+    if (useHost && shadowsBase(sources, e)) shadowed.add(pathLabel(e.path));
   }
   for (const message of failing) warn(message);
   for (const label of shadowed) {
@@ -68,7 +68,7 @@ function baseClash(sources: NestedSources, e: NestedEntry): string | null {
   if (e.element === true) {
     // When the host file does not set this path, the merge's array is the base's.
     if (valueAtPath(sources.overrides, e.path) === undefined) return null;
-    const label = e.path.join('.');
+    const label = pathLabel(e.path);
     return (
       `not saving new ${label} entries to shared/settings.base.json: hosts/${HOST}.json sets ` +
       `${label} itself, so the shared list never reaches this host; run ` +
@@ -86,7 +86,7 @@ function shadowsBase(sources: NestedSources, e: NestedEntry): boolean {
 
 /** The warning for new entries under `prefix`, the first path the base does not hold as an object. */
 function clashWarning(base: Record<string, unknown>, prefix: string[]): string {
-  const label = prefix.join('.');
+  const label = pathLabel(prefix);
   const why =
     valueAtPath(base, prefix) === undefined
       ? `only hosts/${HOST}.json has ${label}, so saving would add it for every host`

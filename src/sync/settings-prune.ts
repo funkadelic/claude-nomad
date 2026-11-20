@@ -1,6 +1,6 @@
 import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { asPlainObject } from './hooks-filter.ts';
-import { elementEntry, sameValue, type NestedEntry } from './settings-entries.ts';
+import { elementEntry, pathLabel, sameValue, type NestedEntry } from './settings-entries.ts';
 
 /** Whether the last settings write produced this entry. */
 type WasWritten = (e: NestedEntry) => boolean;
@@ -55,7 +55,7 @@ function pruneWritten(
   for (const [sub, value] of Object.entries(obj)) {
     if (isProtoPollutionKey(sub)) continue;
     const full = [...path, sub];
-    const e: NestedEntry = { path: full, key: full[0], label: full.join('.'), value };
+    const e: NestedEntry = { path: full, key: full[0], label: pathLabel(full), value };
     if (wasWritten(e)) {
       removed.push(e);
       continue;

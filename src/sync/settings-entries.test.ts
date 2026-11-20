@@ -5,6 +5,7 @@ import {
   holdsEntry,
   liveOnlyNestedEntries,
   nestedEntries,
+  pathLabel,
   valueAtPath,
   withoutNestedEntries,
 } from './settings-entries.ts';
@@ -200,5 +201,28 @@ describe('elementEntry hash labels', () => {
     expect(hashOf({ b: long, a: 1, c: { z: 1, y: 2 } })).toBe(
       hashOf({ a: 1, c: { y: 2, z: 1 }, b: long }),
     );
+  });
+});
+
+describe('pathLabel', () => {
+  it('joins readable keys with dots, non-ASCII included', () => {
+    expect(pathLabel(['mk', 'café', 'ref'])).toBe('mk.café.ref');
+  });
+
+  it('names a key holding an escape or bidi character by a hash, never its text', () => {
+    const label = pathLabel(['mk', '\u001b[2Jx', 'a\u202eb', 'ok']);
+    expect(label).toMatch(/^mk\.\(key [0-9a-f]{8}\)\.\(key [0-9a-f]{8}\)\.ok$/);
+    expect(label).not.toContain('\u001b');
+    expect(label).not.toContain('\u202e');
+  });
+
+  it('screens keys in nested and list-member labels', () => {
+    const live = { mk: { a: 1, '\u001b]0;t\u0007': { r: 1 } }, l: { '\u202e': ['x'] } };
+    const labels = liveOnlyNestedEntries({ mk: { a: 1 }, l: { '\u202e': [] } }, live).map(
+      (e) => e.label,
+    );
+    expect(labels).toHaveLength(2);
+    for (const c of ['\u001b', '\u0007', '\u202e']) expect(labels.join()).not.toContain(c);
+    expect(labels).toContainEqual(expect.stringMatching(/^l\.\(key [0-9a-f]{8}\)\["x"\]$/));
   });
 });
