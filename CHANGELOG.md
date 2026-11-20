@@ -3,6 +3,15 @@
 ## [0.69.10](https://github.com/funkadelic/claude-nomad/compare/v0.69.9...v0.69.10) (2026-11-20)
 
 
+### What's new
+
+* `nomad pull` no longer overwrites settings you added on one machine, such as a new `permissions.allow` rule in a list or a new plugin marketplace inside an existing setting. Pull leaves `settings.json` alone, and `nomad doctor` and `nomad push` tell you to run `nomad capture-settings`. Capture saves your addition to the repo without bringing back anything another machine removed.
+* When a scan turns up thousands of findings, `nomad push` now lists every one. Before, it stopped at "scan failed". The beta-flag header Claude Code writes into every session transcript no longer counts as a leaked key, and a failed scan now says why it failed.
+* If you use a gitleaks overlay (`.gitleaks.overlay.toml`), push now stops with an error when the overlay could hide a real secret or switch off a built-in rule. An overlay that worked in 0.69.9 may now be refused. The error names what to change, and the docs now show a corrected example overlay. `nomad doctor --check-shared` flags these overlays on every host, including hosts with no sessions to scan.
+* `nomad redact` finds every secret even when you use an overlay, and it no longer rewrites Claude Code's beta flags.
+* Setting and hook names that contain terminal control characters now print as a short hash, so they can't change how your terminal displays text.
+
+
 ### Fixed
 
 * **capture-settings:** save new entries added under an existing setting ([#708](https://github.com/funkadelic/claude-nomad/issues/708)) ([27c856f](https://github.com/funkadelic/claude-nomad/commit/27c856f1f275b8a983b32b8e0948be47bc3b29d0))
