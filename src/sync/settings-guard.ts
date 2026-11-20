@@ -201,7 +201,7 @@ function hookLabels(entries: HookEntry[]): string[] {
 
 /**
  * Promotable ahead-drift keys a pull refuses to overwrite (credential keys never
- * named), then one `key.sub` label per blocked live-only entry inside an object
+ * named), then one label per blocked live-only entry or array member inside a
  * key the merge also carries, then one label per blocked live-only hook entry
  * under a `hooks` key the merge also carries. A key `preMerged` or `written`
  * holds with the live value unchanged was removed upstream, so it is not blocked;
@@ -213,7 +213,7 @@ function hookLabels(entries: HookEntry[]): string[] {
  *   this host, or `null` for no record; see `stillAsWritten`.
  * @param writtenHookIds - Hashes of each hook entry's content from that write.
  * @param writtenEntryIds - Hashes of each nested entry from that write.
- * @returns The blocked keys, nested `key.sub` labels, then hook-entry labels,
+ * @returns The blocked keys, nested-entry labels, then hook-entry labels,
  *   sorted within each group.
  */
 export function blockedSettingsKeys(
@@ -235,8 +235,8 @@ export function blockedSettingsKeys(
 
 /**
  * Promotable live-only keys a pull deletes because the repo dropped them (the
- * complement of `blockedSettingsKeys`), then one `key.sub` label per nested
- * entry and one label per hook entry it deletes for the same reason.
+ * complement of `blockedSettingsKeys`), then one label per nested entry or
+ * array member and one label per hook entry it deletes for the same reason.
  * Credential keys are left to `credentialOverwriteCount`.
  * @param merged - The base + host merge about to be written.
  * @param existing - The parsed live settings.json.
@@ -244,7 +244,7 @@ export function blockedSettingsKeys(
  * @param written - The written-settings record, or `null`.
  * @param writtenHookIds - Hashes of each hook entry's content from that write.
  * @param writtenEntryIds - Hashes of each nested entry from that write.
- * @returns The removed keys, nested `key.sub` labels, then hook-entry labels,
+ * @returns The removed keys, nested-entry labels, then hook-entry labels,
  *   sorted within each group.
  */
 export function removedSettingsKeys(

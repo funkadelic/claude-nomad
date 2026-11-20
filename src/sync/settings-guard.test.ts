@@ -702,12 +702,20 @@ describe('array members', () => {
     expect(splitNestedEntries(m, l, {}, null, ids).blocked.map((e) => e.value)).toEqual([{ k: 1 }]);
   });
 
-  it('labels a long or non-printable member by a hash prefix, never its text', () => {
-    const long = 'x'.repeat(61);
-    const labels = blockedSettingsKeys({ list: [] }, { list: [long, 'a\u202eb'] }, {});
+  it('labels a long or control-character member by position and hash, never its text', () => {
+    const labels = blockedSettingsKeys({ list: [] }, { list: ['x'.repeat(201), 'a\u202eb'] }, {});
     expect(labels).toHaveLength(2);
-    for (const label of labels) expect(label).toMatch(/^list\[item [0-9a-f]{8}\]$/);
+    expect(labels[0]).toMatch(/^list\[item 1, [0-9a-f]{8}\]$/);
+    expect(labels[1]).toMatch(/^list\[item 2, [0-9a-f]{8}\]$/);
     expect(labels.join()).not.toContain('xxx');
+  });
+
+  it('shows a member of up to 200 characters in full, non-ASCII included', () => {
+    const rule = 'B'.repeat(200);
+    expect(blockedSettingsKeys({ list: [] }, { list: [rule, 'Bash(echo café)'] }, {})).toEqual([
+      'list["Bash(echo café)"]',
+      `list["${rule}"]`,
+    ]);
   });
 
   describe('pruning a blocked list', () => {

@@ -58,34 +58,44 @@ export function holdsEntry(obj: Record<string, unknown>, e: NestedEntry): boolea
   return Array.isArray(at) && at.some((v) => sameValue(v, e.value));
 }
 
-/** Printable ASCII, 1 to 60 characters, as hook labels allow. */
-const READABLE_MEMBER_RE = /^[ -~]{1,60}$/;
+/** 1 to 200 characters with no control, format (bidi, zero-width) or line-separator characters. */
+const READABLE_MEMBER_RE = /^[^\p{Cc}\p{Cf}\u2028\u2029]{1,200}$/u;
+
+/** JSON with object keys sorted, so key order never changes a hash. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) => {
+    const obj = asPlainObject(v);
+    return obj === null
+      ? v
+      : Object.fromEntries(Object.entries(obj).sort(([a], [b]) => (a < b ? -1 : 1)));
+  });
+}
 
 /**
- * The entry for `value` as a member of the array at `path`. The label shows a
- * short printable member, else a hash prefix, so no long or control-character
- * value reaches the terminal.
+ * The entry for `value` as member `position` (1-based) of the array at `path`.
+ * The label shows a readable member in full, else its position and a hash
+ * prefix, so no long or control-character value reaches the terminal.
  * @param path - The array's key path.
  * @param value - The member.
+ * @param position - The member's 1-based position in that array.
  */
-export function elementEntry(path: string[], value: unknown): NestedEntry {
+export function elementEntry(path: string[], value: unknown, position: number): NestedEntry {
   const json = JSON.stringify(value);
-  const shown = READABLE_MEMBER_RE.test(json)
+  const text = typeof value === 'string' ? value : json;
+  const hash = createHash('sha256').update(canonicalJson(normalizeNodePathsDeep(value)));
+  const shown = READABLE_MEMBER_RE.test(text)
     ? json
-    : `item ${createHash('sha256')
-        .update(JSON.stringify(normalizeNodePathsDeep(value)))
-        .digest('hex')
-        .slice(0, 8)}`;
+    : `item ${position}, ${hash.digest('hex').slice(0, 8)}`;
   return { path, key: path[0], label: `${path.join('.')}[${shown}]`, value, element: true };
 }
 
 /** Push one element entry per distinct member of `arr`, the array at `path`. */
 function collectElements(path: string[], arr: unknown[], out: NestedEntry[]): void {
   const seen: unknown[] = [];
-  for (const value of arr) {
+  for (const [i, value] of arr.entries()) {
     if (seen.some((s) => sameValue(s, value))) continue;
     seen.push(value);
-    out.push(elementEntry(path, value));
+    out.push(elementEntry(path, value, i + 1));
   }
 }
 

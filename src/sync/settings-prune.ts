@@ -13,8 +13,8 @@ function pruneArray(
   removed: NestedEntry[],
 ): unknown[] {
   const gone: unknown[] = [];
-  return arr.filter((value) => {
-    const e = elementEntry(path, value);
+  return arr.filter((value, i) => {
+    const e = elementEntry(path, value, i + 1);
     if (!wasWritten(e)) return true;
     if (!gone.some((g) => sameValue(g, value))) {
       gone.push(value);

@@ -559,7 +559,7 @@ describe('reportSettingsDriftCheck', () => {
     const { items } = await runCheck();
     const warnRow = items.find((i) => i.includes(warnGlyph)) ?? '';
     expect(warnRow).toContain('list["b"]');
-    expect(warnRow).toContain('copy the whole list');
+    expect(warnRow).toContain('put the shared list plus the item there');
   });
 
   it('advises a host-file edit for a dropped nested entry and no put-back from capture', async () => {
@@ -574,6 +574,7 @@ describe('reportSettingsDriftCheck', () => {
     expect(warnRow).toContain('mk.b');
     expect(warnRow).toContain('add them to hosts/test-host.json');
     expect(warnRow).not.toContain('capture-settings --host');
+    expect(warnRow).not.toContain('shared list plus the item');
     const infoRow = items.find((i) => i.includes('nomad capture-settings')) ?? '';
     expect(infoRow).toContain('theme');
     expect(infoRow).not.toContain('puts back');

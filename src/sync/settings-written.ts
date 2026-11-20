@@ -69,8 +69,8 @@ export function readWrittenHookIds(): ReadonlySet<string> {
 }
 
 /**
- * Hashes of each nested settings entry (path and value) the last write
- * produced; empty for no record or a record written before these were kept.
+ * Hashes of each nested entry and array member (path and value) the last write
+ * produced, plus any a refused pull backfilled; empty for no record or an older one.
  */
 export function readWrittenEntryIds(): ReadonlySet<string> {
   return stringSet(readRecord()?.entryIds);
@@ -80,8 +80,8 @@ export function readWrittenEntryIds(): ReadonlySet<string> {
  * Record a hash of each top-level value of `written` (the object handed to
  * `writeJsonAtomic` for settings.json), stripped of gsd hook entries first
  * so a graft-restored `hooks` key never enters the record, plus a hash of
- * each hook entry's full content and of each nested object entry (path and
- * value) outside `hooks` and credential keys. Drops any previous
+ * each hook entry's full content and of each nested entry and array member
+ * (path and value) outside `hooks` and credential keys. Drops any previous
  * record before writing, so a failed write leaves none rather than a stale one.
  * Never throws: degrades to a warning on failure, since settings.json is
  * already written.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  elementEntry,
   holdsEntry,
   liveOnlyNestedEntries,
   nestedEntries,
@@ -182,5 +183,22 @@ describe('array members', () => {
     const entries = liveOnlyNestedEntries({ p: { allow: ['a'] }, list: [1] }, live);
     expect(withoutNestedEntries(live, entries)).toEqual({ p: { allow: ['a'] }, list: [1] });
     expect(live.p.allow).toEqual(['a', 'b', 'b']);
+  });
+});
+
+describe('elementEntry hash labels', () => {
+  const long = 'x'.repeat(200);
+  const hashOf = (value: unknown) =>
+    /, ([0-9a-f]{8})\]$/.exec(elementEntry(['l'], value, 1).label)?.[1];
+
+  it('gives two launcher-path forms of one member the same hash', () => {
+    expect(hashOf(`/usr/bin/node ${long}`)).toBe(hashOf(`node ${long}`));
+    expect(hashOf(`node ${long}`)).not.toBe(hashOf(`npx ${long}`));
+  });
+
+  it('ignores object key order', () => {
+    expect(hashOf({ b: long, a: 1, c: { z: 1, y: 2 } })).toBe(
+      hashOf({ a: 1, c: { y: 2, z: 1 }, b: long }),
+    );
   });
 });
