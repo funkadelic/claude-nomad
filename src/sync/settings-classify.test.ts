@@ -682,6 +682,12 @@ describe('keyLabel', () => {
     expect(keyLabel('mk.(key 0123abcd)')).toBe('mk.(key 0123abcd)');
   });
 
+  it('keeps a label keyLabel built when keyList joins it', () => {
+    for (const raw of ['\u001b[2J', '(key 0123abcd)']) {
+      expect(keyList([keyLabel(raw)])).toBe(keyLabel(raw));
+    }
+  });
+
   it('screens the names describeSettings prints', () => {
     expect(describeSettings(['\u001b[2J']).phrase).toMatch(/^1 setting \(\(key [0-9a-f]{8}\)\)$/);
   });

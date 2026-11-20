@@ -252,11 +252,13 @@ export function keyLabel(key: string): string {
 }
 
 /**
- * Keys or labels joined with commas for the terminal, each through `keyLabel`.
- * @param keys - Settings key names or labels.
+ * Labels joined with commas for the terminal. A raw key must already be through
+ * `keyLabel`, so a `(key <hash>)` label is never hashed twice; unsafe text is
+ * still hashed here as a backstop.
+ * @param labels - Labels, or raw keys already passed through `keyLabel`.
  */
-export function keyList(keys: readonly string[]): string {
-  return keys.map(keyLabel).join(', ');
+export function keyList(labels: readonly string[]): string {
+  return labels.map((l) => (hasUnsafeChar(l) ? keyLabel(l) : l)).join(', ');
 }
 
 /**

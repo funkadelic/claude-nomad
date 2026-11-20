@@ -5,6 +5,7 @@ import { claudeHome, HOST } from '../../core/config.ts';
 import {
   classifySettingsDrift,
   describeSettings,
+  keyLabel,
   partitionByCaptureExclusion,
 } from '../../sync/settings-classify.ts';
 import { blockedNestedEntries } from '../../sync/settings-guard.ts';
@@ -76,7 +77,7 @@ export function reportSettingsAheadDrift(repo: string): void {
     const settings = readJson<Record<string, unknown>>(settingsPath);
     const { ahead } = classifySettingsDrift(merged, settings);
     const promotable = [
-      ...partitionByCaptureExclusion(ahead).promotable,
+      ...partitionByCaptureExclusion(ahead).promotable.map(keyLabel),
       ...blockedNestedEntries(
         merged,
         settings,

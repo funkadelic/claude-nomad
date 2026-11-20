@@ -153,7 +153,7 @@ function collectCapture(
   addNestedEntries(subset, nested, sources.merged, useHost);
 
   const keys = [
-    ...Object.keys(topSubset),
+    ...Object.keys(topSubset).map(keyLabel),
     ...hookEventKeys.map((e) => pathLabel(['hooks', e])),
     ...nested.map((e) => e.label),
   ].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));

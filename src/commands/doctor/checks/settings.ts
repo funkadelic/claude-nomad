@@ -50,7 +50,7 @@ export function loadAndReportSettings(section: DoctorSection): Record<string, un
   if (unknownKeys.length > 0) {
     addItem(
       section,
-      `${yellow(warnGlyph)} settings.json has unknown keys (schema drift?): ${keyList(unknownKeys)} (verify: nomad doctor --check-schema)`,
+      `${yellow(warnGlyph)} settings.json has unknown keys (schema drift?): ${keyList(unknownKeys.map(keyLabel))} (verify: nomad doctor --check-schema)`,
     );
   } else {
     addItem(section, `${green(okGlyph)} settings.json schema: known keys only`);

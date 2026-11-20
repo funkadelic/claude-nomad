@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import {
   classifySettingsDrift,
+  keyLabel,
   keyList,
   partitionByCaptureExclusion,
 } from '../../../sync/settings-classify.ts';
@@ -221,16 +222,19 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
   const { promotable, excluded } = partitionByCaptureExclusion(extra);
   const asWritten = (key: string): boolean => stillAsWritten(written, settings, key);
   const topDropped = promotable.filter(asWritten);
-  const dropped = [...topDropped, ...nestedDropped.map((e) => e.label)];
+  const dropped = [...topDropped.map(keyLabel), ...nestedDropped.map((e) => e.label)];
   const nestedLabels = nestedCandidates.map((e) => e.label);
-  const candidates = [...promotable.filter((key) => !asWritten(key)), ...nestedLabels];
+  const candidates = [
+    ...promotable.filter((key) => !asWritten(key)).map(keyLabel),
+    ...nestedLabels,
+  ];
   // With no host file, reportHostOverrides already flags new top-level keys; nested ones it cannot see.
   const shown = hostExists ? candidates : nestedLabels;
 
   emitDriftRows(
     section,
-    missing,
-    changed,
+    missing.map(keyLabel),
+    changed.map(keyLabel),
     {
       candidates,
       dropped,

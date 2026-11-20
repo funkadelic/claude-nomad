@@ -9,7 +9,7 @@ import {
   type PathMap,
   type ValidatedSharedNames,
 } from '../core/config.ts';
-import { classifySettingsDrift, describeSettings } from './settings-classify.ts';
+import { classifySettingsDrift, describeSettings, keyLabel } from './settings-classify.ts';
 import { graftGsdHookEntries, keepGsdHookEntries, stripGsdHookEntries } from './hooks-filter.ts';
 import {
   blockedSettingsKeys,
@@ -251,7 +251,7 @@ function reportSettingsDrift(
   }
   const { behind } = classifySettingsDrift(merged, existing);
   if (behind.length > 0) {
-    const { phrase, pronoun } = describeSettings(behind);
+    const { phrase, pronoun } = describeSettings(behind.map(keyLabel));
     warn(
       `your settings.json is missing ${phrase} that the synced copy has; ` +
         `run 'nomad pull' to restore ${pronoun}.`,
