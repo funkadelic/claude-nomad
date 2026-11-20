@@ -230,14 +230,14 @@ export function hasUnsafeChar(text: string): boolean {
 }
 
 /**
- * `text` with each unsafe character but newline written as its JSON `\uXXXX`
- * escape, so JSON text stays valid and shows what the file holds.
+ * `text` with each unsafe character, newline included, written as its JSON
+ * `\uXXXX` escape, so JSON text stays valid and shows what the file holds.
  * @param text - JSON text bound for the terminal.
  */
 export function escapeUnsafe(text: string): string {
   const escape = (u: string): string =>
     String.raw`\u${Number(u.codePointAt(0)).toString(16).padStart(4, '0')}`;
-  return text.replace(UNSAFE_CHARS_RE, (c) => (c === '\n' ? c : c.split('').map(escape).join('')));
+  return text.replace(UNSAFE_CHARS_RE, (c) => c.split('').map(escape).join(''));
 }
 
 /**

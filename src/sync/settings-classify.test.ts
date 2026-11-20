@@ -694,7 +694,7 @@ describe('escapeUnsafe', () => {
     expect(JSON.parse(escapeUnsafe(text))).toBe(JSON.parse(text));
   });
 
-  it('keeps newlines and printable text, non-ASCII included', () => {
-    expect(escapeUnsafe('{\n  "k": "café"\n}')).toBe('{\n  "k": "café"\n}');
+  it('escapes a newline and keeps printable text, non-ASCII included', () => {
+    expect(escapeUnsafe('a\nb café')).toBe('a\\u000ab café');
   });
 });
