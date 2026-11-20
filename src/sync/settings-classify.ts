@@ -235,7 +235,8 @@ export function hasUnsafeChar(text: string): boolean {
  * @param text - JSON text bound for the terminal.
  */
 export function escapeUnsafe(text: string): string {
-  const escape = (u: string): string => `\\u${u.charCodeAt(0).toString(16).padStart(4, '0')}`;
+  const escape = (u: string): string =>
+    String.raw`\u${Number(u.codePointAt(0)).toString(16).padStart(4, '0')}`;
   return text.replace(UNSAFE_CHARS_RE, (c) => (c === '\n' ? c : c.split('').map(escape).join('')));
 }
 

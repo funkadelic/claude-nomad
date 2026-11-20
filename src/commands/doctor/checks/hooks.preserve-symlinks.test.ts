@@ -85,17 +85,21 @@ describe('reportPreserveSymlinksCheck', () => {
   // Task 1: command-shape detection cases
   // -------------------------------------------------------------------------
 
-  it('escapes a control character in the flagged script path', async () => {
-    buildSkillsTree(env.testHome, {
-      'r\u001b[2Jun.js': `require('../gsd-core/missing.cjs');\n`,
-    });
-    writeHooksSettings(env.testHome, {
-      PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/r\u001b[2Jun.js` }],
-    });
-    const { out } = await runCheck();
-    expect(out).toContain('r\\u001b[2Jun.js needs --preserve-symlinks-main');
-    expect(out).not.toContain('\u001b[2J');
-  });
+  // Windows filenames cannot hold control characters.
+  it.skipIf(process.platform === 'win32')(
+    'escapes a control character in the flagged script path',
+    async () => {
+      buildSkillsTree(env.testHome, {
+        'r\u001b[2Jun.js': `require('../gsd-core/missing.cjs');\n`,
+      });
+      writeHooksSettings(env.testHome, {
+        PostToolUse: [{ type: 'command', command: `node ~/.claude/commands/r\u001b[2Jun.js` }],
+      });
+      const { out } = await runCheck();
+      expect(out).toContain('r\\u001b[2Jun.js needs --preserve-symlinks-main');
+      expect(out).not.toContain('\u001b[2J');
+    },
+  );
 
   it('warns when node runs a .js script under symlinked hooks dir without --preserve-symlinks-main', async () => {
     // Script has a broken relative require (gsd-core/ does not exist in the repo tree)
