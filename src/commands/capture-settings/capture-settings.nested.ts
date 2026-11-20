@@ -79,10 +79,9 @@ function baseClash(sources: NestedSources, e: NestedEntry): string | null {
   return prefix === null ? null : clashWarning(sources.base, prefix);
 }
 
-/** Whether a host capture of `e` copies a non-empty shared array the host file did not set. */
+/** Whether a host capture of `e` copies a shared array the host file did not set. */
 function shadowsBase(sources: NestedSources, e: NestedEntry): boolean {
-  if (e.element !== true || valueAtPath(sources.overrides, e.path) !== undefined) return false;
-  return (valueAtPath(sources.merged, e.path) as unknown[]).length > 0;
+  return e.element === true && valueAtPath(sources.overrides, e.path) === undefined;
 }
 
 /** The warning for new entries under `prefix`, the first path the base does not hold as an object. */

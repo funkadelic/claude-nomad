@@ -701,4 +701,53 @@ describe('array members', () => {
     const ids = new Set([nestedEntryId(['permissions', 'allow', 'k'], 1)]);
     expect(splitNestedEntries(m, l, {}, null, ids).blocked.map((e) => e.value)).toEqual([{ k: 1 }]);
   });
+
+  it('labels a long or non-printable member by a hash prefix, never its text', () => {
+    const long = 'x'.repeat(61);
+    const labels = blockedSettingsKeys({ list: [] }, { list: [long, 'a\u202eb'] }, {});
+    expect(labels).toHaveLength(2);
+    for (const label of labels) expect(label).toMatch(/^list\[item [0-9a-f]{8}\]$/);
+    expect(labels.join()).not.toContain('xxx');
+  });
+
+  describe('pruning a blocked list', () => {
+    const merged = { mk: { a: 1 } };
+
+    it('moves a branch to removed when pruning empties its list', () => {
+      const ids = new Set([nestedEntryId(['mk', 'b', 'allow'], 'x', true)]);
+      const split = splitNestedEntries(
+        merged,
+        { mk: { a: 1, b: { allow: ['x'] } } },
+        {},
+        null,
+        ids,
+      );
+      expect(split.blocked).toEqual([]);
+      expect(split.removed.map((e) => e.label)).toEqual(['mk.b']);
+    });
+
+    it('drops an emptied list but keeps the rest of the branch blocked', () => {
+      const ids = new Set([nestedEntryId(['mk', 'b', 'allow'], 'x', true)]);
+      const l = { mk: { a: 1, b: { allow: ['x'], e: 3 } } };
+      expect(splitNestedEntries(merged, l, {}, null, ids).blocked.map((e) => e.value)).toEqual([
+        { e: 3 },
+      ]);
+    });
+
+    it('prunes written members out of a blocked entry whose value is a list', () => {
+      const ids = new Set([nestedEntryId(['mk', 'b'], 'x', true)]);
+      const split = splitNestedEntries(merged, { mk: { a: 1, b: ['x', 'y'] } }, {}, null, ids);
+      expect(split.blocked.map((e) => e.value)).toEqual([['y']]);
+      expect(split.removed.map((e) => e.label)).toEqual(['mk.b["x"]']);
+      const only = splitNestedEntries(merged, { mk: { a: 1, b: ['x'] } }, {}, null, ids);
+      expect(only.blocked).toEqual([]);
+      expect(only.removed.map((e) => e.label)).toEqual(['mk.b']);
+    });
+
+    it('reports two launcher-path forms of one pruned member once', () => {
+      const ids = new Set([nestedEntryId(['mk', 'b'], 'node x', true)]);
+      const l = { mk: { a: 1, b: ['node x', '/usr/bin/node x', 'y'] } };
+      expect(splitNestedEntries(merged, l, {}, null, ids).removed).toHaveLength(1);
+    });
+  });
 });

@@ -363,7 +363,7 @@ export function regenerateSettings(
   // atomic write, leaving the live file exactly as it was.
   if (blocked.length > 0) {
     // The record is not rewritten here, so keep what the repo dropped visible to capture.
-    backfillWrittenEntryIds(preMerged);
+    backfillWrittenEntryIds(preMerged, existing);
     return { label: overrideLabel, blocked, removed };
   }
 

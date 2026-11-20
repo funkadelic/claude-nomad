@@ -1200,12 +1200,12 @@ describe('cmdCaptureSettings', () => {
       expect(shadow[0]).toContain('permissions.allow list');
     });
 
-    it('does not warn about copying an empty shared array into the host file', async () => {
+    it('warns about copying even an empty shared array into the host file', async () => {
       writeFileSync(env.basePath, JSON.stringify({ list: [] }) + '\n');
       writeFileSync(env.settingsPath, JSON.stringify({ list: ['n'] }) + '\n');
       const errs = await capture(true);
       expect(read(hostPath())).toEqual({ list: ['n'] });
-      expect(errs.filter((e) => e.includes('full'))).toEqual([]);
+      expect(errs.filter((e) => e.includes('full list list'))).toHaveLength(1);
     });
 
     it('after a refused pull on an old record, never saves back what the repo dropped', async () => {

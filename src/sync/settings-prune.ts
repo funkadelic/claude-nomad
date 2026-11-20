@@ -1,6 +1,6 @@
 import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { asPlainObject } from './hooks-filter.ts';
-import { elementEntry, type NestedEntry } from './settings-entries.ts';
+import { elementEntry, sameValue, type NestedEntry } from './settings-entries.ts';
 
 /** Whether the last settings write produced this entry. */
 type WasWritten = (e: NestedEntry) => boolean;
@@ -12,12 +12,33 @@ function pruneArray(
   wasWritten: WasWritten,
   removed: NestedEntry[],
 ): unknown[] {
+  const gone: unknown[] = [];
   return arr.filter((value) => {
     const e = elementEntry(path, value);
     if (!wasWritten(e)) return true;
-    if (!removed.some((r) => r.label === e.label)) removed.push(e);
+    if (!gone.some((g) => sameValue(g, value))) {
+      gone.push(value);
+      removed.push(e);
+    }
     return false;
   });
+}
+
+/** `value` (at `path`) with written descendants or members pruned; a scalar is returned as is. */
+function pruneValue(
+  path: string[],
+  value: unknown,
+  wasWritten: WasWritten,
+  removed: NestedEntry[],
+): unknown {
+  const obj = asPlainObject(value);
+  if (obj !== null) return pruneWritten(path, obj, wasWritten, removed);
+  return Array.isArray(value) ? pruneArray(path, value, wasWritten, removed) : value;
+}
+
+/** Whether a pruned container is left with nothing in it. */
+function isEmpty(value: unknown): boolean {
+  return Array.isArray(value) ? value.length === 0 : Object.keys(value as object).length === 0;
 }
 
 /**
@@ -39,15 +60,10 @@ function pruneWritten(
       removed.push(e);
       continue;
     }
-    const child = asPlainObject(value);
-    if (child === null) {
-      out[sub] = Array.isArray(value) ? pruneArray(full, value, wasWritten, removed) : value;
-      continue;
-    }
     const before = removed.length;
-    const kept = pruneWritten(full, child, wasWritten, removed);
+    const kept = pruneValue(full, value, wasWritten, removed);
     // A child emptied by pruning held only written entries, so it goes too.
-    if (removed.length === before || Object.keys(kept).length > 0) out[sub] = kept;
+    if (removed.length === before || !isEmpty(kept)) out[sub] = kept;
   }
   return out;
 }
@@ -69,11 +85,10 @@ export function pruneBlockedEntries(
   const blocked: NestedEntry[] = [];
   const removed = [...split.removed];
   for (const e of split.blocked) {
-    const obj = e.element === true ? null : asPlainObject(e.value);
     const dropped: NestedEntry[] = [];
-    const value = obj === null ? e.value : pruneWritten(e.path, obj, wasWritten, dropped);
+    const value = e.element === true ? e.value : pruneValue(e.path, e.value, wasWritten, dropped);
     if (dropped.length === 0) blocked.push(e);
-    else if (Object.keys(value as object).length === 0) removed.push(e);
+    else if (isEmpty(value)) removed.push(e);
     else {
       blocked.push({ ...e, value });
       removed.push(...dropped);

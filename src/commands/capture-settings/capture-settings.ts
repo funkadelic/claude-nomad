@@ -56,7 +56,7 @@ async function confirmCapture(destLabel: string, keys: string[]): Promise<boolea
     );
     return false;
   }
-  log(`About to promote ${keys.length} key(s) into ${destLabel}: ${keys.join(', ')}`);
+  log(`About to promote ${keys.length} setting(s) into ${destLabel}: ${keys.join(', ')}`);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const answer = await rl.question('Proceed? [y/N] ');
@@ -273,7 +273,7 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     writeJsonAtomic(destPath, newContent);
 
     resyncLive(ts, skipped, clashed, removed);
-    log(`captured ${keys.length} key(s) into ${dest} (backup: ${ts})`);
+    log(`captured ${keys.length} setting(s) into ${dest} (backup: ${ts})`);
   } finally {
     // Release the lock on every exit path. Any NomadFatal propagates to the
     // top-level handler in nomad.ts (which prints it and exits 1); re-wrapping

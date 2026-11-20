@@ -250,17 +250,27 @@ describe('settings-written', () => {
         recordPath,
         JSON.stringify({ kind: mod.SETTINGS_WRITTEN_KIND, keys: { mk: 'h' }, hookIds: ['k'] }),
       );
-      mod.backfillWrittenEntryIds({ mk: { gone: 2 } });
+      const live = { mk: { gone: 2, a: 1 } };
+      mod.backfillWrittenEntryIds({ mk: { gone: 2, other: 9 } }, live);
       expect(mod.readWrittenSettingsKeys()).toEqual({ mk: 'h' });
       expect([...mod.readWrittenHookIds()]).toEqual(['k']);
       expect(mod.readWrittenEntryIds()).toEqual(new Set([nestedEntryId(['mk', 'gone'], 2)]));
-      mod.backfillWrittenEntryIds({ mk: { gone: 2, a: 1 } });
+      mod.backfillWrittenEntryIds({ mk: { gone: 2, a: 1 } }, live);
       expect(mod.readWrittenEntryIds().size).toBe(2);
+    });
+
+    it('leaves the record file untouched when nothing new is held', async () => {
+      const mod = await import('./settings-written.ts');
+      mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
+      const text = JSON.stringify({ kind: mod.SETTINGS_WRITTEN_KIND, keys: {} });
+      writeFileSync(recordPath, text);
+      mod.backfillWrittenEntryIds({ mk: { gone: 2 } }, { mk: { gone: 3 } });
+      expect(readFileSync(recordPath, 'utf8')).toBe(text);
     });
 
     it('writes nothing when there is no record', async () => {
       const { backfillWrittenEntryIds } = await import('./settings-written.ts');
-      backfillWrittenEntryIds({ mk: { gone: 2 } });
+      backfillWrittenEntryIds({ mk: { gone: 2 } }, { mk: { gone: 2 } });
       expect(existsSync(recordPath)).toBe(false);
     });
 
@@ -278,7 +288,7 @@ describe('settings-written', () => {
       const mod = await import('./settings-written.ts');
       mkdirSync(join(testHome, '.cache', 'claude-nomad'), { recursive: true });
       writeFileSync(recordPath, JSON.stringify({ kind: mod.SETTINGS_WRITTEN_KIND, keys: {} }));
-      expect(() => mod.backfillWrittenEntryIds({ mk: { a: 1 } })).not.toThrow();
+      expect(() => mod.backfillWrittenEntryIds({ mk: { a: 1 } }, { mk: { a: 1 } })).not.toThrow();
       expect(errSpy.mock.calls.some((c) => String(c[0]).includes('ENOSPC'))).toBe(true);
     });
   });

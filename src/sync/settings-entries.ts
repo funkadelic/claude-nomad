@@ -4,6 +4,8 @@
  * equality because arrays replace rather than merge.
  */
 
+import { createHash } from 'node:crypto';
+
 import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
 import { CAPTURE_EXCLUDED_KEYS, deepEqual, normalizeNodePathsDeep } from './settings-classify.ts';
@@ -35,8 +37,12 @@ export function valueAtPath(obj: Record<string, unknown>, path: readonly string[
   return node;
 }
 
-/** Deep equality after node launcher paths are normalized, as drift compares. */
-function sameValue(a: unknown, b: unknown): boolean {
+/**
+ * Deep equality after node launcher paths are normalized, as drift compares.
+ * @param a - First value.
+ * @param b - Second value.
+ */
+export function sameValue(a: unknown, b: unknown): boolean {
   return deepEqual(normalizeNodePathsDeep(a), normalizeNodePathsDeep(b));
 }
 
@@ -52,19 +58,25 @@ export function holdsEntry(obj: Record<string, unknown>, e: NestedEntry): boolea
   return Array.isArray(at) && at.some((v) => sameValue(v, e.value));
 }
 
+/** Printable ASCII, 1 to 60 characters, as hook labels allow. */
+const READABLE_MEMBER_RE = /^[ -~]{1,60}$/;
+
 /**
- * The entry for `value` as a member of the array at `path`.
+ * The entry for `value` as a member of the array at `path`. The label shows a
+ * short printable member, else a hash prefix, so no long or control-character
+ * value reaches the terminal.
  * @param path - The array's key path.
  * @param value - The member.
  */
 export function elementEntry(path: string[], value: unknown): NestedEntry {
-  return {
-    path,
-    key: path[0],
-    label: `${path.join('.')}[${JSON.stringify(value)}]`,
-    value,
-    element: true,
-  };
+  const json = JSON.stringify(value);
+  const shown = READABLE_MEMBER_RE.test(json)
+    ? json
+    : `item ${createHash('sha256')
+        .update(JSON.stringify(normalizeNodePathsDeep(value)))
+        .digest('hex')
+        .slice(0, 8)}`;
+  return { path, key: path[0], label: `${path.join('.')}[${shown}]`, value, element: true };
 }
 
 /** Push one element entry per distinct member of `arr`, the array at `path`. */

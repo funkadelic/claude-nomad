@@ -230,7 +230,13 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
     section,
     missing,
     changed,
-    { candidates, dropped, shown, topDropped: topDropped.length },
+    {
+      candidates,
+      dropped,
+      shown,
+      topDropped: topDropped.length,
+      lists: nestedDropped.some((e) => e.element === true),
+    },
     excluded,
     hostExists,
   );
@@ -242,15 +248,26 @@ export function reportSettingsDriftCheck(section: DoctorSection): void {
  * removal is promised only once those are dealt with. The advice keeps them on
  * this host only, since a plain capture would restore them for every host; capture
  * never saves a dropped nested entry, so with one present it says to edit the host file.
+ * A host list replaces the shared one, so a dropped list item needs the whole list copied.
  */
-function droppedRow(dropped: string[], candidates: string[], nested: boolean): string {
+function droppedRow(
+  dropped: string[],
+  candidates: string[],
+  nested: boolean,
+  lists: boolean,
+): string {
   const verb = candidates.length === 1 ? 'is' : 'are';
   const when =
     candidates.length === 0
       ? "the next 'nomad pull' removes them"
       : `a pull removes them once ${candidates.join(', ')} ${verb} captured or deleted`;
-  const keep = nested ? `add them to hosts/${HOST}.json` : "run 'nomad capture-settings --host'";
-  return `${yellow(warnGlyph)} settings.json has ${dropped.length} key(s) the repo no longer carries: ${dropped.join(', ')} (${when}, as expected if they were removed from the repo on purpose; to keep them on this machine only, ${keep})`;
+  const listNote = lists
+    ? ', copying the whole list with each list item, since a host list replaces the shared one'
+    : '';
+  const keep = nested
+    ? `add them to hosts/${HOST}.json${listNote}`
+    : "run 'nomad capture-settings --host'";
+  return `${yellow(warnGlyph)} settings.json has ${dropped.length} setting(s) the repo no longer carries: ${dropped.join(', ')} (${when}, as expected if they were removed from the repo on purpose; to keep them on this machine only, ${keep})`;
 }
 
 /**
@@ -285,11 +302,17 @@ function emitDriftRows(
   section: DoctorSection,
   missing: string[],
   changed: string[],
-  promotable: { candidates: string[]; dropped: string[]; shown: string[]; topDropped: number },
+  promotable: {
+    candidates: string[];
+    dropped: string[];
+    shown: string[];
+    topDropped: number;
+    lists: boolean;
+  },
   excluded: string[],
   hostFileExists: boolean,
 ): void {
-  const { candidates, dropped, shown, topDropped } = promotable;
+  const { candidates, dropped, shown, topDropped, lists } = promotable;
   if (missing.length > 0) {
     addItem(
       section,
@@ -303,13 +326,13 @@ function emitDriftRows(
     );
   }
   if (dropped.length > 0)
-    addItem(section, droppedRow(dropped, candidates, dropped.length > topDropped));
+    addItem(section, droppedRow(dropped, candidates, dropped.length > topDropped, lists));
   if (shown.length > 0) {
     // Capture puts back only top-level dropped keys; it never re-adds a dropped nested entry.
     const readds = topDropped > 0 ? '; this also puts back the removed keys above' : '';
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${shown.length} local-only key(s) not in base+host merge: ${shown.join(', ')} (run 'nomad capture-settings' to promote them into the repo, adding --host for host-specific values${readds})`,
+      `${dim(infoGlyph)} settings.json has ${shown.length} local-only setting(s) not in base+host merge: ${shown.join(', ')} (run 'nomad capture-settings' to promote them into the repo, adding --host for host-specific values${readds})`,
     );
   }
   if (excluded.length > 0 && hostFileExists) {
