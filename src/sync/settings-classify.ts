@@ -4,6 +4,8 @@
  * changed, which are excluded from capture, and the subset capture promotes.
  */
 
+import { createHash } from 'node:crypto';
+
 import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { stripGsdHookEntries } from './hooks-filter.ts';
 
@@ -213,6 +215,27 @@ export function partitionByCaptureExclusion(keys: string[]): {
   return { promotable, excluded };
 }
 
+/** A control, format (bidi, zero-width) or line-separator character. */
+const UNSAFE_CHAR_RE = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+
+/**
+ * `key` for the terminal: as is, or `(key <8 hex of its sha256>)` when it holds
+ * a character that could rewrite or hide terminal output. A label is left as is.
+ * @param key - A settings key name or an already-built label.
+ */
+export function keyLabel(key: string): string {
+  if (!UNSAFE_CHAR_RE.test(key)) return key;
+  return `(key ${createHash('sha256').update(key).digest('hex').slice(0, 8)})`;
+}
+
+/**
+ * Keys or labels joined with commas for the terminal, each through `keyLabel`.
+ * @param keys - Settings key names or labels.
+ */
+export function keyList(keys: readonly string[]): string {
+  return keys.map(keyLabel).join(', ');
+}
+
 /**
  * Render a settings-key list for a user-facing drift message in plain language:
  * a count, the noun pluralized to match, and the names in parentheses (no JSON
@@ -231,7 +254,7 @@ export function describeSettings(keys: string[]): {
 } {
   const one = keys.length === 1;
   return {
-    phrase: `${keys.length} ${one ? 'setting' : 'settings'} (${keys.join(', ')})`,
+    phrase: `${keys.length} ${one ? 'setting' : 'settings'} (${keyList(keys)})`,
     pronoun: one ? 'it' : 'them',
     verb: one ? 'is' : 'are',
   };

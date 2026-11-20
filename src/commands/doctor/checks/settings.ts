@@ -12,7 +12,7 @@ import {
   warnGlyph,
   yellow,
 } from '../../../render/color.ts';
-import { partitionByCaptureExclusion } from '../../../sync/settings-classify.ts';
+import { keyLabel, keyList, partitionByCaptureExclusion } from '../../../sync/settings-classify.ts';
 import { claudeHome, HOST, KNOWN_SETTINGS_KEYS, repoHome } from '../../../core/config.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
 
@@ -45,7 +45,7 @@ export function loadAndReportSettings(section: DoctorSection): Record<string, un
   if (unknownKeys.length > 0) {
     addItem(
       section,
-      `${yellow(warnGlyph)} settings.json has unknown keys (schema drift?): ${unknownKeys.join(', ')} (verify: nomad doctor --check-schema)`,
+      `${yellow(warnGlyph)} settings.json has unknown keys (schema drift?): ${keyList(unknownKeys)} (verify: nomad doctor --check-schema)`,
     );
   } else {
     addItem(section, `${green(okGlyph)} settings.json schema: known keys only`);
@@ -59,7 +59,7 @@ export function loadAndReportSettings(section: DoctorSection): Record<string, un
  */
 function describeUnbased(drift: string[]): string {
   const { promotable, excluded } = partitionByCaptureExclusion(drift);
-  const parts = promotable.length > 0 ? [JSON.stringify(promotable)] : [];
+  const parts = promotable.length > 0 ? [JSON.stringify(promotable.map(keyLabel))] : [];
   if (excluded.length > 0) parts.push(`${excluded.length} credential or host-local key(s)`);
   return parts.join(' plus ');
 }
@@ -89,7 +89,7 @@ export function reportHostOverrides(
     const hostsDir = join(repo, 'hosts');
     if (existsSync(hostsDir)) {
       const cands = readdirSync(hostsDir).filter((f) => f.endsWith('.json'));
-      if (cands.length > 0) addItem(section, `${dim(infoGlyph)} candidates: ${cands.join(', ')}`);
+      if (cands.length > 0) addItem(section, `${dim(infoGlyph)} candidates: ${keyList(cands)}`);
     }
     process.exitCode = 1;
   } else {

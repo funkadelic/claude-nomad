@@ -28,6 +28,7 @@ import type { LeakVerdict } from './leak-verdict.ts';
 import type { GlobalConfigChange } from './global-config.ts';
 import type { remapPush } from '../../sync/remap.ts';
 import { summaryRow } from '../../render/summary.ts';
+import { keyList } from '../../sync/settings-classify.ts';
 
 /**
  * Build the single collapsed count row, or `null` when `n` is zero. Used for
@@ -67,14 +68,14 @@ export function buildSettingsSection(
   if (blocked.length > 0) {
     addItem(
       s,
-      `${red(failGlyph)} settings.json not written (${blocked.join(', ')} not in the repo; run 'nomad capture-settings', or delete from ~/.claude/settings.json)`,
+      `${red(failGlyph)} settings.json not written (${keyList(blocked)} not in the repo; run 'nomad capture-settings', or delete from ~/.claude/settings.json)`,
     );
     return s;
   }
   if (removed.length > 0) {
     addItem(
       s,
-      `${yellow(warnGlyph)} settings.json (base + ${label}); removed ${removed.join(', ')}, no longer in the repo`,
+      `${yellow(warnGlyph)} settings.json (base + ${label}); removed ${keyList(removed)}, no longer in the repo`,
     );
     return s;
   }

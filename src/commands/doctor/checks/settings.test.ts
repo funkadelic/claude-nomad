@@ -58,6 +58,18 @@ describe('cmdDoctor settings.json schema sanity', () => {
     expect(out).toContain(`${warnGlyph} settings.json has unknown keys`);
     expect(out).toContain('newAnthropicFeature');
   });
+
+  it('names an unknown key holding a control character by a hash', async () => {
+    writeFileSync(
+      join(env.testHome, '.claude', 'settings.json'),
+      JSON.stringify({ model: 'sonnet', 'x\u001b[2J': true }) + '\n',
+    );
+    const { cmdDoctor } = await import('../doctor.ts');
+    cmdDoctor({ verbose: true });
+    const out = joinedLog(env.logSpy);
+    expect(out).toMatch(/unknown keys \(schema drift\?\): \(key [0-9a-f]{8}\)/);
+    expect(out).not.toContain('\u001b[2J');
+  });
 });
 
 describe('cmdDoctor host-override-missing diagnostic', () => {

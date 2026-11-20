@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
-import { buildCaptureSubset, describeSettings } from '../../sync/settings-classify.ts';
+import { buildCaptureSubset, describeSettings, keyList } from '../../sync/settings-classify.ts';
 import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
 import { blockedHookEntries, removedSettingsKeys } from '../../sync/settings-guard.ts';
@@ -56,7 +56,7 @@ async function confirmCapture(destLabel: string, keys: string[]): Promise<boolea
     );
     return false;
   }
-  log(`About to promote ${keys.length} setting(s) into ${destLabel}: ${keys.join(', ')}`);
+  log(`About to promote ${keys.length} setting(s) into ${destLabel}: ${keyList(keys)}`);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const answer = await rl.question('Proceed? [y/N] ');
@@ -255,7 +255,7 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
     const dest = useHost ? `hosts/${HOST}.json` : 'shared/settings.base.json';
 
     if (dryRun) {
-      log(`dry-run: would write ${dest} with keys: ${keys.join(', ')}`);
+      log(`dry-run: would write ${dest} with keys: ${keyList(keys)}`);
       return;
     }
 

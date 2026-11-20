@@ -6,6 +6,8 @@ import {
   CAPTURE_EXCLUDED_KEYS,
   classifySettingsDrift,
   describeSettings,
+  keyLabel,
+  keyList,
   normalizeNodePathsDeep,
   partitionByCaptureExclusion,
 } from './settings-classify.ts';
@@ -655,5 +657,24 @@ describe('prototype-pollution guard over repo-supplied settings', () => {
     ) as Record<string, Record<string, unknown>>;
     expect(Object.getPrototypeOf(out.hooks)).toBe(Object.prototype);
     expect(Object.keys(out.hooks)).toEqual(['kept']);
+  });
+});
+
+describe('keyLabel', () => {
+  it('leaves a printable key or label as is', () => {
+    expect(keyList(['model', 'mk.café', 'list["Bash(ls:*)"]'])).toBe(
+      'model, mk.café, list["Bash(ls:*)"]',
+    );
+  });
+
+  it('names a key holding an escape, bidi or line-separator character by a hash', () => {
+    for (const key of ['\u001b]0;x\u0007', 'a\u202eb', 'a\u2028b']) {
+      expect(keyLabel(key)).toMatch(/^\(key [0-9a-f]{8}\)$/);
+    }
+    expect(keyLabel('a\u202eb')).not.toBe(keyLabel('b\u202ea'));
+  });
+
+  it('screens the names describeSettings prints', () => {
+    expect(describeSettings(['\u001b[2J']).phrase).toMatch(/^1 setting \(\(key [0-9a-f]{8}\)\)$/);
   });
 });

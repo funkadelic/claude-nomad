@@ -88,6 +88,15 @@ describe('hookEntryLabel', () => {
     const [entry] = liveOnlyHookEntries(merged, live);
     expect(hookEntryLabel(entry)).toBe('Stop hook');
   });
+
+  it('names an event holding a control character by a hash', () => {
+    const merged = { hooks: { Stop: [{ matcher: '', hooks: [stopHook] }] } };
+    const live = {
+      hooks: { ...merged.hooks, 'Ev\u001b[2J': [{ matcher: '', hooks: [preToolHook] }] },
+    };
+    const [entry] = liveOnlyHookEntries(merged, live);
+    expect(hookEntryLabel(entry)).toMatch(/^\(key [0-9a-f]{8}\) hook 'pre-cmd'$/);
+  });
 });
 
 describe('identity', () => {

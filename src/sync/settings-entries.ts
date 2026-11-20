@@ -8,7 +8,12 @@ import { createHash } from 'node:crypto';
 
 import { isProtoPollutionKey } from '../core/utils.json.ts';
 import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
-import { CAPTURE_EXCLUDED_KEYS, deepEqual, normalizeNodePathsDeep } from './settings-classify.ts';
+import {
+  CAPTURE_EXCLUDED_KEYS,
+  deepEqual,
+  keyLabel,
+  normalizeNodePathsDeep,
+} from './settings-classify.ts';
 
 /**
  * An entry below the top level. An object entry's `path` ends at its own key;
@@ -61,18 +66,12 @@ export function holdsEntry(obj: Record<string, unknown>, e: NestedEntry): boolea
 /** Up to 200 characters with no control, format (bidi, zero-width) or line-separator characters. */
 const READABLE_RE = /^[^\p{Cc}\p{Cf}\u2028\u2029]{0,200}$/u;
 
-/** The first 8 hex digits of the sha256 of `text`. */
-function hashPrefix(text: string): string {
-  return createHash('sha256').update(text).digest('hex').slice(0, 8);
-}
-
 /**
- * `path` joined with dots for the terminal, each unreadable key shown as
- * `(key <hash>)` so no control or bidi character in a key name is printed.
+ * `path` joined with dots for the terminal, each key through `keyLabel`.
  * @param path - Key segments from the top level down.
  */
 export function pathLabel(path: readonly string[]): string {
-  return path.map((k) => (READABLE_RE.test(k) ? k : `(key ${hashPrefix(k)})`)).join('.');
+  return path.map(keyLabel).join('.');
 }
 
 /** JSON with object keys sorted, so key order never changes a hash. */
@@ -98,7 +97,10 @@ export function elementEntry(path: string[], value: unknown, position: number): 
   const text = typeof value === 'string' ? value : json;
   const shown = READABLE_RE.test(text)
     ? json
-    : `item ${position}, ${hashPrefix(canonicalJson(normalizeNodePathsDeep(value)))}`;
+    : `item ${position}, ${createHash('sha256')
+        .update(canonicalJson(normalizeNodePathsDeep(value)))
+        .digest('hex')
+        .slice(0, 8)}`;
   return { path, key: path[0], label: `${pathLabel(path)}[${shown}]`, value, element: true };
 }
 

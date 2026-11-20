@@ -6,6 +6,7 @@ import {
   classifySettingsDrift,
   partitionByCaptureExclusion,
 } from '../../../sync/settings-classify.ts';
+import { keyList } from '../../../sync/settings-classify.ts';
 import { withoutNestedEntries } from '../../../sync/settings-entries.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
@@ -260,7 +261,7 @@ function droppedRow(
   const when =
     candidates.length === 0
       ? "the next 'nomad pull' removes them"
-      : `a pull removes them once ${candidates.join(', ')} ${verb} captured or deleted`;
+      : `a pull removes them once ${keyList(candidates)} ${verb} captured or deleted`;
   const listNote = lists
     ? '; for a list item, put the whole list the repo gives this machine now plus the item there, ' +
       'since a host list replaces the shared one; if the list came only from the shared file, ' +
@@ -269,7 +270,7 @@ function droppedRow(
   const keep = nested
     ? `add them to hosts/${HOST}.json${listNote}`
     : "run 'nomad capture-settings --host'";
-  return `${yellow(warnGlyph)} settings.json has ${dropped.length} setting(s) the repo no longer carries: ${dropped.join(', ')} (${when}, as expected if they were removed from the repo on purpose; to keep them on this machine only, ${keep})`;
+  return `${yellow(warnGlyph)} settings.json has ${dropped.length} setting(s) the repo no longer carries: ${keyList(dropped)} (${when}, as expected if they were removed from the repo on purpose; to keep them on this machine only, ${keep})`;
 }
 
 /**
@@ -318,13 +319,13 @@ function emitDriftRows(
   if (missing.length > 0) {
     addItem(
       section,
-      `${yellow(warnGlyph)} settings.json drift: merged keys missing locally: ${missing.join(', ')} (external writer clobbered settings.json; run 'nomad pull')`,
+      `${yellow(warnGlyph)} settings.json drift: merged keys missing locally: ${keyList(missing)} (external writer clobbered settings.json; run 'nomad pull')`,
     );
   }
   if (changed.length > 0) {
     addItem(
       section,
-      `${yellow(warnGlyph)} settings.json drift: ${changed.join(', ')} diverged from the base+host merge (run 'nomad diff' to inspect; 'nomad pull' overwrites local with the repo, or edit the base/host file to keep local)`,
+      `${yellow(warnGlyph)} settings.json drift: ${keyList(changed)} diverged from the base+host merge (run 'nomad diff' to inspect; 'nomad pull' overwrites local with the repo, or edit the base/host file to keep local)`,
     );
   }
   if (dropped.length > 0)
@@ -334,7 +335,7 @@ function emitDriftRows(
     const readds = topDropped > 0 ? '; this also puts back the removed keys above' : '';
     addItem(
       section,
-      `${dim(infoGlyph)} settings.json has ${shown.length} local-only setting(s) not in base+host merge: ${shown.join(', ')} (run 'nomad capture-settings' to promote them into the repo, adding --host for host-specific values${readds})`,
+      `${dim(infoGlyph)} settings.json has ${shown.length} local-only setting(s) not in base+host merge: ${keyList(shown)} (run 'nomad capture-settings' to promote them into the repo, adding --host for host-specific values${readds})`,
     );
   }
   if (excluded.length > 0 && hostFileExists) {

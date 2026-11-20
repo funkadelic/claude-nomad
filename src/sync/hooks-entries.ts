@@ -6,7 +6,7 @@
  */
 
 import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
-import { normalizeNodePathsDeep } from './settings-classify.ts';
+import { keyLabel, normalizeNodePathsDeep } from './settings-classify.ts';
 import { sortKeysDeep } from '../core/utils.json.ts';
 
 /**
@@ -144,10 +144,10 @@ export function hookEntryLabel(e: HookEntry): string {
   if (e.hook !== null && typeof e.hook === 'object' && !Array.isArray(e.hook)) {
     const cmd = (e.hook as Record<string, unknown>).command;
     if (typeof cmd === 'string' && READABLE_COMMAND_RE.test(cmd)) {
-      return `${e.event} hook '${cmd}'`;
+      return `${keyLabel(e.event)} hook '${cmd}'`;
     }
   }
-  return `${e.event} hook`;
+  return `${keyLabel(e.event)} hook`;
 }
 
 // ---------------------------------------------------------------------------
