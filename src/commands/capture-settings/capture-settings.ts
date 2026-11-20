@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 import { backupBase, claudeHome, HOST, repoHome } from '../../core/config.ts';
-import { buildCaptureSubset, describeSettings, keyList } from '../../sync/settings-classify.ts';
+import {
+  buildCaptureSubset,
+  describeSettings,
+  keyLabel,
+  keyList,
+} from '../../sync/settings-classify.ts';
+import { pathLabel } from '../../sync/settings-entries.ts';
 import { buildHookCaptureSubset, hostReplacesHooks } from '../../sync/hooks-entries.ts';
 import { regenerateSettings } from '../../sync/links.ts';
 import { blockedHookEntries, removedSettingsKeys } from '../../sync/settings-guard.ts';
@@ -120,14 +126,14 @@ function collectCapture(
   const { entries: nested, clashed } = nestedCaptureEntries(sources, useHost, written, entryIds);
   const { hooks, shadowed, skipped } = buildHookCaptureSubset({ ...sources, entries }, useHost);
 
-  for (const event of skipped) {
+  for (const event of skipped.map(keyLabel)) {
     warn(
       `not saving ${event} hooks to shared/settings.base.json: hosts/${HOST}.json overrides ` +
         `them on this host, so the shared ones never reach it; run 'nomad capture-settings ` +
         `--host' to save them there`,
     );
   }
-  for (const event of shadowed) {
+  for (const event of shadowed.map(keyLabel)) {
     warn(
       `hosts/${HOST}.json will carry this host's full ${event} hook list, so later edits to ` +
         `${event} hooks in shared/settings.base.json will not reach this host`,
@@ -148,7 +154,7 @@ function collectCapture(
 
   const keys = [
     ...Object.keys(topSubset),
-    ...hookEventKeys.map((e) => `hooks.${e}`),
+    ...hookEventKeys.map((e) => pathLabel(['hooks', e])),
     ...nested.map((e) => e.label),
   ].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
 

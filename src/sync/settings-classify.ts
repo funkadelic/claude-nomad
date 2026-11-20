@@ -217,6 +217,25 @@ export function partitionByCaptureExclusion(keys: string[]): {
 
 /** A control, format (bidi, zero-width) or line-separator character. */
 const UNSAFE_CHAR_RE = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+const UNSAFE_CHARS_RE = new RegExp(UNSAFE_CHAR_RE.source, 'gu');
+
+/**
+ * Whether `text` holds a character that could rewrite or hide terminal output.
+ * @param text - Any text bound for the terminal.
+ */
+export function hasUnsafeChar(text: string): boolean {
+  return UNSAFE_CHAR_RE.test(text);
+}
+
+/**
+ * `text` with each unsafe character but newline written as its JSON `\uXXXX`
+ * escape, so JSON text stays valid and shows what the file holds.
+ * @param text - JSON text bound for the terminal.
+ */
+export function escapeUnsafe(text: string): string {
+  const escape = (u: string): string => `\\u${u.charCodeAt(0).toString(16).padStart(4, '0')}`;
+  return text.replace(UNSAFE_CHARS_RE, (c) => (c === '\n' ? c : c.split('').map(escape).join('')));
+}
 
 /**
  * `key` for the terminal: as is, or `(key <8 hex of its sha256>)` when it holds
@@ -224,7 +243,7 @@ const UNSAFE_CHAR_RE = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
  * @param key - A settings key name or an already-built label.
  */
 export function keyLabel(key: string): string {
-  if (!UNSAFE_CHAR_RE.test(key)) return key;
+  if (!hasUnsafeChar(key)) return key;
   return `(key ${createHash('sha256').update(key).digest('hex').slice(0, 8)})`;
 }
 

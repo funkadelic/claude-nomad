@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
+import { keyLabel } from '../../../sync/settings-classify.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { relativeRequireTargetsBroken } from './hooks.preserve-symlinks.probe.ts';
 import { allSharedLinks, claudeHome, home, repoHome, type PathMap } from '../../../core/config.ts';
@@ -209,7 +210,7 @@ function checkEventForPreserveSymlinks(
       if (script === null) continue;
       addItem(
         section,
-        `${yellow(warnGlyph)} hooks/${event}: node ${script} needs --preserve-symlinks-main` +
+        `${yellow(warnGlyph)} hooks/${keyLabel(event)}: node ${script} needs --preserve-symlinks-main` +
           ` (add it to the hook command in shared/settings.base.json)`,
       );
       anyWarn = true;

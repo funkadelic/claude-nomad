@@ -11,6 +11,7 @@ import { asPlainObject, stripGsdHookEntries } from './hooks-filter.ts';
 import {
   CAPTURE_EXCLUDED_KEYS,
   deepEqual,
+  hasUnsafeChar,
   keyLabel,
   normalizeNodePathsDeep,
 } from './settings-classify.ts';
@@ -63,8 +64,10 @@ export function holdsEntry(obj: Record<string, unknown>, e: NestedEntry): boolea
   return Array.isArray(at) && at.some((v) => sameValue(v, e.value));
 }
 
-/** Up to 200 characters with no control, format (bidi, zero-width) or line-separator characters. */
-const READABLE_RE = /^[^\p{Cc}\p{Cf}\u2028\u2029]{0,200}$/u;
+/** Up to 200 characters, none of them unsafe for the terminal. */
+function isReadable(text: string): boolean {
+  return [...text].length <= 200 && !hasUnsafeChar(text);
+}
 
 /**
  * `path` joined with dots for the terminal, each key through `keyLabel`.
@@ -95,7 +98,7 @@ function canonicalJson(value: unknown): string {
 export function elementEntry(path: string[], value: unknown, position: number): NestedEntry {
   const json = JSON.stringify(value);
   const text = typeof value === 'string' ? value : json;
-  const shown = READABLE_RE.test(text)
+  const shown = isReadable(text)
     ? json
     : `item ${position}, ${createHash('sha256')
         .update(canonicalJson(normalizeNodePathsDeep(value)))

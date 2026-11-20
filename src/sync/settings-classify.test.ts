@@ -6,6 +6,7 @@ import {
   CAPTURE_EXCLUDED_KEYS,
   classifySettingsDrift,
   describeSettings,
+  escapeUnsafe,
   keyLabel,
   keyList,
   normalizeNodePathsDeep,
@@ -676,5 +677,17 @@ describe('keyLabel', () => {
 
   it('screens the names describeSettings prints', () => {
     expect(describeSettings(['\u001b[2J']).phrase).toMatch(/^1 setting \(\(key [0-9a-f]{8}\)\)$/);
+  });
+});
+
+describe('escapeUnsafe', () => {
+  it('writes bidi, zero-width, DEL, C1 and astral format characters as JSON escapes', () => {
+    const text = '"a\u202eb\u200b\u007f\u009b\u{e0001}"';
+    expect(escapeUnsafe(text)).toBe('"a\\u202eb\\u200b\\u007f\\u009b\\udb40\\udc01"');
+    expect(JSON.parse(escapeUnsafe(text))).toBe(JSON.parse(text));
+  });
+
+  it('keeps newlines and printable text, non-ASCII included', () => {
+    expect(escapeUnsafe('{\n  "k": "café"\n}')).toBe('{\n  "k": "café"\n}');
   });
 });

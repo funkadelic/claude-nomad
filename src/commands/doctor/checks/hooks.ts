@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dim, failGlyph, green, infoGlyph, okGlyph, red } from '../../../render/color.ts';
+import { keyLabel } from '../../../sync/settings-classify.ts';
 import { addItem, readJsonSafe, type DoctorSection } from '../format.ts';
 import { claudeHome, home } from '../../../core/config.ts';
 
@@ -150,7 +151,7 @@ function checkEventGroups(section: DoctorSection, event: string, groups: unknown
         if (existsSync(resolved)) continue;
         addItem(
           section,
-          `${red(failGlyph)} hooks/${event}: command target missing: ${resolved} (run nomad pull)`,
+          `${red(failGlyph)} hooks/${keyLabel(event)}: command target missing: ${resolved} (run nomad pull)`,
         );
         process.exitCode = 1;
         anyFail = true;

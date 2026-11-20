@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { dim, green, infoGlyph, okGlyph, warnGlyph, yellow } from '../../../render/color.ts';
 import {
   classifySettingsDrift,
+  keyList,
   partitionByCaptureExclusion,
 } from '../../../sync/settings-classify.ts';
-import { keyList } from '../../../sync/settings-classify.ts';
 import { withoutNestedEntries } from '../../../sync/settings-entries.ts';
 import { addItem, type DoctorSection } from '../format.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';

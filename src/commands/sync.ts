@@ -25,6 +25,7 @@ import { join } from 'node:path';
 import { PULL_SUMMARY_HEADER, runPullCore, type PullCoreResult } from './pull/pull.ts';
 import { runPushCore, type PushCoreResult } from './push/push.ts';
 import { HOST, repoHome } from '../core/config.ts';
+import { keyList } from '../sync/settings-classify.ts';
 import { dim, infoGlyph, warnGlyph, yellow } from '../render/color.ts';
 import { addItem, renderTree, section, type DoctorSection } from '../render/output-tree.ts';
 import { die, fail, log, ok, NomadFatal } from '../core/utils.ts';
@@ -87,7 +88,7 @@ function buildPullSummaryRow(pull: WetPull): string {
   const applied = pull.incomingChanges ? 'upstream changes applied' : 'no upstream changes';
   const settings =
     pull.settingsBlocked.length > 0
-      ? `settings.json not written (${pull.settingsBlocked.join(', ')} not in the repo)`
+      ? `settings.json not written (${keyList(pull.settingsBlocked)} not in the repo)`
       : `settings regenerated (base + ${pull.settingsLabel})`;
   return `pull: ${applied}; ${settings}`;
 }

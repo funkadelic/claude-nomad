@@ -9,6 +9,7 @@ import { planSharedLinkDeletions, type SharedLinkDeletion } from '../sync/links.
 import { stageLocalSharedEdits, type MirrorPreviewEvent } from '../sync/links.mirror.ts';
 import { type LinkPreviewEvent, applySharedLinks } from '../sync/links.ts';
 import { addItem, renderTree, section, type DoctorSection } from './output-tree.ts';
+import { escapeUnsafe } from '../sync/settings-classify.ts';
 import {
   blockedSettingsKeys,
   removedSettingsKeys,
@@ -96,7 +97,7 @@ export function diffJsonStrings(currentJsonText: string, newJsonText: string): s
   const lines: string[] = [
     '--- ~/.claude/settings.json',
     '+++ would write',
-    ...diffLinesToUnified(currentJsonText, newJsonText),
+    ...diffLinesToUnified(escapeUnsafe(currentJsonText), escapeUnsafe(newJsonText)),
   ];
   return lines.join('\n');
 }
