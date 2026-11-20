@@ -710,6 +710,18 @@ describe('array members', () => {
     expect(labels.join()).not.toContain('xxx');
   });
 
+  it('counts duplicates in a position and sorts positions numerically', () => {
+    const long = (c: string) => c.repeat(201);
+    const list = ['a', 'a', long('x'), ...'bcdefgh'.split('').map(long), long('y')];
+    const labels = blockedSettingsKeys({ list: ['a'] }, { list }, {});
+    expect(labels[0]).toMatch(/^list\[item 3, /);
+    expect(labels.at(-1)).toMatch(/^list\[item 11, /);
+  });
+
+  it('shows an empty-string member as ""', () => {
+    expect(blockedSettingsKeys({ list: [] }, { list: [''] }, {})).toEqual(['list[""]']);
+  });
+
   it('shows a member of up to 200 characters in full, non-ASCII included', () => {
     const rule = 'B'.repeat(200);
     expect(blockedSettingsKeys({ list: [] }, { list: [rule, 'Bash(echo café)'] }, {})).toEqual([

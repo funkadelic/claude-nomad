@@ -94,6 +94,6 @@ export function pruneBlockedEntries(
       removed.push(...dropped);
     }
   }
-  removed.sort((a, b) => a.label.localeCompare(b.label, 'en'));
+  removed.sort((a, b) => a.label.localeCompare(b.label, 'en', { numeric: true }));
   return { blocked, removed };
 }

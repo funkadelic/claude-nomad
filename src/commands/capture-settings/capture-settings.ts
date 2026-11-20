@@ -150,7 +150,7 @@ function collectCapture(
     ...Object.keys(topSubset),
     ...hookEventKeys.map((e) => `hooks.${e}`),
     ...nested.map((e) => e.label),
-  ].sort((a, b) => a.localeCompare(b, 'en'));
+  ].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
 
   // Entries the repo dropped that this capture does not save back; the resync deletes them.
   const captured = new Set(keys);

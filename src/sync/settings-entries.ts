@@ -58,8 +58,8 @@ export function holdsEntry(obj: Record<string, unknown>, e: NestedEntry): boolea
   return Array.isArray(at) && at.some((v) => sameValue(v, e.value));
 }
 
-/** 1 to 200 characters with no control, format (bidi, zero-width) or line-separator characters. */
-const READABLE_MEMBER_RE = /^[^\p{Cc}\p{Cf}\u2028\u2029]{1,200}$/u;
+/** Up to 200 characters with no control, format (bidi, zero-width) or line-separator characters. */
+const READABLE_MEMBER_RE = /^[^\p{Cc}\p{Cf}\u2028\u2029]{0,200}$/u;
 
 /** JSON with object keys sorted, so key order never changes a hash. */
 function canonicalJson(value: unknown): string {
@@ -74,7 +74,7 @@ function canonicalJson(value: unknown): string {
 /**
  * The entry for `value` as member `position` (1-based) of the array at `path`.
  * The label shows a readable member in full, else its position and a hash
- * prefix, so no long or control-character value reaches the terminal.
+ * prefix, so no long or control-character member reaches the terminal (key names are not screened).
  * @param path - The array's key path.
  * @param value - The member.
  * @param position - The member's 1-based position in that array.
@@ -150,7 +150,7 @@ export function liveOnlyNestedEntries(
   const mergedObj = stripGsdHookEntries(merged);
   return nestedEntries(stripGsdHookEntries(settings))
     .filter((e) => missingFrom(mergedObj, e))
-    .sort((a, b) => a.label.localeCompare(b.label, 'en'));
+    .sort((a, b) => a.label.localeCompare(b.label, 'en', { numeric: true }));
 }
 
 /** Copy of `obj` with the value at `path` replaced by `fn(value)`, copying each level. */
