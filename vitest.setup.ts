@@ -36,6 +36,10 @@ if (process.platform === 'win32') {
 const SUITE_HOME = mkdtempSync(join(tmpdir(), 'nomad-suite-home-'));
 process.env.HOME = SUITE_HOME;
 
+// A developer's exported NOMAD_REPO would point repoHome() at their real checkout
+// instead of each test's HOME-based fixture; tests that need it set it themselves.
+delete process.env.NOMAD_REPO;
+
 afterAll(() => {
   rmSync(SUITE_HOME, { recursive: true, force: true });
 });
