@@ -559,7 +559,7 @@ the OS `LongPathsEnabled` registry value), since deep encoded session paths unde
 `~/.claude/projects/` can exceed the legacy 260-character `MAX_PATH`; the gitleaks-missing install
 hint also switches to `winget`/`scoop` there. The Path map section lists both the projects mapped
 for this host and any local project directories with no path-map entry (what `nomad push` counts as
-"unmapped"; they are left alone in both directions). Both lists show only with `--verbose`.
+"unmapped"; they are left alone in both directions). Both lists show only with `--verbose` (`-v`).
 
 | Flag                | Description                                                                                                                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
