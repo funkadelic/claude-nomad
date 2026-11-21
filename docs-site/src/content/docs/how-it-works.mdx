@@ -60,7 +60,7 @@ What `~/claude-nomad/` looks like on a configured host:
 | **Shared support dirs** | Opt-in global `~/.claude/` dirs that another tool installs (e.g. `my-tool/`) | Opt-in via the `sharedDirs` field in `path-map.json`; symlinked into `~/.claude/` from `shared/`. |
 | **gsd-owned (not synced)** | `hooks/`, `agents/` | Installed per-host by `@opengsd/gsd-core` via npm. Not synced; syncing them caused cross-host churn when two machines ran different gsd versions. |
 | **Never synced** | OAuth and MCP state, shell history, per-host overrides, caches, scratch dirs | Per-host ephemeral state; left untouched in both directions. |
-| **Auto-rehydrated** | `~/.claude/plugins/cache/<plugin>/...` | Re-downloaded by Claude Code from the `enabledPlugins` list; no per-host install. |
+| **Installed per host** | `~/.claude/plugins/` | Not synced. Your `enabledPlugins` and marketplace list travel in `settings.json`, but each machine runs `claude plugin install <plugin>@<marketplace>` once before a plugin loads. |
 
 On native Windows the two symlinked rows are copy-synced instead: creating a symlink there needs
 Developer Mode or admin rights, so `nomad pull` materializes those names as real copies and `nomad
