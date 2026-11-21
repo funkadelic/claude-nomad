@@ -207,24 +207,12 @@ only when the project git-ignores it, otherwise the project repo already syncs i
 
 ### Per-project plugins
 
-A plugin installed with `--scope local` is turned on in `<repo>/.claude/settings.local.json`. nomad
-never syncs that file, so on your other machines the plugin stays off in that project. Turn it on in
-`<repo>/.claude/settings.json` instead, in one of two ways:
-
-- **Commit it to the project repo:** install with `--scope project`, which writes the setting to
-  `.claude/settings.json`, then commit that file. Anyone who clones the project, collaborators
-  included, gets the plugin turned on.
-- **Sync it with nomad:** if the project git-ignores its whole `.claude/` folder, move the
-  `enabledPlugins` entry into `.claude/settings.json` and add `.claude` to that project's `extras`.
-  nomad carries `settings.json` to your other machines and leaves each machine's
-  `settings.local.json` as it is. Run `nomad pull` on each other machine before its next
-  `nomad push`: a push replaces the synced `.claude/` with that machine's copy, so pushing first
-  removes the plugin setting from the repo.
-
-Either way, the setting turns the plugin on but does not install it. On each machine, run
-`claude plugin install <plugin>@<marketplace> --scope project` once in that project (add the
-marketplace first if that machine does not have it). Until then, `/plugin` lists the plugin under
-Errors as on but not installed.
+nomad does not sync plugins, and a project's plugin setting turns a plugin on without installing it.
+On each machine, run `claude plugin install <plugin>@<marketplace> --scope project` once in that
+project (add the marketplace first if that machine does not have it). The install writes the setting
+to `.claude/settings.json` itself, so adding `.claude` to a project's `extras` for this gains
+nothing. Commit `.claude/settings.json` if collaborators should have the plugin turned on too; each
+of them still runs the same install.
 
 ## Third-party tool directory
 
