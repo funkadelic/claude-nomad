@@ -1627,9 +1627,9 @@ describe('applySharedLinks win32 copy branch', () => {
 
   it('re-throws a type-collision fatal instead of downgrading it to a transient-lock WARN', async () => {
     // shared/CLAUDE.md is a FILE and the host entry is a DIRECTORY, which
-    // copyExtrasFilteredPreservingBy raises as a NomadFatal naming
-    // `nomad pull --force-remote`. Swallowing it would repeat advice that
-    // cannot clear the condition on every pull, while the pull exits 0.
+    // copyExtrasFilteredPreservingBy raises as a NomadFatal with recovery
+    // advice. Swallowing it would hide a condition that recurs on every pull,
+    // while the pull exits 0.
     writeFileSync(join(sharedDir, 'CLAUDE.md'), '# shared\n');
     mkdirSync(join(claudeDir, 'CLAUDE.md'), { recursive: true });
     writeFileSync(join(claudeDir, 'CLAUDE.md', 'nested.md'), '# host side\n');
@@ -1648,7 +1648,7 @@ describe('applySharedLinks win32 copy branch', () => {
     }
 
     expect(thrown).toBeInstanceOf(NomadFatal);
-    expect((thrown as Error).message).toContain('nomad pull --force-remote');
+    expect((thrown as Error).message).toContain('move the local directory aside');
     // The fatal reaches the top-level handler on its own terms: no WARN
     // recasting it as a lock the user could wait out.
     expect(errSpy).not.toHaveBeenCalled();

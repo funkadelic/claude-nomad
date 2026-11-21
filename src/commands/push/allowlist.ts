@@ -109,23 +109,28 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
 }
 
 /**
- * Paths whose porcelain record is a plain deletion. Rename and copy records
- * (and their paired old-path field) are left out, so both sides stay gated.
+ * Paths that leave the repo with nothing taking their place: plain deletion
+ * records and a rename's old path. A path that also shows up in any other
+ * record (re-created, re-added, a copy source) is left out, so it stays gated.
  *
  * @param statusPorcelain - `git status --porcelain=v1 -z` output.
  */
 export function deletedPathsZ(statusPorcelain: string): Set<string> {
   const deleted = new Set<string>();
-  let skipOldPath = false;
+  const live = new Set<string>();
+  let oldPathOf: 'R' | 'C' | null = null;
   for (const rec of statusPorcelain.split('\0')) {
-    if (skipOldPath) {
-      skipOldPath = false;
+    if (oldPathOf !== null) {
+      (oldPathOf === 'R' ? deleted : live).add(rec);
+      oldPathOf = null;
       continue;
     }
     const xy = rec.slice(0, 2);
-    if (/[RC]/.test(xy)) skipOldPath = true;
-    else if (xy.includes('D')) deleted.add(rec.slice(3));
+    (/^[D ]{2}$/.test(xy) ? deleted : live).add(rec.slice(3));
+    if (xy.includes('R')) oldPathOf = 'R';
+    else if (xy.includes('C')) oldPathOf = 'C';
   }
+  for (const p of live) deleted.delete(p);
   return deleted;
 }
 
@@ -158,8 +163,8 @@ export function buildAllowList(map: PathMap): string[] {
 
 /**
  * Reject any staged path that is off the `buildAllowList` list or in `NEVER_SYNC`.
- * A plain deletion of a `NEVER_SYNC` path passes, so a path a newer deny rule
- * now filters can leave the repo instead of wedging every push.
+ * A `NEVER_SYNC` path that only leaves the repo (see `deletedPathsZ`) passes,
+ * so a path a newer deny rule now filters cannot wedge every push.
  * Logs every violation, then throws `NomadFatal` so the caller releases the push lock.
  */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {

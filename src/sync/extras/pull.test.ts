@@ -329,7 +329,10 @@ describe('remapExtrasPull (integration)', () => {
     );
 
     const { remapExtrasPull } = await import('./extras.ts');
+    const { encodePath } = await import('../../core/utils.json.ts');
     remapExtrasPull('20261120-wt');
+    const backup = join(cacheBase, '20261120-wt', 'extras', encodePath(projectRoot), '.claude');
+    expect(existsSync(join(backup, 'worktrees'))).toBe(false);
 
     expect(readFileSync(join(local, 'wip.ts'), 'utf8')).toBe('uncommitted\n');
     expect(existsSync(join(local, '.git'))).toBe(true);

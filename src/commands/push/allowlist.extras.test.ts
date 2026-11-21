@@ -311,15 +311,26 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it('still blocks a rename whose old path is denied', async () => {
+  it('lets a rename move content out of a denied root worktrees/ path', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
-    const { NomadFatal } = await import('../../core/utils.ts');
     expect(() =>
       enforceAllowList(
         'R  shared/extras/foo/.claude/commands/a.md\0shared/extras/foo/.claude/worktrees/a.md\0',
         map,
       ),
-    ).toThrow(NomadFatal);
+    ).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a staged deletion whose file came back', 'D  {p}\0?? {p}\0'],
+    ['a copy from a denied source', 'C  shared/extras/foo/.claude/commands/a.md\0{p}\0'],
+    ['an add left in the index', 'AD {p}\0'],
+  ])('still blocks %s', async (_label, status) => {
+    const { enforceAllowList } = await import('./allowlist.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
+    const p = 'shared/extras/foo/.claude/settings.local.json';
+    expect(() => enforceAllowList(status.replaceAll('{p}', p), map)).toThrow(NomadFatal);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
   });
 

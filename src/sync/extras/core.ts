@@ -333,26 +333,12 @@ export function copyExtrasFiltered(
 }
 
 /**
- * Pull-only preserving copy variant. Unlike `copyExtras` and
- * `copyExtrasFiltered`, this function does NOT `rmSync(dst)` wholesale before
- * copying. Instead it runs a recursive prune (`prunePreservingBy`) that
- * preserves, at any depth, every existing dst entry whose basename is in
- * `blockSet` (host-local deny-set files that push already filtered out of the
- * repo, e.g. `settings.local.json`), while still applying true-mirror deletion
- * to synced (non-deny) dst entries that are absent from src. After pruning, the
- * same filtered `cpSync` used by `copyExtrasFiltered` overwrites or creates
- * synced files (defense-in-depth: deny-set basenames from src are also stripped
- * on the copy, guarding against a repo poisoned out-of-band). A not-yet-existing
- * dst (fresh pull) is handled cleanly: the prune is skipped and cpSync creates
- * it. A dst that exists but is not a real directory (a regular file, or a
- * symlink) is removed wholesale before the copy, matching `copyExtras` root
- * semantics, so the recursive prune never `readdirSync`-follows a symlink and
- * deletes content outside the project tree. Passes `verbatimSymlinks: true` so
- * relative symlink targets are not
- * rewritten across hosts (see nodejs/node issue 41693). The
- * root-src-entry-kept semantics (`srcEntry === src`) match `copyExtrasFiltered`
- * exactly. `copyExtras` and `copyExtrasFiltered` are intentionally left
- * unchanged so the push path stays an exact byte-mirror.
+ * Pull-only preserving copy: a `Set`-keyed wrapper over
+ * `copyExtrasFilteredPreservingBy`. Existing dst entries whose basename is in
+ * `blockSet` (host-local files push filtered out, e.g. `settings.local.json`)
+ * survive at any depth; other dst entries absent from src are mirror-pruned,
+ * then the filtered copy writes the synced files. Throws `NomadFatal` when
+ * dst is a directory but src is not.
  *
  * @param src - Source directory to copy from (repo side on pull).
  * @param dst - Destination path (host-side project dir on pull).
