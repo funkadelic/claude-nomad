@@ -110,7 +110,7 @@ Pointers and specifics:
   `stats-cache.json`, `todos/`, `shell-snapshots/`, `debug/`, `file-history/`, `plans/`,
   `session-env/`, `statsig/`, `telemetry/`, `ide/`, plus host-local caches and runtime state
   (`cache/`, `backups/`, `paste-cache/`, `daemon/`, `jobs/`, `tasks/`, `security/`,
-  `sessions/`). This set is also the deny-list the `sharedDirs` opt-in is checked against, so
+  `sessions/`, `scheduled_tasks.lock`). This set is also the deny-list the `sharedDirs` opt-in is checked against, so
   one of these names cannot be symlinked into the shared repo by mistake. That is the full list for
   one question only: is this NAME safe to share at all? A different, narrower question applies to
   the CONTENT already inside a directory you have chosen to share, covered next.
