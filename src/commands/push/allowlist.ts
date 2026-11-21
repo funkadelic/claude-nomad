@@ -109,6 +109,27 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
 }
 
 /**
+ * Paths whose porcelain record is a plain deletion. Rename and copy records
+ * (and their paired old-path field) are left out, so both sides stay gated.
+ *
+ * @param statusPorcelain - `git status --porcelain=v1 -z` output.
+ */
+export function deletedPathsZ(statusPorcelain: string): Set<string> {
+  const deleted = new Set<string>();
+  let skipOldPath = false;
+  for (const rec of statusPorcelain.split('\0')) {
+    if (skipOldPath) {
+      skipOldPath = false;
+      continue;
+    }
+    const xy = rec.slice(0, 2);
+    if (/[RC]/.test(xy)) skipOldPath = true;
+    else if (xy.includes('D')) deleted.add(rec.slice(3));
+  }
+  return deleted;
+}
+
+/**
  * Build the push allow-list: `PUSH_ALLOWED_STATIC`, each project's sessions dir,
  * each whitelisted extra (exact name plus subtree, never the whole logical), and
  * each valid `sharedDirs` folder.
@@ -137,15 +158,18 @@ export function buildAllowList(map: PathMap): string[] {
 
 /**
  * Reject any staged path that is off the `buildAllowList` list or in `NEVER_SYNC`.
+ * A plain deletion of a `NEVER_SYNC` path passes, so a path a newer deny rule
+ * now filters can leave the repo instead of wedging every push.
  * Logs every violation, then throws `NomadFatal` so the caller releases the push lock.
  */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   const allowed = buildAllowList(map);
+  const deleted = deletedPathsZ(statusPorcelain);
   const neverSyncHits: string[] = [];
   const violations: string[] = [];
   for (const path of parsePorcelainZ(statusPorcelain)) {
     if (isNeverSync(path)) {
-      neverSyncHits.push(path);
+      if (!deleted.has(path)) neverSyncHits.push(path);
     } else if (isGsdDropped(path)) {
       // gsd-owned asset under a GSD_DROPPED_NAMES dir: silently skip.
       // gsd reinstalls these per-host; they are not sync candidates.

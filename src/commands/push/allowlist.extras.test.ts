@@ -300,6 +300,29 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  it('lets a tracked root worktrees/ path be deleted from the repo', async () => {
+    const { enforceAllowList } = await import('./allowlist.ts');
+    expect(() =>
+      enforceAllowList(' D shared/extras/foo/.claude/worktrees/feature/a.ts\0', map),
+    ).not.toThrow();
+    expect(() =>
+      enforceAllowList('D  shared/extras/foo/.claude/worktrees/feature/b.ts\0', map),
+    ).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('still blocks a rename whose old path is denied', async () => {
+    const { enforceAllowList } = await import('./allowlist.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
+    expect(() =>
+      enforceAllowList(
+        'R  shared/extras/foo/.claude/commands/a.md\0shared/extras/foo/.claude/worktrees/a.md\0',
+        map,
+      ),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+  });
+
   it('permits config (settings.json, hooks/) under a .claude extra', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
     expect(() =>
