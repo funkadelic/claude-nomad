@@ -191,6 +191,7 @@ function wetPull(
     sessionExtraRows?: string[];
     localOnly?: number;
     divergedKeptLocal?: number;
+    divergedReplaced?: number;
     incomingChanges?: boolean;
     settingsLabel?: string;
     settingsBlocked?: string[];
@@ -207,6 +208,7 @@ function wetPull(
     }),
     localOnly: opts.localOnly ?? 0,
     divergedKeptLocal: opts.divergedKeptLocal ?? 0,
+    divergedReplaced: opts.divergedReplaced ?? 0,
     incomingChanges: opts.incomingChanges ?? true,
     settingsLabel: opts.settingsLabel ?? 'no host overrides',
     settingsBlocked: opts.settingsBlocked ?? [],
@@ -529,6 +531,34 @@ describe('cmdSync: wet composition', () => {
       'push: pushed (3 local-only sessions, 2 diverged extras files, 1 config file)',
     );
     expect(process.exitCode).not.toBe(1);
+  });
+
+  it('push row does not list replaced .claude files as pushed', async () => {
+    vi.doMock('./pull/pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ incomingChanges: false, divergedReplaced: 1 })),
+    }));
+    vi.doMock('./push/push.ts', () => ({
+      runPushCore: vi.fn(() => pushedResult()),
+    }));
+    const { cmdSync } = await import('./sync.ts');
+    await cmdSync();
+    const combined = out(env);
+    expect(combined).toContain('push: pushed');
+    expect(combined).not.toContain('diverged extras file');
+  });
+
+  it('a replaced .claude file alone keeps an otherwise idle sync from reporting "already in sync"', async () => {
+    vi.doMock('./pull/pull.ts', () => ({
+      PULL_SUMMARY_HEADER: 'Pull summary',
+      runPullCore: vi.fn(() => wetPull({ incomingChanges: false, divergedReplaced: 1 })),
+    }));
+    vi.doMock('./push/push.ts', () => ({
+      runPushCore: vi.fn(() => ({ tag: 'nothing' })),
+    }));
+    const { cmdSync } = await import('./sync.ts');
+    await cmdSync();
+    expect(out(env)).not.toContain('already in sync');
   });
 
   it('push row defaults a missing globalConfigCount to zero (defensive, tag "pushed" with no count field)', async () => {
@@ -1099,7 +1129,7 @@ describe('cmdSync: mid-push leak recovery reuse', () => {
     vi.doMock('../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(() => ({ unmapped: 0, skipped: 0, pushed: [], wouldPush: [] })),
       remapExtrasPull: vi.fn(),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../sync/skills-sync.ts', () => ({
       syncSkillsPush: vi.fn(),

@@ -252,7 +252,7 @@ describe('divergenceCheckExtras (integration)', () => {
 
     // One both-sides-modified file (PLAN.md) diverges, so the return value
     // carries that count instead of the pre-refactor `undefined`.
-    expect(result).toBe(1);
+    expect(result).toEqual({ keptLocal: 1, replaced: 0 });
   });
 
   it('silently skips non-whitelisted dir names (SUPPORTED_EXTRAS guard)', async () => {
