@@ -462,6 +462,10 @@ export function blockSetFor(segments: string[]): Set<string> {
  * did it or the user has no action to take. `isNeverSync` is the boolean view
  * of this same scan.
  *
+ * After that scan, the segment directly under a `.claude` extra root is checked
+ * against `CLAUDE_EXTRA_ROOT_NEVER_SYNC`, so a deeper denied name is returned
+ * first.
+ *
  * @param path A repo-relative, forward-slashed path.
  * @returns The matching segment, or `null` when the path is clean.
  */

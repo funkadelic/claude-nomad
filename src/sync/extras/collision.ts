@@ -123,7 +123,7 @@ export function cpSyncGuarded(
 }
 
 /**
- * Predicate-driven recursive prune variant. Like `prunePreservingDenied` but
+ * Predicate-driven recursive prune variant. Like a `Set`-based prune but
  * the preserve/exclude decision is an `isPreserved(name)` predicate instead of
  * a fixed `Set`. This is required for the skills pull path: a local `gsd-*`
  * skill present in dst but ABSENT from src must be preserved, but a src-derived

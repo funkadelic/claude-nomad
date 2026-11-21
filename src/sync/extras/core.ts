@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, readFileSync, rmSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 
 import {
@@ -12,7 +12,12 @@ import {
   SUPPORTED_EXTRAS,
   type PathMap,
 } from '../../core/config.ts';
-import { cpSyncGuarded, isRootExcludedEntry, stripCollidingDstSymlinks } from './collision.ts';
+import {
+  copyExtrasFilteredPreservingBy,
+  cpSyncGuarded,
+  isRootExcludedEntry,
+  stripCollidingDstSymlinks,
+} from './collision.ts';
 import { assertSafeLocalRoot, assertSafeLogical } from './guards.ts';
 import { log } from '../../core/utils.ts';
 import { readPathMap } from '../../core/utils.json.ts';
@@ -328,51 +333,9 @@ export function copyExtrasFiltered(
 }
 
 /**
- * Recursively prune dst entries the repo no longer ships, mirroring
- * `copyExtras` deletion semantics at every depth WITHOUT touching host-local
- * deny-set files. At each level: an entry whose basename is in `blockSet` is
- * preserved wholesale (skipped, never recursed into), so nested per-host state
- * like `settings.local.json` or a `projects/` tree survives. A non-deny entry
- * absent from src is removed. When both src and dst hold the same name as
- * directories the prune recurses to clear nested stale content; when the node
- * types differ (dst dir vs src file, or vice versa) the dst node is removed so
- * the follow-up `cpSync` can recreate it cleanly (`cpSync` cannot overwrite a
- * non-empty dir with a file). Presence in src is probed with `lstatSync` (no
- * symlink follow) so a broken/relative src symlink is not misread as "absent"
- * and used to prune a real dst entry.
- *
- * @param src - Source directory (repo side on pull).
- * @param dst - Destination directory (host side on pull); assumed to exist.
- * @param blockSet - Basenames to preserve at any depth (see `extrasDenySet`).
- * @param isRootExcluded - Optional predicate applied at this top level only.
- */
-function prunePreservingDenied(
-  src: string,
-  dst: string,
-  blockSet: Set<string>,
-  isRootExcluded?: (name: string) => boolean,
-): void {
-  for (const name of readdirSync(dst)) {
-    if (isDeniedName(blockSet, name) || isRootExcluded?.(name) === true) continue;
-    const dstPath = join(dst, name);
-    const srcStat = lstatSync(join(src, name), { throwIfNoEntry: false });
-    if (srcStat === undefined) {
-      rmSync(dstPath, { recursive: true, force: true });
-      continue;
-    }
-    const dstStat = lstatSync(dstPath);
-    if (srcStat.isDirectory() && dstStat.isDirectory()) {
-      prunePreservingDenied(join(src, name), dstPath, blockSet);
-    } else if (srcStat.isDirectory() !== dstStat.isDirectory()) {
-      rmSync(dstPath, { recursive: true, force: true });
-    }
-  }
-}
-
-/**
  * Pull-only preserving copy variant. Unlike `copyExtras` and
  * `copyExtrasFiltered`, this function does NOT `rmSync(dst)` wholesale before
- * copying. Instead it runs a recursive prune (`prunePreservingDenied`) that
+ * copying. Instead it runs a recursive prune (`prunePreservingBy`) that
  * preserves, at any depth, every existing dst entry whose basename is in
  * `blockSet` (host-local deny-set files that push already filtered out of the
  * repo, e.g. `settings.local.json`), while still applying true-mirror deletion
@@ -404,22 +367,11 @@ export function copyExtrasFilteredPreserving(
   blockSet: Set<string>,
   isRootExcluded?: (name: string) => boolean,
 ): void {
-  const dstStat = lstatSync(dst, { throwIfNoEntry: false });
-  if (dstStat !== undefined) {
-    // A non-directory root (file or symlink) is removed wholesale so cpSync
-    // recreates it, and so the prune never readdir-follows a symlink into an
-    // external tree. Only a real directory is pruned in place.
-    if (dstStat.isDirectory()) prunePreservingDenied(src, dst, blockSet, isRootExcluded);
-    else rmSync(dst, { recursive: true, force: true });
-  }
-  stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name), isRootExcluded);
-  cpSync(src, dst, {
-    recursive: true,
-    force: true,
-    verbatimSymlinks: true,
-    filter: (srcEntry) =>
-      srcEntry === src ||
-      (!isDeniedName(blockSet, basename(srcEntry)) &&
-        !isRootExcludedEntry(src, srcEntry, isRootExcluded)),
-  });
+  copyExtrasFilteredPreservingBy(
+    src,
+    dst,
+    (name) => isDeniedName(blockSet, name),
+    undefined,
+    isRootExcluded,
+  );
 }
