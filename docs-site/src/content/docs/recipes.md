@@ -205,6 +205,20 @@ The `.claude` extra is filtered so only config travels and host-local or ephemer
 on push. See [How it works](/claude-nomad/how-it-works/) for the filtering detail. Opt a name in
 only when the project git-ignores it, otherwise the project repo already syncs it.
 
+### Per-project plugins
+
+A plugin installed with `--scope local` is turned on in `<repo>/.claude/settings.local.json`, and
+nomad never syncs that file. Your other machines get the plugin's marketplace, but the plugin stays
+off in that project. To fix it, move the `enabledPlugins` entry into `<repo>/.claude/settings.json`
+in one of two ways:
+
+- **Commit it to the project repo:** install with `--scope project`, which writes
+  `.claude/settings.json` for you. Every clone of the project then has the plugin on.
+- **Keep it out of the project repo:** put the `enabledPlugins` entry in a git-ignored
+  `.claude/settings.json` and add `.claude` to that project's `extras`. nomad carries
+  `settings.json` to your other machines and leaves `settings.local.json` (and any per-machine
+  permissions in it) where it is.
+
 ## Third-party tool directory
 
 If a tool other than GSD installs a support directory under the global `~/.claude/`, opt that
