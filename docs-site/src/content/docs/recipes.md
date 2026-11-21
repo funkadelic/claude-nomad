@@ -221,6 +221,11 @@ never syncs that file, so on your other machines the plugin stays off in that pr
   `nomad push`: a push replaces the synced `.claude/` with that machine's copy, so pushing first
   removes the plugin setting from the repo.
 
+Either way, the setting turns the plugin on but does not install it. On each machine, run
+`claude plugin install <plugin>@<marketplace> --scope project` once in that project (add the
+marketplace first if that machine does not have it). Until then, `/plugin` lists the plugin under
+Errors as on but not installed.
+
 ## Third-party tool directory
 
 If a tool other than GSD installs a support directory under the global `~/.claude/`, opt that
