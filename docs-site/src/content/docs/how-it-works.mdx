@@ -144,8 +144,9 @@ Pointers and specifics:
 - **The `.claude/` extra is filtered against the _full_ never-synced set, not just that subset.**
   Because a `.claude/` directory mirrors the layout of `~/.claude/`, opting it in strips every
   ephemeral or host-local name on push: the whole `NEVER_SYNC` set plus session transcripts under
-  `projects/` (`settings.local.json`, `projects/`, `shell-snapshots/`, `sessions/`, `statsig/`,
-  `telemetry/`, `todos/`, ...), leaving your project config (`settings.json`, `skills/`,
+  `projects/` and Claude Code's git worktree checkouts under `worktrees/` (`settings.local.json`,
+  `projects/`, `worktrees/`, `shell-snapshots/`, `sessions/`, `statsig/`, `telemetry/`, `todos/`,
+  ...), leaving your project config (`settings.json`, `skills/`,
   `commands/`, `rules/`, `hooks/`, `agents/`). So syncing `.claude/` carries your project's Claude
   setup across machines without ever
   leaking session transcripts or per-host secrets. The same boundary is enforced a second time at

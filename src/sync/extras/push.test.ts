@@ -323,6 +323,27 @@ describe('remapExtrasPush (integration)', () => {
     });
   });
 
+  it('.claude extra: never stages a .claude/worktrees git worktree checkout', async () => {
+    const wt = join(projectRoot, '.claude', 'worktrees', 'feature');
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(wt, '.git'), 'gitdir: /elsewhere\n');
+    writeFileSync(join(wt, 'index.ts'), 'code\n');
+    writeFileSync(join(projectRoot, '.claude', 'settings.json'), '{}\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.claude'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPush } = await import('./extras.ts');
+    remapExtrasPush('20261120-wt');
+
+    expect(existsSync(join(sharedExtras, 'foo', '.claude', 'worktrees'))).toBe(false);
+    expect(existsSync(join(sharedExtras, 'foo', '.claude', 'settings.json'))).toBe(true);
+  });
+
   it('.planning push excludes ALWAYS_NEVER_SYNC files from the repo working tree', async () => {
     // A secret file with an ALWAYS_NEVER_SYNC basename in .planning must never
     // reach the repo working tree on push, even before the allow-list gate.

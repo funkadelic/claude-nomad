@@ -310,6 +310,31 @@ describe('remapExtrasPull (integration)', () => {
     expect(result.pulled).toEqual(['foo/.claude']);
   });
 
+  it('keeps a local .claude/worktrees checkout and never restores one from the repo', async () => {
+    mkdirSync(join(sharedExtras, 'foo', '.claude', 'worktrees', 'poisoned'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), '{"model":"opus"}\n');
+    writeFileSync(join(sharedExtras, 'foo', '.claude', 'worktrees', 'poisoned', 'a.ts'), 'x\n');
+    const local = join(projectRoot, '.claude', 'worktrees', 'feature');
+    mkdirSync(local, { recursive: true });
+    writeFileSync(join(local, '.git'), 'gitdir: /elsewhere\n');
+    writeFileSync(join(local, 'wip.ts'), 'uncommitted\n');
+    writeFileSync(
+      mapPath,
+      JSON.stringify({
+        projects: { foo: { 'test-host': projectRoot } },
+        extras: { foo: ['.claude'] },
+      }) + '\n',
+    );
+
+    const { remapExtrasPull } = await import('./extras.ts');
+    remapExtrasPull('20261120-wt');
+
+    expect(readFileSync(join(local, 'wip.ts'), 'utf8')).toBe('uncommitted\n');
+    expect(existsSync(join(local, '.git'))).toBe(true);
+    expect(existsSync(join(projectRoot, '.claude', 'worktrees', 'poisoned'))).toBe(false);
+    expect(existsSync(join(projectRoot, '.claude', 'settings.json'))).toBe(true);
+  });
+
   it('Test I (true mirror still prunes synced files): stale non-deny .claude file absent from src is removed', async () => {
     mkdirSync(join(sharedExtras, 'foo', '.claude'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), '{"model":"opus"}\n');
