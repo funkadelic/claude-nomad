@@ -128,7 +128,7 @@ push on host=workstation
 Sessions
   ├ ✓ claude-nomad
   ├ ✓ my-side-project
-  └ ℹ︎ 4 not in path-map (run nomad doctor to list)
+  └ ℹ︎ 4 not in path-map (run nomad doctor -v to list)
 Extras
   └ ✓ claude-nomad/.planning
 Leak scan
@@ -138,7 +138,7 @@ Summary
 ```
 
 The `ℹ︎ 4 not in path-map` row is the collapse: rather than printing one line per project that this
-host does not sync, push and pull show a single count and point you at `nomad doctor`, which
+host does not sync, push and pull show a single count and point you at `nomad doctor -v`, which
 lists those projects by name if you want the detail. The `Leak scan` section is the secret check
 that runs before anything is published: `✓ no leaks` when the staged transcripts are clean. If a
 secret IS found, that row turns into `✗ gitleaks detected secrets in N session transcript(s)` and
@@ -157,7 +157,7 @@ Settings
   └ ✓ settings.json (base + workstation.json)
 Sessions
   ├ ✓ claude-nomad
-  └ ℹ︎ 2 not in path-map (run nomad doctor to list)
+  └ ℹ︎ 2 not in path-map (run nomad doctor -v to list)
 Extras
   └ ✓ claude-nomad/.planning
 Summary
@@ -168,8 +168,8 @@ The `Summary` row is the final verdict for the run. It reads `✓ summary: clean
 synced, or a warning naming the counts when something was skipped:
 
 ```text
-⚠︎ summary: 3 unmapped on pull (run nomad doctor to list)
-⚠︎ summary: 2 unmapped on push, 1 collisions (run nomad doctor to list)
+⚠︎ summary: 3 unmapped on pull (run nomad doctor -v to list)
+⚠︎ summary: 2 unmapped on push, 1 collisions (run nomad doctor -v to list)
 ```
 
 Pass-glyph lines go to stdout; warning and fail-glyph lines go to stderr. An early, pre-tree
@@ -178,7 +178,7 @@ anything is staged) suppresses the tree entirely, so you do not see "summary: cl
 an error. A later leak-scan finding is different: by then the tree has already been built, so it
 still renders in full with a fail-glyph `Leak scan` row and the recovery block below it. Projects
 with no entry in `path-map.json` for this host count as unmapped and fold into the collapsed
-info-count row; the hint points at `nomad doctor`, which lists them by logical name.
+info-count row; the hint points at `nomad doctor -v`, which lists their directory names.
 
 Settings drift comes in two directions. When your live `~/.claude/settings.json` is missing keys
 that the repo merge would write, you are behind: `nomad pull` will restore them. When your live

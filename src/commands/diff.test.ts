@@ -245,7 +245,7 @@ describe('cmdDiff (offline, lockless preview)', () => {
     );
     const { cmdDiff } = await import('./diff.ts');
     cmdDiff();
-    expect(logOutput()).toContain('2 unmapped on diff (run nomad doctor to list)');
+    expect(logOutput()).toContain('2 unmapped on diff (run nomad doctor -v to list)');
     // Summary goes through renderTree (stdout / logOutput), not emitSummary (stderr).
     expect(errOutput()).not.toContain('summary:');
   });

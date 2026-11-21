@@ -335,8 +335,8 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     const out = logOutput();
     expect(out).toContain('pull on host=');
     expect(out).toContain('settings.json (base + no host overrides)');
-    expect(out).toContain('2 unmapped on pull (run nomad doctor to list)');
-    expect(out).toContain('2 not in path-map (run nomad doctor to list)');
+    expect(out).toContain('2 unmapped on pull (run nomad doctor -v to list)');
+    expect(out).toContain('2 not in path-map (run nomad doctor -v to list)');
     expect(out).not.toContain('pull complete');
   });
 
@@ -377,7 +377,7 @@ describe('cmdPull / cmdPush lock release on fatal', () => {
     cmdPull({ dryRun: true });
     // computePreview renders the Summary row via renderTree -> console.log
     // (logOutput). The closing dry-run line also goes through log().
-    expect(logOutput()).toContain('1 unmapped on pull (run nomad doctor to list)');
+    expect(logOutput()).toContain('1 unmapped on pull (run nomad doctor -v to list)');
     expect(logOutput()).toContain('dry-run complete; nothing applied to ~/.claude/');
   });
 

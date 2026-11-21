@@ -329,7 +329,7 @@ describe('cmdSync: wet composition', () => {
   });
 
   it('verbose: an identical not-in-path-map skip row from both halves appears exactly once', async () => {
-    const skipRow = '2 not in path-map (run nomad doctor to list)';
+    const skipRow = '2 not in path-map (run nomad doctor -v to list)';
     vi.doMock('./pull/pull.ts', () => ({
       PULL_SUMMARY_HEADER: 'Pull summary',
       runPullCore: vi.fn(() => wetPull({ sessionItem: 'proj-a', sessionExtraRows: [skipRow] })),
@@ -697,7 +697,7 @@ describe('cmdSync: wet composition', () => {
     const { cmdSync } = await import('./sync.ts');
     await cmdSync();
     const combined = out(env);
-    expect(combined).toContain('4 not in path-map (run nomad doctor to list)');
+    expect(combined).toContain('4 not in path-map (run nomad doctor -v to list)');
   });
 
   it('surfaces the extras-skipped count as a collapsed info row', async () => {
@@ -741,7 +741,7 @@ describe('cmdSync: wet composition', () => {
     const { cmdSync } = await import('./sync.ts');
     await cmdSync();
     const combined = out(env);
-    expect(combined).toContain('1 collision (run nomad doctor to list)');
+    expect(combined).toContain('1 collision (run nomad doctor -v to list)');
   });
 
   it('never repeats the stale pull-summary reconcile-advice phrase', async () => {

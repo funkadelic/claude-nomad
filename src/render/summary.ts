@@ -10,11 +10,11 @@ type SummaryVerb = 'pull' | 'push' | 'diff';
  * phrasing:
  *   - `summary: clean` when nothing was unmapped (and, for push, no
  *     collisions or extras skipped).
- *   - `summary: <N> unmapped on pull (run nomad doctor to list)`
- *   - `summary: <N> unmapped on pull, <X> extras skipped (run nomad doctor to list)`
- *   - `summary: <N> unmapped on diff (run nomad doctor to list)`
- *   - `summary: <N> unmapped on push, <M> collisions (run nomad doctor to list)`
- *   - `summary: <N> unmapped on push, <M> collisions, <X> extras skipped (run nomad doctor to list)`
+ *   - `summary: <N> unmapped on pull (run nomad doctor -v to list)`
+ *   - `summary: <N> unmapped on pull, <X> extras skipped (run nomad doctor -v to list)`
+ *   - `summary: <N> unmapped on diff (run nomad doctor -v to list)`
+ *   - `summary: <N> unmapped on push, <M> collisions (run nomad doctor -v to list)`
+ *   - `summary: <N> unmapped on push, <M> collisions, <X> extras skipped (run nomad doctor -v to list)`
  *
  * `collisions` is meaningful only for `'push'`; for `'pull'` / `'diff'` it is
  * ignored and defaults to 0. `extrasSkipped` counts dirnames that the
@@ -44,7 +44,7 @@ export function summaryText(
       return { text: 'summary: clean', clean: true };
     }
     const base = `summary: ${unmapped} unmapped on push, ${collisions} collisions`;
-    return { text: `${base}${extras} (run nomad doctor to list)`, clean: false };
+    return { text: `${base}${extras} (run nomad doctor -v to list)`, clean: false };
   }
   if (unmapped === 0 && extrasSkipped === 0 && localOnly === 0) {
     return { text: 'summary: clean', clean: true };
@@ -52,7 +52,7 @@ export function summaryText(
   const localOnlyPhrase =
     localOnly > 0 ? `, ${localOnly} local-only present (push to reconcile)` : '';
   return {
-    text: `summary: ${unmapped} unmapped on ${verb}${extras} (run nomad doctor to list)${localOnlyPhrase}`,
+    text: `summary: ${unmapped} unmapped on ${verb}${extras} (run nomad doctor -v to list)${localOnlyPhrase}`,
     clean: false,
   };
 }
@@ -64,7 +64,7 @@ export function summaryText(
  * success/warn semantics the inline glyph used to duplicate) and no color. The
  * constant "summary: " prefix is stripped, since the group header already reads
  * "Summary". A clean outcome renders as `clean`; any warning outcome renders as
- * its bare message, e.g. `3 unmapped on pull (run nomad doctor to list)`.
+ * its bare message, e.g. `3 unmapped on pull (run nomad doctor -v to list)`.
  *
  * @param verb - the originating command.
  * @param unmapped - count of path-map entries skipped for this host.

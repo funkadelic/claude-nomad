@@ -529,7 +529,7 @@ describe('cmdPull: extras integration', () => {
     expect(out).toMatch(/✓ +settings\.json \(base \+ no host overrides\)/);
     expect(out).toContain('Sessions');
     expect(out).toMatch(/✓ +proj-a/);
-    expect(out).toContain('1 not in path-map (run nomad doctor to list)');
+    expect(out).toContain('1 not in path-map (run nomad doctor -v to list)');
     expect(out).toContain('Extras');
     expect(out).toMatch(/✓ +proj-a\/\.planning/);
     expect(out).toContain('Pull summary');
