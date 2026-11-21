@@ -1113,7 +1113,7 @@ describe('copyExtrasFilteredPreservingBy repo-side dir/file type-flip guard', ()
     rmSync(tmpDst, { recursive: true, force: true });
   });
 
-  it('throws NomadFatal naming --force-remote when repo src is a FILE but local dst is a directory', async () => {
+  it('throws NomadFatal with recovery advice when repo src is a FILE but local dst is a directory', async () => {
     // copySharedLinkPull feeds single-FILE sources (CLAUDE.md, my-statusline.cjs)
     // through this primitive. Simulate the top-level type flip directly: a
     // FILE src colliding with a pre-existing DIRECTORY dst. Without the guard,
@@ -1133,7 +1133,7 @@ describe('copyExtrasFilteredPreservingBy repo-side dir/file type-flip guard', ()
       const message = (err as Error).message;
       expect(message).toContain(tmpSrc);
       expect(message).toContain(tmpDst);
-      expect(message).toContain('--force-remote');
+      expect(message).toContain('move the local directory aside');
     }
   });
 

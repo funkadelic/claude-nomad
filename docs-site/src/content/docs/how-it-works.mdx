@@ -145,11 +145,11 @@ Pointers and specifics:
   Because a `.claude/` directory mirrors the layout of `~/.claude/`, opting it in strips every
   ephemeral or host-local name on push: the whole `NEVER_SYNC` set plus session transcripts under
   `projects/` (`settings.local.json`, `projects/`, `shell-snapshots/`, `sessions/`, `statsig/`,
-  `telemetry/`, `todos/`, ...), leaving your project config (`settings.json`, `skills/`,
-  `commands/`, `rules/`, `hooks/`, `agents/`). So syncing `.claude/` carries your project's Claude
-  setup across machines without ever
-  leaking session transcripts or per-host secrets. The same boundary is enforced a second time at
-  the push gate as a backstop.
+  `telemetry/`, `todos/`, ...), plus a `worktrees/` folder directly inside `.claude/`, where Claude
+  Code keeps its git worktree checkouts. That leaves your project config (`settings.json`,
+  `skills/`, `commands/`, `rules/`, `hooks/`, `agents/`). So syncing `.claude/` carries your
+  project's Claude setup across machines without ever leaking session transcripts or per-host
+  secrets. The same boundary is enforced a second time at the push gate as a backstop.
 - **A pull keeps each machine's own per-host files.** Because those never-synced names are stripped
   on push, they never travel between machines. On pull, the `.claude` extra preserves any of them
   already on disk for the current host (most importantly a project's own `settings.local.json`)

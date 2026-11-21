@@ -109,6 +109,32 @@ export function parsePorcelainZ(statusPorcelain: string): string[] {
 }
 
 /**
+ * Paths that leave the repo with nothing taking their place: plain deletion
+ * records and a rename's old path. A path that also shows up in any other
+ * record (re-created, re-added, a copy source) is left out, so it stays gated.
+ *
+ * @param statusPorcelain - `git status --porcelain=v1 -z` output.
+ */
+export function deletedPathsZ(statusPorcelain: string): Set<string> {
+  const deleted = new Set<string>();
+  const live = new Set<string>();
+  let oldPathOf: 'R' | 'C' | null = null;
+  for (const rec of statusPorcelain.split('\0')) {
+    if (oldPathOf !== null) {
+      (oldPathOf === 'R' ? deleted : live).add(rec);
+      oldPathOf = null;
+      continue;
+    }
+    const xy = rec.slice(0, 2);
+    (/^[D ]{2}$/.test(xy) ? deleted : live).add(rec.slice(3));
+    if (xy.includes('R')) oldPathOf = 'R';
+    else if (xy.includes('C')) oldPathOf = 'C';
+  }
+  for (const p of live) deleted.delete(p);
+  return deleted;
+}
+
+/**
  * Build the push allow-list: `PUSH_ALLOWED_STATIC`, each project's sessions dir,
  * each whitelisted extra (exact name plus subtree, never the whole logical), and
  * each valid `sharedDirs` folder.
@@ -137,15 +163,18 @@ export function buildAllowList(map: PathMap): string[] {
 
 /**
  * Reject any staged path that is off the `buildAllowList` list or in `NEVER_SYNC`.
+ * A `NEVER_SYNC` path that only leaves the repo (see `deletedPathsZ`) passes,
+ * so a path a newer deny rule now filters cannot wedge every push.
  * Logs every violation, then throws `NomadFatal` so the caller releases the push lock.
  */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   const allowed = buildAllowList(map);
+  const deleted = deletedPathsZ(statusPorcelain);
   const neverSyncHits: string[] = [];
   const violations: string[] = [];
   for (const path of parsePorcelainZ(statusPorcelain)) {
     if (isNeverSync(path)) {
-      neverSyncHits.push(path);
+      if (!deleted.has(path)) neverSyncHits.push(path);
     } else if (isGsdDropped(path)) {
       // gsd-owned asset under a GSD_DROPPED_NAMES dir: silently skip.
       // gsd reinstalls these per-host; they are not sync candidates.

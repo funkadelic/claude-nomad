@@ -12,7 +12,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 
 import { backupBase, claudeHome } from './config.ts';
 import { errorText } from './error-text.ts';
@@ -267,14 +267,25 @@ export function ensureSymlink(linkPath: string, target: string): void {
  *   fails (EACCES, EBUSY, ENOSPC, ...), naming the source, `dst`, and the
  *   quoted cause.
  */
-function backupUnder(absPath: string, anchor: string, destRoot: string, hint?: string): boolean {
+function backupUnder(
+  absPath: string,
+  anchor: string,
+  destRoot: string,
+  hint?: string,
+  skipRoot: (name: string) => boolean = () => false,
+): boolean {
   if (!existsSync(absPath)) return false;
   const rel = relative(anchor, absPath);
   if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return false;
   const dst = join(destRoot, rel);
   try {
     mkdirSync(dirname(dst), { recursive: true });
-    cpSync(absPath, dst, { recursive: true, force: false, preserveTimestamps: true });
+    cpSync(absPath, dst, {
+      recursive: true,
+      force: false,
+      preserveTimestamps: true,
+      filter: (src) => dirname(src) !== absPath || !skipRoot(basename(src)),
+    });
   } catch (err) {
     const fragment = `could not back up ${absPath} into ${dst} (${errorText(err)}); a partial copy may be left there`;
     throw new NomadFatal(hint === undefined ? fragment : `${fragment}. ${hint}`);
@@ -334,10 +345,18 @@ export function backupRepoWrite(absPath: string, ts: string, repoHome: string): 
  * inside the same `<ts>` directory (`cpSync` runs with `force: false`, so a
  * collision would silently drop the second snapshot).
  *
+ * @param skipRoot - Optional predicate; a matching top-level entry of
+ *   `absPath` is left out of the snapshot (the pull never touches it).
  * @throws {NomadFatal} When the snapshot write itself fails; see
  *   `backupUnder`. A caller that must survive a failed snapshot wraps the
  *   call (see `snapshotBeforeWin32Copy` in `links.ts`).
  */
-export function backupExtrasWrite(absPath: string, ts: string, projectRoot: string): void {
-  backupUnder(absPath, projectRoot, join(backupBase(), ts, 'extras', encodePath(projectRoot)));
+export function backupExtrasWrite(
+  absPath: string,
+  ts: string,
+  projectRoot: string,
+  skipRoot?: (name: string) => boolean,
+): void {
+  const destRoot = join(backupBase(), ts, 'extras', encodePath(projectRoot));
+  backupUnder(absPath, projectRoot, destRoot, undefined, skipRoot);
 }

@@ -51,6 +51,13 @@ export const NEVER_SYNC = new Set([
 export const CLAUDE_EXTRA_NEVER_SYNC = new Set([...NEVER_SYNC, 'projects']);
 
 /**
+ * Names skipped only directly under the `.claude` extra root, so a config dir
+ * of the same name deeper in the tree still syncs. `worktrees` holds Claude
+ * Code's git worktree checkouts, which a pull mirror would otherwise delete.
+ */
+export const CLAUDE_EXTRA_ROOT_NEVER_SYNC = new Set(['worktrees']);
+
+/**
  * Credential and host-config file names blocked even under `shared/extras/`,
  * where the broader `NEVER_SYNC` segment scan is narrowed to avoid
  * false-blocking ephemeral dir names (`todos`, `plans`, etc.) inside synced
@@ -455,6 +462,10 @@ export function blockSetFor(segments: string[]): Set<string> {
  * did it or the user has no action to take. `isNeverSync` is the boolean view
  * of this same scan.
  *
+ * After that scan, the segment directly under a `.claude` extra root is checked
+ * against `CLAUDE_EXTRA_ROOT_NEVER_SYNC`, so a deeper denied name is returned
+ * first.
+ *
  * @param path A repo-relative, forward-slashed path.
  * @returns The matching segment, or `null` when the path is clean.
  */
@@ -471,7 +482,22 @@ export function deniedSegmentFor(path: string): string | null {
   for (const segment of scan) {
     if (isDeniedName(blockSet, segment)) return segment;
   }
-  return null;
+  return claudeRootDeniedSegment(segments);
+}
+
+/**
+ * The segment directly under a `shared/extras/<logical>/.claude/` root when it
+ * is in `CLAUDE_EXTRA_ROOT_NEVER_SYNC`, else `null`.
+ *
+ * @param segments A repo-relative path split on `/`.
+ */
+function claudeRootDeniedSegment(segments: string[]): string | null {
+  const root = segments[4] ?? '';
+  const denied =
+    isExtrasScoped(segments) &&
+    isClaudeExtraName(segments[3] ?? '') &&
+    isDeniedName(CLAUDE_EXTRA_ROOT_NEVER_SYNC, root);
+  return denied ? root : null;
 }
 
 /**

@@ -123,9 +123,8 @@ export function cpSyncGuarded(
 }
 
 /**
- * Predicate-driven recursive prune variant. Like `prunePreservingDenied` but
- * the preserve/exclude decision is an `isPreserved(name)` predicate instead of
- * a fixed `Set`. This is required for the skills pull path: a local `gsd-*`
+ * Predicate-driven recursive prune: the preserve/exclude decision is an
+ * `isPreserved(name)` predicate rather than a fixed `Set`. This is required for the skills pull path: a local `gsd-*`
  * skill present in dst but ABSENT from src must be preserved, but a src-derived
  * blockSet would not contain it (the name was never in src) and would therefore
  * delete it (a Phase-49-class mirror-delete). The predicate tests the `gsd-`
@@ -217,8 +216,8 @@ export function copyExtrasFilteredPreservingBy(
       if (srcStat !== undefined && !srcStat.isDirectory()) {
         throw new NomadFatal(
           `copyExtrasFilteredPreservingBy: type mismatch copying ${quoted(src)} -> ` +
-            `${quoted(dst)}: the repo entry is a file but the local entry is a ` +
-            `directory; run nomad pull --force-remote to recover`,
+            `${quoted(dst)}: the repo entry is not a directory but the local entry is; ` +
+            `move the local directory aside, then pull again`,
         );
       }
       prunePreservingBy(

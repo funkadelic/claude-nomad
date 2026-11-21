@@ -10,6 +10,7 @@ import {
   copyExtrasOverlaySkipDiverged,
   eachExtrasTarget,
   extrasDenySet,
+  extrasRootExcluder,
   loadValidatedExtras,
   type ExtrasCounts,
   type ExtrasTarget,
@@ -61,7 +62,7 @@ function runExtrasOp(
   v: ValidatedExtras,
   dryRun: boolean,
   paths: (t: ExtrasTarget) => { src: string; dst: string },
-  backup: (dst: string, localRoot: string) => void,
+  backup: (dst: string, localRoot: string, dirname: string) => void,
   copy: (src: string, dst: string, dirname: string) => void,
 ): ExtrasDetail {
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
@@ -75,7 +76,7 @@ function runExtrasOp(
       would.push(item);
       continue;
     }
-    backup(dst, t.localRoot);
+    backup(dst, t.localRoot, t.dirname);
     copy(src, dst, t.dirname);
     done.push(item);
   }
@@ -143,7 +144,7 @@ export function remapExtrasPush(
     (src, dst, dirname) =>
       dirname === '.planning'
         ? copyExtrasOverlayFiltered(src, dst, extrasDenySet(dirname))
-        : copyExtrasFiltered(src, dst, extrasDenySet(dirname)),
+        : copyExtrasFiltered(src, dst, extrasDenySet(dirname), extrasRootExcluder(dirname)),
   );
   return { unmapped, skipped, pushed: done, wouldPush: would };
 }
@@ -201,7 +202,7 @@ export function remapExtrasPull(
     }),
     // Snapshot the host-side dst BEFORE the copy step touches it. Anchor on
     // localRoot so the backup tree mirrors the project layout.
-    (dst, localRoot) => backupExtrasWrite(dst, ts, localRoot),
+    (dst, localRoot, dirname) => backupExtrasWrite(dst, ts, localRoot, extrasRootExcluder(dirname)),
     // Pull routing per extra type:
     //   `.claude`: copyExtrasFilteredPreserving preserves host-local deny-set
     //     files (e.g. settings.local.json) while mirror-pruning synced entries.
@@ -217,7 +218,12 @@ export function remapExtrasPull(
     //     every extra, not just `.planning`.
     (src, dst, dirname) => {
       if (dirname === '.claude')
-        return copyExtrasFilteredPreserving(src, dst, extrasDenySet(dirname));
+        return copyExtrasFilteredPreserving(
+          src,
+          dst,
+          extrasDenySet(dirname),
+          extrasRootExcluder(dirname),
+        );
       if (dirname === '.planning') {
         // divergedSet is the both-sides-modified set (local dst vs repo src);
         // those files are preserved local rather than overwritten.

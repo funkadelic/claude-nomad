@@ -53,7 +53,7 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
  * and `memory/` files that were never pushed survive the pull. It follows the
  * same copy-plus-path-translate approach as `copyExtrasFilteredPreserving`
  * MINUS the prune pass (retention means never delete local-only), so there is
- * no `rmSync(dst)` and no `prunePreservingDenied` call.
+ * no `rmSync(dst)` and no prune call.
  *
  * `stripCollidingDstSymlinks(src, dst, () => false)` runs BEFORE the copy so a
  * benignly-named dst symlink colliding with a repo `src` entry is removed rather
