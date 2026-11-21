@@ -155,7 +155,9 @@ Pointers and specifics:
   already on disk for the current host (most importantly a project's own `settings.local.json`)
   while still mirroring the synced config over the top, at every level of the tree. So a pull
   updates your shared `settings.json` and the rest from the repo without ever overwriting or
-  deleting the local-only settings that machine keeps to itself.
+  deleting the local-only settings that machine keeps to itself. Unlike `.planning/`, a synced file
+  you edited but have not pushed yet is replaced by the repo copy: the pull warns and backs it up
+  first, so push before you pull to keep the edit.
 
 :::note[Which `.claude/`?]
 The `.claude` extra is a project's **own** `<repo>/.claude/` directory: the project-scoped Claude

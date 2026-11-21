@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { backupBase, repoHome } from '../../core/config.ts';
+import { backupBase, isClaudeExtraName, repoHome } from '../../core/config.ts';
 import { listDivergingModified } from './diff.ts';
 import { eachExtrasTarget, loadValidatedExtras, type ExtrasCounts } from './core.ts';
 import { warn } from '../../core/utils.ts';
@@ -20,9 +20,9 @@ import { keptDeletePreview, keptDeleteWarnLine } from './remap.ts';
  * Build the user-facing WARN line for one diverging extra. Phrases the entry
  * as a "folder"/"file" with grammar that agrees with the diverging-file count
  * (singular vs plural), and names the backup path the next pull step writes to.
- * The wording reflects the divergence-is-conflict guard: the pull KEEPS the
- * local copy on divergence rather than overwriting it, so the user pushes to
- * reconcile. The backup snapshot is still taken (defense-in-depth). A preview
+ * `.planning` and root files keep the local copy on divergence; the `.claude`
+ * extra pull overwrites synced files, so its line says so and tells the user
+ * to push first. The backup snapshot is taken either way. A preview
  * writes no backup, and the real pull picks its own timestamp, so the preview
  * wording names no path.
  */
@@ -43,7 +43,10 @@ function divergenceWarnLine(o: {
   const backup = o.dryRun
     ? 'will be backed up when you pull'
     : `${verb} backed up to ${o.projectBackupRoot}/`;
-  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step will keep your local copy (push to reconcile; ${yours} ${backup})`;
+  const outcome = isClaudeExtraName(o.dirname)
+    ? 'will replace your local copy with the synced one (push first to keep your edits;'
+    : 'will keep your local copy (push to reconcile;';
+  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step ${outcome} ${yours} ${backup})`;
 }
 
 /**

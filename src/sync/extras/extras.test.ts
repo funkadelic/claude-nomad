@@ -404,6 +404,24 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     expect(text).not.toContain('backed up to');
   });
 
+  it('says the .claude extra pull replaces the local copy, since it does not keep it', async () => {
+    const projectRoot = join(testHome, 'proj-claude');
+    const localClaude = join(projectRoot, '.claude');
+    mkdirSync(localClaude, { recursive: true });
+    writeFileSync(join(localClaude, 'settings.json'), '{"a":1}\n');
+    const repoExtras = join(testRepo, 'shared', 'extras', 'testproj', '.claude');
+    mkdirSync(repoExtras, { recursive: true });
+    writeFileSync(join(repoExtras, 'settings.json'), '{"a":2}\n');
+    writePathMap(projectRoot, ['.claude']);
+
+    const { text, count } = await runDivergence();
+    expect(text).toContain(
+      'the next pull step will replace your local copy with the synced one (push first to keep your edits; your current file is backed up to',
+    );
+    expect(text).not.toContain('keep your local copy');
+    expect(count).toBe(1);
+  });
+
   it('warns "file" for a single-file extra (CLAUDE.md) divergence', async () => {
     const projectRoot = join(testHome, 'proj-file');
     mkdirSync(projectRoot, { recursive: true });
