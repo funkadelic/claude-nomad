@@ -4,6 +4,7 @@ import { basename, join, relative } from 'node:path';
 import {
   ALWAYS_NEVER_SYNC,
   CLAUDE_EXTRA_NEVER_SYNC,
+  CLAUDE_EXTRA_ROOT_NEVER_SYNC,
   HOST,
   isClaudeExtraName,
   isDeniedName,
@@ -252,7 +253,8 @@ export function copyExtrasFileSkipDiverged(src: string, dst: string): void {
  * `.claude` extra mirrors `~/.claude/` semantics, so its subdirectory names
  * (`projects`, `shell-snapshots`, `statsig`, `telemetry`, `sessions`, `todos`,
  * ...) are exactly the ephemeral, host-local state that must not sync; it gets
- * `CLAUDE_EXTRA_NEVER_SYNC` (the full `NEVER_SYNC` set plus `projects`).
+ * `CLAUDE_EXTRA_NEVER_SYNC` (the full `NEVER_SYNC` set plus `projects`), and
+ * `extrasRootExcluder` adds its root-only `worktrees`.
  * Content-style extras (`.planning`) keep the narrow `ALWAYS_NEVER_SYNC` subset
  * so legitimate names like `todos`/`plans` inside a synced `.planning/` tree are
  * not false-blocked by the broader `.claude` denylist. Mirrored by `blockSetFor` in
@@ -268,6 +270,18 @@ export function copyExtrasFileSkipDiverged(src: string, dst: string): void {
  */
 export function extrasDenySet(dirname: string): Set<string> {
   return isClaudeExtraName(dirname) ? CLAUDE_EXTRA_NEVER_SYNC : ALWAYS_NEVER_SYNC;
+}
+
+/**
+ * Root-only exclusion predicate for an extra: the `.claude` extra skips
+ * `CLAUDE_EXTRA_ROOT_NEVER_SYNC` names at its top level; others skip nothing.
+ * Mirrored by `deniedSegmentFor` so the copy filter and the push gate agree.
+ *
+ * @param dirname - The extra's whitelisted name.
+ */
+export function extrasRootExcluder(dirname: string): (name: string) => boolean {
+  const claude = isClaudeExtraName(dirname);
+  return (name) => claude && isDeniedName(CLAUDE_EXTRA_ROOT_NEVER_SYNC, name);
 }
 
 /**
@@ -330,10 +344,16 @@ export function copyExtrasFiltered(
  * @param src - Source directory (repo side on pull).
  * @param dst - Destination directory (host side on pull); assumed to exist.
  * @param blockSet - Basenames to preserve at any depth (see `extrasDenySet`).
+ * @param isRootExcluded - Optional predicate applied at this top level only.
  */
-function prunePreservingDenied(src: string, dst: string, blockSet: Set<string>): void {
+function prunePreservingDenied(
+  src: string,
+  dst: string,
+  blockSet: Set<string>,
+  isRootExcluded?: (name: string) => boolean,
+): void {
   for (const name of readdirSync(dst)) {
-    if (isDeniedName(blockSet, name)) continue;
+    if (isDeniedName(blockSet, name) || isRootExcluded?.(name) === true) continue;
     const dstPath = join(dst, name);
     const srcStat = lstatSync(join(src, name), { throwIfNoEntry: false });
     if (srcStat === undefined) {
@@ -375,25 +395,31 @@ function prunePreservingDenied(src: string, dst: string, blockSet: Set<string>):
  * @param dst - Destination path (host-side project dir on pull).
  * @param blockSet - Basenames to preserve in dst and to exclude from the src
  *   copy (see `extrasDenySet`).
+ * @param isRootExcluded - Optional root-only predicate; a matching top-level
+ *   entry is left untouched in dst and never copied from src.
  */
 export function copyExtrasFilteredPreserving(
   src: string,
   dst: string,
   blockSet: Set<string>,
+  isRootExcluded?: (name: string) => boolean,
 ): void {
   const dstStat = lstatSync(dst, { throwIfNoEntry: false });
   if (dstStat !== undefined) {
     // A non-directory root (file or symlink) is removed wholesale so cpSync
     // recreates it, and so the prune never readdir-follows a symlink into an
     // external tree. Only a real directory is pruned in place.
-    if (dstStat.isDirectory()) prunePreservingDenied(src, dst, blockSet);
+    if (dstStat.isDirectory()) prunePreservingDenied(src, dst, blockSet, isRootExcluded);
     else rmSync(dst, { recursive: true, force: true });
   }
-  stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name));
+  stripCollidingDstSymlinks(src, dst, (name) => isDeniedName(blockSet, name), isRootExcluded);
   cpSync(src, dst, {
     recursive: true,
     force: true,
     verbatimSymlinks: true,
-    filter: (srcEntry) => srcEntry === src || !isDeniedName(blockSet, basename(srcEntry)),
+    filter: (srcEntry) =>
+      srcEntry === src ||
+      (!isDeniedName(blockSet, basename(srcEntry)) &&
+        !isRootExcludedEntry(src, srcEntry, isRootExcluded)),
   });
 }

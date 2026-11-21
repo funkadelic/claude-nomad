@@ -157,6 +157,20 @@ describe('isNeverSync', () => {
     expect(isNeverSync('shared/extras/myproj/.claude/projects/x.jsonl')).toBe(true);
   });
 
+  it.each(['worktrees', 'Worktrees', 'worktrees.'])(
+    'blocks %s directly under a .claude extra root',
+    (name) => {
+      expect(isNeverSync(`shared/extras/myproj/.claude/${name}/feature/a.ts`)).toBe(true);
+      expect(isNeverSync(`shared/extras/myproj/.claude/${name}`)).toBe(true);
+    },
+  );
+
+  it('allows worktrees below the .claude root or outside a .claude extra', () => {
+    expect(isNeverSync('shared/extras/myproj/.claude/commands/worktrees/a.md')).toBe(false);
+    expect(isNeverSync('shared/extras/myproj/.planning/worktrees/a.md')).toBe(false);
+    expect(isNeverSync('shared/extras/myproj/.claude/worktrees.md')).toBe(false);
+  });
+
   it('does not treat a logical named after a denylist token as a hit', () => {
     // `sessions` here is the LOGICAL project name (segment 2), which is never
     // scanned; blocking it would break that project's own legitimate files.

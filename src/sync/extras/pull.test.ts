@@ -314,6 +314,8 @@ describe('remapExtrasPull (integration)', () => {
     mkdirSync(join(sharedExtras, 'foo', '.claude', 'worktrees', 'poisoned'), { recursive: true });
     writeFileSync(join(sharedExtras, 'foo', '.claude', 'settings.json'), '{"model":"opus"}\n');
     writeFileSync(join(sharedExtras, 'foo', '.claude', 'worktrees', 'poisoned', 'a.ts'), 'x\n');
+    mkdirSync(join(sharedExtras, 'foo', '.claude', 'commands', 'worktrees'), { recursive: true });
+    writeFileSync(join(sharedExtras, 'foo', '.claude', 'commands', 'worktrees', 'a.md'), '# c\n');
     const local = join(projectRoot, '.claude', 'worktrees', 'feature');
     mkdirSync(local, { recursive: true });
     writeFileSync(join(local, '.git'), 'gitdir: /elsewhere\n');
@@ -332,6 +334,7 @@ describe('remapExtrasPull (integration)', () => {
     expect(readFileSync(join(local, 'wip.ts'), 'utf8')).toBe('uncommitted\n');
     expect(existsSync(join(local, '.git'))).toBe(true);
     expect(existsSync(join(projectRoot, '.claude', 'worktrees', 'poisoned'))).toBe(false);
+    expect(existsSync(join(projectRoot, '.claude', 'commands', 'worktrees', 'a.md'))).toBe(true);
     expect(existsSync(join(projectRoot, '.claude', 'settings.json'))).toBe(true);
   });
 

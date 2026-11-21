@@ -40,16 +40,22 @@ export const NEVER_SYNC = new Set([
 
 /**
  * Denylist for the `.claude` per-project extra: the full `NEVER_SYNC` set plus
- * `projects` (session transcripts) and `worktrees` (Claude Code's git worktree
- * checkouts, which a pull mirror would otherwise delete). `projects` is
- * deliberately absent from `NEVER_SYNC` because mapped projects sync their transcripts through the
+ * `projects` (session transcripts). `projects` is deliberately absent from
+ * `NEVER_SYNC` because mapped projects sync their transcripts through the
  * path-remap mechanism into `shared/projects/<logical>/` (a runtime allow-list
  * entry); adding it to `NEVER_SYNC` would hard-block that destination. But a raw
  * `.claude/` extra tree must still strip a `projects/` dir so transcripts never
  * ride through the extras gate. Used by `extrasDenySet` (the copy filter) and
  * `blockSetFor` (the push gate) so both agree on the `.claude` boundary.
  */
-export const CLAUDE_EXTRA_NEVER_SYNC = new Set([...NEVER_SYNC, 'projects', 'worktrees']);
+export const CLAUDE_EXTRA_NEVER_SYNC = new Set([...NEVER_SYNC, 'projects']);
+
+/**
+ * Names skipped only directly under the `.claude` extra root, so a config dir
+ * of the same name deeper in the tree still syncs. `worktrees` holds Claude
+ * Code's git worktree checkouts, which a pull mirror would otherwise delete.
+ */
+export const CLAUDE_EXTRA_ROOT_NEVER_SYNC = new Set(['worktrees']);
 
 /**
  * Credential and host-config file names blocked even under `shared/extras/`,
@@ -472,7 +478,22 @@ export function deniedSegmentFor(path: string): string | null {
   for (const segment of scan) {
     if (isDeniedName(blockSet, segment)) return segment;
   }
-  return null;
+  return claudeRootDeniedSegment(segments);
+}
+
+/**
+ * The segment directly under a `shared/extras/<logical>/.claude/` root when it
+ * is in `CLAUDE_EXTRA_ROOT_NEVER_SYNC`, else `null`.
+ *
+ * @param segments A repo-relative path split on `/`.
+ */
+function claudeRootDeniedSegment(segments: string[]): string | null {
+  const root = segments[4] ?? '';
+  const denied =
+    isExtrasScoped(segments) &&
+    isClaudeExtraName(segments[3] ?? '') &&
+    isDeniedName(CLAUDE_EXTRA_ROOT_NEVER_SYNC, root);
+  return denied ? root : null;
 }
 
 /**

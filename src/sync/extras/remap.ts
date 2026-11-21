@@ -10,6 +10,7 @@ import {
   copyExtrasOverlaySkipDiverged,
   eachExtrasTarget,
   extrasDenySet,
+  extrasRootExcluder,
   loadValidatedExtras,
   type ExtrasCounts,
   type ExtrasTarget,
@@ -143,7 +144,7 @@ export function remapExtrasPush(
     (src, dst, dirname) =>
       dirname === '.planning'
         ? copyExtrasOverlayFiltered(src, dst, extrasDenySet(dirname))
-        : copyExtrasFiltered(src, dst, extrasDenySet(dirname)),
+        : copyExtrasFiltered(src, dst, extrasDenySet(dirname), extrasRootExcluder(dirname)),
   );
   return { unmapped, skipped, pushed: done, wouldPush: would };
 }
@@ -217,7 +218,12 @@ export function remapExtrasPull(
     //     every extra, not just `.planning`.
     (src, dst, dirname) => {
       if (dirname === '.claude')
-        return copyExtrasFilteredPreserving(src, dst, extrasDenySet(dirname));
+        return copyExtrasFilteredPreserving(
+          src,
+          dst,
+          extrasDenySet(dirname),
+          extrasRootExcluder(dirname),
+        );
       if (dirname === '.planning') {
         // divergedSet is the both-sides-modified set (local dst vs repo src);
         // those files are preserved local rather than overwritten.

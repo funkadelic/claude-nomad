@@ -286,6 +286,20 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
   });
 
+  it('hard-blocks worktrees/ at a .claude extra root but permits a nested config dir', async () => {
+    const { enforceAllowList } = await import('./allowlist.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.claude/worktrees/feature/a.ts\0', map),
+    ).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is in NEVER_SYNC'));
+    errorSpy.mockClear();
+    expect(() =>
+      enforceAllowList('A  shared/extras/foo/.claude/commands/worktrees/a.md\0', map),
+    ).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
   it('permits config (settings.json, hooks/) under a .claude extra', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
     expect(() =>

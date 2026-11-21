@@ -132,7 +132,8 @@ denylist on both push and pull. The denylist (`CLAUDE_EXTRA_NEVER_SYNC` in
 `src/core/config.never-sync.ts`) is the full `NEVER_SYNC` set plus `projects/`, which strips session
 transcripts, `settings.local.json`, `shell-snapshots/`, `sessions/`, and other host-local or
 ephemeral names, leaving your project config (`settings.json`, `skills/`, `commands/`, `rules/`,
-`hooks/`, `agents/`).
+`hooks/`, `agents/`). A `worktrees/` folder directly inside `.claude/`, where Claude Code keeps its
+git worktree checkouts, is skipped too, and a pull leaves your local one alone.
 
 The same boundary is enforced a second time at the push gate in
 `src/commands/push/allowlist.ts` as

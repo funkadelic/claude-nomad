@@ -333,7 +333,7 @@ export function sharedDirEntries(map: PathMap): unknown[] {
  * eligible for sync; widening is a one-line edit with no migration required.
  *
  * `.claude` is supported and filtered against `CLAUDE_EXTRA_NEVER_SYNC` (the
- * full `NEVER_SYNC` set plus `projects`), not just the `ALWAYS_NEVER_SYNC`
+ * full `NEVER_SYNC` set plus `projects`, and `worktrees/` at its root), not just the `ALWAYS_NEVER_SYNC`
  * secret subset: its tree mirrors `~/.claude/` semantics, so ephemeral/
  * host-local names (`settings.local.json`, `projects/`, `shell-snapshots/`,
  * `statsig/`, `sessions/`, `todos/`, ...) are stripped on push, leaving only
@@ -353,6 +353,7 @@ export const SUPPORTED_EXTRAS = ['.planning', 'CLAUDE.md', '.claude'] as const;
 export {
   NEVER_SYNC,
   CLAUDE_EXTRA_NEVER_SYNC,
+  CLAUDE_EXTRA_ROOT_NEVER_SYNC,
   ALWAYS_NEVER_SYNC,
   isSecretFileName,
   isDeniedName,

@@ -323,12 +323,14 @@ describe('remapExtrasPush (integration)', () => {
     });
   });
 
-  it('.claude extra: never stages a .claude/worktrees git worktree checkout', async () => {
+  it('.claude extra: skips the root worktrees dir but keeps a nested config dir of that name', async () => {
     const wt = join(projectRoot, '.claude', 'worktrees', 'feature');
     mkdirSync(wt, { recursive: true });
     writeFileSync(join(wt, '.git'), 'gitdir: /elsewhere\n');
     writeFileSync(join(wt, 'index.ts'), 'code\n');
     writeFileSync(join(projectRoot, '.claude', 'settings.json'), '{}\n');
+    mkdirSync(join(projectRoot, '.claude', 'commands', 'worktrees'), { recursive: true });
+    writeFileSync(join(projectRoot, '.claude', 'commands', 'worktrees', 'a.md'), '# cmd\n');
     writeFileSync(
       mapPath,
       JSON.stringify({
@@ -342,6 +344,9 @@ describe('remapExtrasPush (integration)', () => {
 
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'worktrees'))).toBe(false);
     expect(existsSync(join(sharedExtras, 'foo', '.claude', 'settings.json'))).toBe(true);
+    expect(existsSync(join(sharedExtras, 'foo', '.claude', 'commands', 'worktrees', 'a.md'))).toBe(
+      true,
+    );
   });
 
   it('.planning push excludes ALWAYS_NEVER_SYNC files from the repo working tree', async () => {
