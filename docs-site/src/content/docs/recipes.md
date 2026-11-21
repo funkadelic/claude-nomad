@@ -207,13 +207,13 @@ only when the project git-ignores it, otherwise the project repo already syncs i
 
 ### Per-project plugins
 
-nomad syncs your user-level plugin settings through `settings.json`, but not a project's: a
-project's plugin setting turns a plugin on without installing it. On each machine, run `claude
-plugin install <plugin>@<marketplace> --scope project` once in that project (add the marketplace
-first if that machine does not have it). The install writes the setting to `.claude/settings.json`
-itself, so adding `.claude` to a project's `extras` for this gains nothing. Commit
-`.claude/settings.json` if collaborators should have the plugin turned on too; each of them still
-runs the same install.
+nomad syncs your plugin settings but not the installed plugins, so each machine installs a plugin
+once before it loads, whether you turn it on for every project or for one. For one project, run
+`claude plugin install <plugin>@<marketplace> --scope project` in that project on each machine (add
+the marketplace first if that machine does not have it). The install writes the setting to
+`.claude/settings.json` itself, so adding `.claude` to a project's `extras` for this gains nothing.
+Commit `.claude/settings.json` if collaborators should have the plugin turned on too; each of them
+still runs the same install.
 
 ## Third-party tool directory
 
