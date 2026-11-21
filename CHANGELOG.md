@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.69.11](https://github.com/funkadelic/claude-nomad/compare/v0.69.10...v0.69.11) (2026-11-21)
+
+
+### Fixed
+
+* point the unmapped-projects hint at nomad doctor -v ([#721](https://github.com/funkadelic/claude-nomad/issues/721)) ([9004898](https://github.com/funkadelic/claude-nomad/commit/90048986f14f943df1f266e9f9701d2f8b0fd256))
+* stop syncing Claude Code worktrees and let push remove newly blocked files ([#723](https://github.com/funkadelic/claude-nomad/issues/723)) ([14ada90](https://github.com/funkadelic/claude-nomad/commit/14ada90386f1b9f2b75bfef8fc9863341df071de))
+
 ## [0.69.10](https://github.com/funkadelic/claude-nomad/compare/v0.69.9...v0.69.10) (2026-11-20)
 
 
