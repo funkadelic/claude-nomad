@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   unlinkSync,
@@ -77,7 +78,7 @@ describe('acquireLock / releaseLock', () => {
     expect(existsSync(lockPath)).toBe(true);
   });
 
-  it('unlinks stale lockfile and retries when PID file references a dead process', async () => {
+  it('reaps stale lockfile and retries when PID file references a dead process', async () => {
     const deadPid = 2147483647;
     let guarded = false;
     try {
@@ -99,6 +100,7 @@ describe('acquireLock / releaseLock', () => {
     expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
     releaseLock(handle);
     expect(existsSync(lockPath)).toBe(false);
+    expect(readdirSync(join(testHome, '.cache', 'claude-nomad'))).toEqual([]);
   });
 
   it('returns null on double-acquire in the same process (own PID is alive)', async () => {
@@ -110,6 +112,17 @@ describe('acquireLock / releaseLock', () => {
     expect(stderrWrites.join('')).toContain('another nomad pull running, skipping');
     releaseLock(first);
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('release leaves the lock alone when the path now holds another process lock', async () => {
+    const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    // Another contender took the path after ours was moved away.
+    unlinkSync(lockPath);
+    writeFileSync(lockPath, '424242');
+    releaseLock(handle);
+    expect(readFileSync(lockPath, 'utf8')).toBe('424242');
   });
 
   it('releaseLock(null) is a safe no-op', async () => {
@@ -140,24 +153,21 @@ describe('releaseLock error propagation', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('rethrows when unlinkSync fails with a non-ENOENT error (e.g. EACCES)', async () => {
+  it('rethrows when the release move fails with a non-ENOENT error (e.g. EACCES)', async () => {
     // releaseLock tolerates ENOENT (lockfile already gone) but rethrows
     // everything else so the caller surfaces unexpected I/O failures.
-    // Mock node:fs.unlinkSync to throw EACCES for the lockfile path; the
-    // `code !== 'ENOENT'` true branch in releaseLock is exercised.
-    // Done via vi.doMock (rather than spyOn) because ESM module namespaces
-    // are not configurable.
+    // vi.doMock because ESM module namespaces are not configurable.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
         ...actual,
-        unlinkSync: vi.fn((path: fsModule.PathLike) => {
-          if (typeof path === 'string' && path === lockPath) {
+        renameSync: vi.fn((path: fsModule.PathLike, dest: fsModule.PathLike) => {
+          if (typeof path === 'string' && path === lockPath && String(dest).endsWith('.release')) {
             const err = new Error('permission denied') as NodeJS.ErrnoException;
             err.code = 'EACCES';
             throw err;
           }
-          return actual.unlinkSync(path);
+          return actual.renameSync(path, dest);
         }),
       };
     });
@@ -168,21 +178,19 @@ describe('releaseLock error propagation', () => {
     expect(() => releaseLock(handle)).toThrow(/permission denied/);
   });
 
-  it('silently tolerates ENOENT on unlinkSync (lockfile already vanished)', async () => {
-    // ENOENT branch of releaseLock's unlink catch: the lockfile is gone
-    // before we get to unlink it (e.g. another process cleaned up first).
-    // Must NOT throw - this is the documented tolerance contract.
+  it('silently tolerates ENOENT on the release move (lockfile already vanished)', async () => {
+    // The lockfile is gone before release moves it; must not throw.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
         ...actual,
-        unlinkSync: vi.fn((path: fsModule.PathLike) => {
-          if (typeof path === 'string' && path === lockPath) {
+        renameSync: vi.fn((path: fsModule.PathLike, dest: fsModule.PathLike) => {
+          if (typeof path === 'string' && path === lockPath && String(dest).endsWith('.release')) {
             const err = new Error('no such file') as NodeJS.ErrnoException;
             err.code = 'ENOENT';
             throw err;
           }
-          return actual.unlinkSync(path);
+          return actual.renameSync(path, dest);
         }),
       };
     });
