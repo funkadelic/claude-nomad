@@ -30,8 +30,8 @@ import { discardEmptyBackupDir, freshBackupTs } from '../../core/utils.fs.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 import { readPathMap } from '../../core/utils.json.ts';
 
-// Re-exported so `src/commands/sync.ts` can string-match against the exact same
-// literal (`isDroppedSummaryHeader`) instead of duplicating it.
+// Re-exported so `isDroppedSummaryHeader` in `src/commands/sync.ts` can
+// string-match against the exact same literal instead of duplicating it.
 export { PULL_SUMMARY_HEADER } from './wet-sections.ts';
 
 /**
