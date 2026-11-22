@@ -63,7 +63,7 @@ describe('acquireLock / releaseLock', () => {
     const handle = acquireLock('pull');
     expect(handle).not.toBeNull();
     expect(existsSync(lockPath)).toBe(true);
-    expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    expect(readFileSync(lockPath, 'utf8').split(' ')[0]).toBe(String(process.pid));
     releaseLock(handle);
     expect(existsSync(lockPath)).toBe(false);
   });
@@ -97,7 +97,7 @@ describe('acquireLock / releaseLock', () => {
     const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
     const handle = acquireLock('pull');
     expect(handle).not.toBeNull();
-    expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    expect(readFileSync(lockPath, 'utf8').split(' ')[0]).toBe(String(process.pid));
     releaseLock(handle);
     expect(existsSync(lockPath)).toBe(false);
     expect(readdirSync(join(testHome, '.cache', 'claude-nomad'))).toEqual([]);

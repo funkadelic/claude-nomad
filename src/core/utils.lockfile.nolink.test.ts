@@ -74,7 +74,7 @@ describe('lockfile without hard links', () => {
     const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
     const handle = acquireLock('pull');
     expect(handle).not.toBeNull();
-    expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    expect(readFileSync(lockPath, 'utf8').split(' ')[0]).toBe(String(process.pid));
     releaseLock(handle);
     expect(readdirSync(dirname(lockPath))).toEqual([]);
   });

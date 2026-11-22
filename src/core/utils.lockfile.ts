@@ -52,9 +52,56 @@ function unlinkQuietly(p: string): void {
 }
 
 /**
- * Create the lock by writing our PID to a pid-unique temp sibling and hard
- * linking it onto `lp`. The link is atomic and fails EEXIST while the lock is
- * held, so the lock path never exists without its full PID. On failure nothing
+ * Returns the start time of `pid` (field 22 of `/proc/<pid>/stat`), or
+ * `undefined` when it cannot be read or parsed (no `/proc`, process gone).
+ *
+ * @param pid Process id to inspect.
+ */
+function procStartTime(pid: number): string | undefined {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    // comm (field 2) may hold spaces and parens, so parse after the last ')'.
+    return stat
+      .slice(stat.lastIndexOf(')') + 1)
+      .trim()
+      .split(' ')[19];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Returns the content this process writes into the lock: `<pid> <starttime>`,
+ * or just `<pid>` when the start time is unreadable.
+ */
+function lockContent(): string {
+  const start = procStartTime(process.pid);
+  return start === undefined ? String(process.pid) : `${process.pid} ${start}`;
+}
+
+/**
+ * Returns whether the lock owner is still running. ESRCH means dead; any other
+ * kill outcome (EPERM included) still gets the start-time check, since a
+ * recycled PID may belong to another user. Unreadable evidence counts as alive.
+ *
+ * @param pid Owner pid read from the lock.
+ * @param recordedStart Start time recorded in the lock, if any.
+ */
+function ownerAlive(pid: number, recordedStart: string | undefined): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ESRCH') return false;
+  }
+  if (recordedStart === undefined) return true;
+  const current = procStartTime(pid);
+  return current === undefined || current === recordedStart;
+}
+
+/**
+ * Create the lock by writing our lock content to a pid-unique temp sibling and
+ * hard linking it onto `lp`. The link is atomic and fails EEXIST while the lock
+ * is held, so the lock path never exists without its full content. On failure nothing
  * was published and the error is rethrown.
  *
  * @param lp Lock path resolved once by `acquireLock`.
@@ -66,7 +113,7 @@ function createLock(lp: string): LockHandle {
   unlinkQuietly(tmp);
   const fd = openSync(tmp, 'w');
   try {
-    writeFileSync(fd, String(process.pid));
+    writeFileSync(fd, lockContent());
     linkSync(tmp, lp);
   } catch (err) {
     closeQuietly(fd);
@@ -85,14 +132,14 @@ const NO_HARDLINK_CODES = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 
 /**
  * Fallback create for filesystems without hard links: exclusive create, then
- * write the PID. The lock is briefly visible without its PID here.
+ * write the lock content. The lock is briefly visible without it here.
  *
  * @param lp Lock path resolved once by `acquireLock`.
  */
 function createLockExclusive(lp: string): LockHandle {
   const fd = openSync(lp, 'wx');
   try {
-    writeFileSync(fd, String(process.pid));
+    writeFileSync(fd, lockContent());
   } catch (err) {
     closeQuietly(fd);
     unlinkQuietly(lp);
@@ -134,7 +181,7 @@ function closeQuietly(fd: number): void {
  * contention (caller should `process.exit(EXIT.SUCCESS)`; skip-on-contention is the
  * intended UX for backgrounded shell-rc invocations). The lock is published
  * atomically by `createLock`. On EEXIST, detects stale locks by probing the
- * recorded pid with `kill(pid, 0)` and recovers via `reapIfSamePid` +
+ * recorded pid with `kill(pid, 0)` plus its recorded start time and recovers via `reapIfSamePid` +
  * `retryOnce`. `verb` is `'pull'` or `'push'`; surfaces in the contention-skip
  * message.
  */
@@ -234,42 +281,27 @@ function reapIfSamePid(expectedPidStr: string, lp: string): boolean {
 }
 
 /**
- * EEXIST recovery path for `acquireLock`. Reads the lockfile pid, probes
- * liveness with `kill(pid, 0)`, and tries one retry only when the pid is
- * dead AND the compare-and-reap in `reapIfSamePid` confirms the file
- * has not been replaced under us. Returns `null` (contention skip) in any
- * other case.
+ * EEXIST recovery path for `acquireLock`. Reads the lockfile pid and start
+ * time, checks liveness with `ownerAlive` (kill probe plus start-time match),
+ * and tries one retry only when the owner is dead AND the compare-and-reap in
+ * `reapIfSamePid` confirms the file has not been replaced under us. Returns
+ * `null` (contention skip) in any other case.
  *
  * @param verb `'pull'` or `'push'`; surfaces in the contention-skip message.
  * @param lp Lock path resolved once by `acquireLock`.
  */
 function checkStaleAndRetry(verb: string, lp: string): LockHandle | null {
-  let pidStr: string;
+  let content: string;
   try {
-    pidStr = readFileSync(lp, 'utf8').trim();
+    content = readFileSync(lp, 'utf8').trim();
   } catch {
-    pidStr = '';
+    content = '';
   }
-  const pid = Number.parseInt(pidStr, 10);
-  if (!Number.isFinite(pid) || pid <= 0) {
-    if (reapIfSamePid(pidStr, lp)) return retryOnce(verb, lp);
-    warn(`another nomad ${verb} running, skipping`);
-    return null;
-  }
-  try {
-    process.kill(pid, 0);
-    warn(`another nomad ${verb} running, skipping`);
-    return null;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH') {
-      if (reapIfSamePid(pidStr, lp)) return retryOnce(verb, lp);
-      warn(`another nomad ${verb} running, skipping`);
-      return null;
-    }
-    warn(`another nomad ${verb} running, skipping`);
-    return null;
-  }
+  const pid = Number.parseInt(content, 10);
+  const dead = !Number.isFinite(pid) || pid <= 0 || !ownerAlive(pid, content.split(/\s+/)[1]);
+  if (dead && reapIfSamePid(content, lp)) return retryOnce(verb, lp);
+  warn(`another nomad ${verb} running, skipping`);
+  return null;
 }
 
 /**
