@@ -47,6 +47,7 @@ import {
   requireHome,
 } from './cli/bootstrap.ts';
 import { resumeCmd } from './sync/resume.ts';
+import { installGitStallBounds } from './core/git-stall.ts';
 import { EXIT } from './core/exit-codes.ts';
 
 /**
@@ -60,6 +61,7 @@ import pkg from '../package.json' with { type: 'json' };
 
 installTopLevelHandlers();
 requireHome();
+installGitStallBounds();
 
 try {
   forceTestCrash();

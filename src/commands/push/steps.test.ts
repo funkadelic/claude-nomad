@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { logOutput, makePushEnv, teardownPushEnv, type PushEnv } from './test-helpers.ts';
+import {
+  errOutput,
+  logOutput,
+  makePushEnv,
+  teardownPushEnv,
+  type PushEnv,
+} from './test-helpers.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 
 import type * as childProcessModule from 'node:child_process';
@@ -486,6 +492,30 @@ describe('runPushCore compose mode', () => {
     expect(result.sections?.map((s) => s.header)).toContain('Push summary');
     expect(result.aheadOfOrigin).toBe(true);
     expect(env.logSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an empty status', ''],
+    ['the gsd-only no-op', 'M  shared/hooks/gsd-prompt-guard.js\0'],
+  ])(
+    'standalone push on %s warns about commits an earlier push left unsent',
+    async (_l, status) => {
+      mockPipeline(status, { revListCount: '1\n' });
+      const { runPushCore } = await import('./push.ts');
+      const result = await runPushCore({});
+      expect(result.tag).toBe('nothing');
+      expect(errOutput(env)).toContain('commits an earlier push did not send');
+      expect(errOutput(env)).toMatch(
+        /`git -C '[^']+' log @\{u\}\.\.`, then send them with `git -C '[^']+' push`/,
+      );
+    },
+  );
+
+  it('standalone push with nothing new and nothing unsent prints no unsent warning', async () => {
+    mockPipeline('');
+    const { runPushCore } = await import('./push.ts');
+    await runPushCore({});
+    expect(errOutput(env)).not.toContain('did not send');
   });
 
   it('compose: true on a real push returns { tag: "pushed", sections } and renders nothing itself', async () => {

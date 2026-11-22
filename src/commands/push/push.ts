@@ -15,6 +15,7 @@ import { syncSharedLinksPush } from '../../sync/links.mirror.ts';
 import { syncSkillsPush } from '../../sync/skills-sync.ts';
 import { probeGitleaks, rebaseBeforePush } from './checks.ts';
 import { remapPush } from '../../sync/remap.ts';
+import { shQuote } from '../../sync/resume.ts';
 import { withSpinner } from '../../render/spinner.ts';
 import {
   die,
@@ -23,6 +24,7 @@ import {
   gitStatusPorcelainZ,
   log,
   NomadFatal,
+  warn,
 } from '../../core/utils.ts';
 import { freshBackupTs } from '../../core/utils.fs.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
@@ -89,14 +91,27 @@ function aheadOfUpstream(repo: string): boolean {
 }
 
 /**
+ * Warn a standalone push that found nothing new but sits on commits an earlier, failed
+ * push never sent. Not sent here: a hand-made commit never went through the leak scan.
+ * @param repo - Resolved repo root path for the ahead-of-upstream probe.
+ */
+function warnIfUnsent(repo: string): void {
+  if (!aheadOfUpstream(repo)) return;
+  const git = `git -C ${shQuote(repo)}`;
+  warn(
+    `the sync repo has commits an earlier push did not send; review them with \`${git} log @{u}..\`, then send them with \`${git} push\``,
+  );
+}
+
+/**
  * Handle the real-push empty-status early return. Standalone push logs
  * `nothing to commit` and renders the no-scan tree inline; a composing caller
  * (`compose`) gets the built sections back unrendered instead, plus the
  * `aheadOfOrigin` probe result so a clean worktree sitting on unpushed
  * commits is never reported as fully in sync, plus `globalConfigCount`/
  * `collisions` read off `st` (an empty status means nothing changed, so both
- * are `0` here in practice). The probe runs only under `compose`: standalone
- * push output and side effects stay byte-identical. Extracted from
+ * are `0` here in practice). Standalone push warns about unsent commits
+ * instead (`warnIfUnsent`). Extracted from
  * `runPushCore` to keep it under the sonarjs cognitive-complexity threshold.
  *
  * @param st - The collected push state.
@@ -117,6 +132,7 @@ function emptyStatusResult(st: PushState, compose: boolean, repo: string): PushC
   }
   log('nothing to commit');
   renderNoScanTree(st);
+  warnIfUnsent(repo);
   return { tag: 'nothing' };
 }
 
@@ -145,7 +161,10 @@ function toPushCoreResult(
   repo: string,
   st: PushState,
 ): PushCoreResult {
-  if (!compose) return { tag: outcome };
+  if (!compose) {
+    if (outcome === 'nothing') warnIfUnsent(repo);
+    return { tag: outcome };
+  }
   const globalConfigCount = st.globalConfig.length;
   const collisions = st.remap.collisions;
   if (outcome === 'nothing') {

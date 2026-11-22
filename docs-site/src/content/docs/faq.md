@@ -324,6 +324,19 @@ nomad, and are marked reserved so they cannot be re-added through `sharedDirs`.
 See [gsd-owned directories: hooks/agents not synced](#gsd-owned-directories-hooksagents-not-synced).
 :::
 
+## What happens if my connection drops in the middle of a push or pull?
+
+The command stops with an error instead of waiting forever. Over HTTPS, git gives up once a transfer
+has sent nothing for two minutes. Over ssh, nomad gives the connection 30 seconds to open and turns
+on ssh keepalives, so a dead connection ends in about a minute (these replace any `ServerAlive`
+settings in your `~/.ssh/config` for nomad's git calls). Run the command again once you are back
+online. If a push stopped after nomad saved its commit, the next `nomad push` sends that commit
+along with any new changes. With nothing new to send, it says the commit was not sent and gives the
+commands to review and send it. If you already chose your own settings, nomad leaves them alone: the
+`GIT_SSH_COMMAND`, `GIT_SSH`, `GIT_SSH_VARIANT`, `GIT_HTTP_LOW_SPEED_LIMIT`, and
+`GIT_HTTP_LOW_SPEED_TIME` environment variables, and the `core.sshCommand`, `ssh.variant`,
+`http.lowSpeedLimit`, and `http.lowSpeedTime` git settings.
+
 ## Is nomad update different from npm update -g claude-nomad?
 
 No. `nomad update` runs the npm self-update for you; it is a convenience wrapper, nothing more.
