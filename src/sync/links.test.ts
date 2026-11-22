@@ -2421,7 +2421,7 @@ describe('regenerateSettings gsd-hook filtering', () => {
 });
 
 // ---------------------------------------------------------------------------
-// gsd-owned hook entry PRESERVATION in regenerateSettings (Phase 64)
+// gsd-owned hook entry PRESERVATION in regenerateSettings
 // ---------------------------------------------------------------------------
 
 /** A gsd SessionStart hook (the check-update hook gsd self-heals each session). */

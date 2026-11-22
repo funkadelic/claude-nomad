@@ -1,5 +1,5 @@
 /**
- * Unit tests for src/spinner.ts.
+ * Unit tests for src/render/spinner.ts.
  *
  * All tests use injected fakes: no real worker is spawned, no real TTY is
  * required. The suite covers every branch: TTY animated path, non-TTY plain
