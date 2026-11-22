@@ -7,7 +7,7 @@ import {
   SUPPORTED_EXTRAS,
   type PathMap,
 } from '../../core/config.ts';
-import { isValidSharedDir } from '../../core/config.sharedDirs.guard.ts';
+import { assertSafeLogical, isValidSharedDir } from '../../core/config.sharedDirs.guard.ts';
 import { fail, NomadFatal } from '../../core/utils.ts';
 
 /**
@@ -126,7 +126,8 @@ export function deletedPathsZ(statusPorcelain: string): Set<string> {
       continue;
     }
     const xy = rec.slice(0, 2);
-    (/^[D ]{2}$/.test(xy) ? deleted : live).add(rec.slice(3));
+    // `DD` is unmerged, and a re-created unmerged path gets no `??` record.
+    (xy === 'D ' || xy === ' D' ? deleted : live).add(rec.slice(3));
     if (xy.includes('R')) oldPathOf = 'R';
     else if (xy.includes('C')) oldPathOf = 'C';
   }
@@ -140,9 +141,13 @@ export function deletedPathsZ(statusPorcelain: string): Set<string> {
  * each valid `sharedDirs` folder.
  * @param map - Parsed path-map.
  * @returns Entries matched by `isAllowed`.
+ * @throws NomadFatal when a project or extras key is not a safe logical name.
  */
 export function buildAllowList(map: PathMap): string[] {
   const extrasWhitelist: readonly string[] = SUPPORTED_EXTRAS;
+  for (const l of [...Object.keys(map.projects), ...Object.keys(map.extras ?? {})]) {
+    assertSafeLogical(l);
+  }
   return [
     ...PUSH_ALLOWED_STATIC,
     ...Object.keys(map.projects).map((l) => `shared/projects/${l}/`),
@@ -163,8 +168,8 @@ export function buildAllowList(map: PathMap): string[] {
 
 /**
  * Reject any staged path that is off the `buildAllowList` list or in `NEVER_SYNC`.
- * A `NEVER_SYNC` path that only leaves the repo (see `deletedPathsZ`) passes,
- * so a path a newer deny rule now filters cannot wedge every push.
+ * A path that only leaves the repo (see `deletedPathsZ`) always passes, so a
+ * newer deny rule or a dropped `path-map.json` entry cannot wedge every push.
  * Logs every violation, then throws `NomadFatal` so the caller releases the push lock.
  */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
@@ -173,8 +178,9 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   const neverSyncHits: string[] = [];
   const violations: string[] = [];
   for (const path of parsePorcelainZ(statusPorcelain)) {
+    if (deleted.has(path)) continue;
     if (isNeverSync(path)) {
-      if (!deleted.has(path)) neverSyncHits.push(path);
+      neverSyncHits.push(path);
     } else if (isGsdDropped(path)) {
       // gsd-owned asset under a GSD_DROPPED_NAMES dir: silently skip.
       // gsd reinstalls these per-host; they are not sync candidates.
