@@ -113,28 +113,47 @@ export function acquireLock(verb: string): LockHandle | null {
 export function releaseLock(handle: LockHandle | null): void {
   if (handle === null) return;
   const lp = handle.path;
-  let ours = true;
+  const grave = `${lp}.${process.pid}.release`;
   try {
-    const held = fstatSync(handle.fd, { bigint: true });
-    const now = statSync(lp, { bigint: true });
-    ours = held.ino === now.ino && held.dev === now.dev;
-  } catch {
-    /* cannot compare (path gone or fd closed); fall through to the tolerant unlink */
+    // Move first, then compare on a name only this process uses, so the file
+    // checked is the file removed.
+    try {
+      renameSync(lp, grave);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      return;
+    }
+    let ours = true;
+    try {
+      const held = fstatSync(handle.fd, { bigint: true });
+      const moved = statSync(grave, { bigint: true });
+      ours = held.ino === moved.ino && held.dev === moved.dev;
+    } catch {
+      /* cannot compare (fd already closed); treat as ours, as before */
+    }
+    settleGrave(grave, lp, ours);
+  } finally {
+    try {
+      closeSync(handle.fd);
+    } catch {
+      /* already closed; ignore */
+    }
   }
+}
+
+/**
+ * Finish a move-then-check: delete `grave` if `ours`, else link it back onto `lp` first.
+ * @param grave Pid-unique name the lock was renamed to. @param lp Lock path. @param ours Ownership.
+ */
+function settleGrave(grave: string, lp: string, ours: boolean): void {
   if (!ours) {
-    closeSync(handle.fd);
-    return;
+    try {
+      linkSync(grave, lp);
+    } catch {
+      /* the path was retaken meanwhile; keep theirs */
+    }
   }
-  try {
-    closeSync(handle.fd);
-  } catch {
-    /* already closed; ignore */
-  }
-  try {
-    unlinkSync(lp);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-  }
+  unlinkQuietly(grave);
 }
 
 /**
@@ -159,18 +178,9 @@ function reapIfSamePid(expectedPidStr: string, lp: string): boolean {
   } catch {
     /* unreadable grave is treated as live and restored */
   }
-  if (stale) {
-    unlinkQuietly(grave);
-    return true;
-  }
-  // Residual: a third process can take the lock path in the gap before this restore.
-  try {
-    linkSync(grave, lp);
-  } catch {
-    /* the path was retaken meanwhile; keep theirs */
-  }
-  unlinkQuietly(grave);
-  return false;
+  // Residual: a third process can take the lock path in the gap before a restore.
+  settleGrave(grave, lp, stale);
+  return stale;
 }
 
 /**

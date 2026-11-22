@@ -153,24 +153,21 @@ describe('releaseLock error propagation', () => {
     rmSync(testHome, { recursive: true, force: true });
   });
 
-  it('rethrows when unlinkSync fails with a non-ENOENT error (e.g. EACCES)', async () => {
+  it('rethrows when the release move fails with a non-ENOENT error (e.g. EACCES)', async () => {
     // releaseLock tolerates ENOENT (lockfile already gone) but rethrows
     // everything else so the caller surfaces unexpected I/O failures.
-    // Mock node:fs.unlinkSync to throw EACCES for the lockfile path; the
-    // `code !== 'ENOENT'` true branch in releaseLock is exercised.
-    // Done via vi.doMock (rather than spyOn) because ESM module namespaces
-    // are not configurable.
+    // vi.doMock because ESM module namespaces are not configurable.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
         ...actual,
-        unlinkSync: vi.fn((path: fsModule.PathLike) => {
-          if (typeof path === 'string' && path === lockPath) {
+        renameSync: vi.fn((path: fsModule.PathLike, dest: fsModule.PathLike) => {
+          if (typeof path === 'string' && path === lockPath && String(dest).endsWith('.release')) {
             const err = new Error('permission denied') as NodeJS.ErrnoException;
             err.code = 'EACCES';
             throw err;
           }
-          return actual.unlinkSync(path);
+          return actual.renameSync(path, dest);
         }),
       };
     });
@@ -181,21 +178,19 @@ describe('releaseLock error propagation', () => {
     expect(() => releaseLock(handle)).toThrow(/permission denied/);
   });
 
-  it('silently tolerates ENOENT on unlinkSync (lockfile already vanished)', async () => {
-    // ENOENT branch of releaseLock's unlink catch: the lockfile is gone
-    // before we get to unlink it (e.g. another process cleaned up first).
-    // Must NOT throw - this is the documented tolerance contract.
+  it('silently tolerates ENOENT on the release move (lockfile already vanished)', async () => {
+    // The lockfile is gone before release moves it; must not throw.
     vi.doMock('node:fs', async (importOriginal) => {
       const actual = await importOriginal<typeof fsModule>();
       return {
         ...actual,
-        unlinkSync: vi.fn((path: fsModule.PathLike) => {
-          if (typeof path === 'string' && path === lockPath) {
+        renameSync: vi.fn((path: fsModule.PathLike, dest: fsModule.PathLike) => {
+          if (typeof path === 'string' && path === lockPath && String(dest).endsWith('.release')) {
             const err = new Error('no such file') as NodeJS.ErrnoException;
             err.code = 'ENOENT';
             throw err;
           }
-          return actual.unlinkSync(path);
+          return actual.renameSync(path, dest);
         }),
       };
     });
