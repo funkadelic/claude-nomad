@@ -326,14 +326,15 @@ See [gsd-owned directories: hooks/agents not synced](#gsd-owned-directories-hook
 
 ## What happens if my connection drops in the middle of a push or pull?
 
-The command stops with an error instead of waiting forever. Over HTTPS, git gives up once a
-transfer has sent nothing for two minutes. Over ssh, nomad gives the connection 30 seconds to open
-and turns on ssh keepalives, so a dead connection ends in about a minute (these replace any
-`ServerAlive` settings in your `~/.ssh/config` for nomad's git calls). Run the command again once
-you are back online. If you already chose your own settings, nomad leaves them alone: the
-`GIT_SSH_COMMAND`, `GIT_SSH`, `GIT_SSH_VARIANT`, `GIT_HTTP_LOW_SPEED_LIMIT`, and
-`GIT_HTTP_LOW_SPEED_TIME` environment variables, and the `core.sshCommand`, `ssh.variant`,
-`http.lowSpeedLimit`, and `http.lowSpeedTime` git settings.
+The command stops with an error instead of waiting forever. Over HTTPS, git gives up once a transfer
+has sent nothing for two minutes. Over ssh, nomad gives the connection 30 seconds to open and turns
+on ssh keepalives, so a dead connection ends in about a minute (these replace any `ServerAlive`
+settings in your `~/.ssh/config` for nomad's git calls). Run the command again once you are back
+online. If a push stopped after nomad saved its commit, the next `nomad push` says the commit was
+not sent and gives the `git push` command that sends it. If you already chose your own settings,
+nomad leaves them alone: the `GIT_SSH_COMMAND`, `GIT_SSH`, `GIT_SSH_VARIANT`,
+`GIT_HTTP_LOW_SPEED_LIMIT`, and `GIT_HTTP_LOW_SPEED_TIME` environment variables, and the
+`core.sshCommand`, `ssh.variant`, `http.lowSpeedLimit`, and `http.lowSpeedTime` git settings.
 
 ## Is nomad update different from npm update -g claude-nomad?
 
