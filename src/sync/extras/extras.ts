@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
-import { backupBase, repoHome } from '../../core/config.ts';
+import { backupBase, deniedSegmentFor, isClaudeExtraName, repoHome } from '../../core/config.ts';
 import { listDivergingModified } from './diff.ts';
 import { eachExtrasTarget, loadValidatedExtras, type ExtrasCounts } from './core.ts';
 import { warn } from '../../core/utils.ts';
@@ -16,13 +16,26 @@ export { copyExtras } from './core.ts';
 export { remapExtrasPull, remapExtrasPush } from './remap.ts';
 import { keptDeletePreview, keptDeleteWarnLine } from './remap.ts';
 
+/** Diverged-file counts by what the pull does with them. */
+export type DivergenceCounts = { keptLocal: number; replaced: number };
+
+/**
+ * Diverged files the pull actually overwrites. The `.claude` pull preserves
+ * deny-set names and skips root `worktrees/`, so those are dropped here.
+ */
+function pullOverwritten(logical: string, dirname: string, modified: string[]): string[] {
+  if (!isClaudeExtraName(dirname)) return modified;
+  const repoRel = (f: string) => `shared/extras/${logical}/${dirname}/${f.split(sep).join('/')}`;
+  return modified.filter((f) => deniedSegmentFor(repoRel(f)) === null);
+}
+
 /**
  * Build the user-facing WARN line for one diverging extra. Phrases the entry
  * as a "folder"/"file" with grammar that agrees with the diverging-file count
  * (singular vs plural), and names the backup path the next pull step writes to.
- * The wording reflects the divergence-is-conflict guard: the pull KEEPS the
- * local copy on divergence rather than overwriting it, so the user pushes to
- * reconcile. The backup snapshot is still taken (defense-in-depth). A preview
+ * `.planning` and root files keep the local copy on divergence; the `.claude`
+ * extra pull overwrites synced files, so its line says so and tells the user
+ * to push first. The backup snapshot is taken either way. A preview
  * writes no backup, and the real pull picks its own timestamp, so the preview
  * wording names no path.
  */
@@ -43,7 +56,10 @@ function divergenceWarnLine(o: {
   const backup = o.dryRun
     ? 'will be backed up when you pull'
     : `${verb} backed up to ${o.projectBackupRoot}/`;
-  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step will keep your local copy (push to reconcile; ${yours} ${backup})`;
+  const outcome = isClaudeExtraName(o.dirname)
+    ? 'will replace your local copy with the synced one (push first to keep your edits;'
+    : 'will keep your local copy (push to reconcile;';
+  return `local ${kind} ${name} in repo ${o.logical} differs from the synced copy in ${fileCount}; the next pull step ${outcome} ${yours} ${backup})`;
 }
 
 /**
@@ -72,26 +88,22 @@ function divergenceWarnLine(o: {
  *   `undefined` for the WET pull and offline `nomad diff`.
  * @param dryRun - `true` for `pull --dry-run` and `nomad diff`, which write no
  *   backup, so the WARN does not name a backup path.
- * @returns The total count of both-sides-modified (M) files across every
- *   diverging extra (the WARN count). Existing callers that only need the
- *   side-effecting WARN output may ignore the return value.
+ * @returns Both-sides-modified (M) file counts across every diverging extra,
+ *   split into files the pull keeps local and `.claude` files it replaces with
+ *   the repo copy. Callers that only need the WARN output may ignore it.
  */
 export function divergenceCheckExtras(
   ts: string,
   prePostHeads?: { pre: string; post: string },
   dryRun = false,
-): number {
+): DivergenceCounts {
+  const total: DivergenceCounts = { keptLocal: 0, replaced: 0 };
   const v = loadValidatedExtras({});
-  if (v === null) return 0;
+  if (v === null) return total;
 
   const counts: ExtrasCounts = { unmapped: 0, skipped: 0 };
   const backupRoot = join(backupBase(), ts, 'extras');
   const repo = repoHome();
-  // Total both-sides-modified (M) file count across every diverging extra,
-  // returned to the caller so a composing command (e.g. a future `nomad
-  // sync`) can report how many diverged files the pull kept local without
-  // re-deriving the count itself.
-  let divergedCount = 0;
   for (const { logical, localRoot, dirname } of eachExtrasTarget(v, counts)) {
     const local = join(localRoot, dirname);
     const repoEntry = join(repo, 'shared', 'extras', logical, dirname);
@@ -100,9 +112,10 @@ export function divergenceCheckExtras(
     // Repo-only (A) files are added by the pull and local-only (D) files survive
     // regardless, so neither is a conflict; counting them would over-state the
     // keep-local reassurance (the honest-count goal).
-    const modified = listDivergingModified(local, repoEntry);
+    const modified = pullOverwritten(logical, dirname, listDivergingModified(local, repoEntry));
     if (modified.length === 0) continue;
-    divergedCount += modified.length;
+    if (isClaudeExtraName(dirname)) total.replaced += modified.length;
+    else total.keptLocal += modified.length;
     const projectBackupRoot = join(backupRoot, encodePath(localRoot));
     warn(
       divergenceWarnLine({
@@ -123,5 +136,5 @@ export function divergenceCheckExtras(
       warn(keptDeleteWarnLine(logical, relToLocal, dryRun));
     }
   }
-  return divergedCount;
+  return total;
 }

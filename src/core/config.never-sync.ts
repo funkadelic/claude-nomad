@@ -36,6 +36,8 @@ export const NEVER_SYNC = new Set([
   'tasks',
   'security',
   'sessions',
+  // Claude Code's per-process scheduled-task lock (pid + session id).
+  'scheduled_tasks.lock',
 ]);
 
 /**

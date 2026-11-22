@@ -279,7 +279,7 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     expect(existsSync(join(testRepo, 'path-map.json'))).toBe(false);
 
     const { divergenceCheckExtras } = await import('./extras.ts');
-    expect(divergenceCheckExtras('20260516-000000')).toBe(0);
+    expect(divergenceCheckExtras('20260516-000000')).toEqual({ keptLocal: 0, replaced: 0 });
   });
 
   it('does NOT warn when only the local side is absent (L40: || not && guard)', async () => {
@@ -322,14 +322,16 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
    * output and the returned both-sides-modified count. Shared by the warn-line
    * grammar cases below.
    */
-  async function runDivergence(dryRun = false): Promise<{ text: string; count: number }> {
+  async function runDivergence(
+    dryRun = false,
+  ): Promise<{ text: string; count: number; replaced: number }> {
     const warnLines: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       warnLines.push(args.map(String).join(' '));
     });
     const { divergenceCheckExtras } = await import('./extras.ts');
-    const count = divergenceCheckExtras('20260516-000000', undefined, dryRun);
-    return { text: warnLines.join('\n'), count };
+    const { keptLocal, replaced } = divergenceCheckExtras('20260516-000000', undefined, dryRun);
+    return { text: warnLines.join('\n'), count: keptLocal, replaced };
   }
 
   /** Write a path-map.json mapping `testproj` to `projectRoot` with the given extras. */
@@ -402,6 +404,45 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
       '(push to reconcile; your current file will be backed up when you pull)',
     );
     expect(text).not.toContain('backed up to');
+  });
+
+  it('says the .claude extra pull replaces the local copy, since it does not keep it', async () => {
+    const projectRoot = join(testHome, 'proj-claude');
+    const localClaude = join(projectRoot, '.claude');
+    mkdirSync(localClaude, { recursive: true });
+    writeFileSync(join(localClaude, 'settings.json'), '{"a":1}\n');
+    const repoExtras = join(testRepo, 'shared', 'extras', 'testproj', '.claude');
+    mkdirSync(repoExtras, { recursive: true });
+    writeFileSync(join(repoExtras, 'settings.json'), '{"a":2}\n');
+    writePathMap(projectRoot, ['.claude']);
+
+    const { text, count, replaced } = await runDivergence();
+    expect(text).toContain(
+      'the next pull step will replace your local copy with the synced one (push first to keep your edits; your current file is backed up to',
+    );
+    expect(text).not.toContain('keep your local copy');
+    expect(count).toBe(0);
+    expect(replaced).toBe(1);
+  });
+
+  it('skips .claude files the pull preserves (deny-set names, root worktrees)', async () => {
+    const projectRoot = join(testHome, 'proj-claude-preserved');
+    const localClaude = join(projectRoot, '.claude');
+    const repoClaude = join(testRepo, 'shared', 'extras', 'testproj', '.claude');
+    for (const [root, v] of [
+      [localClaude, 'local'],
+      [repoClaude, 'repo'],
+    ] as const) {
+      mkdirSync(join(root, 'worktrees', 'wt'), { recursive: true });
+      writeFileSync(join(root, 'scheduled_tasks.lock'), `${v}\n`);
+      writeFileSync(join(root, 'worktrees', 'wt', 'a.ts'), `${v}\n`);
+    }
+    writePathMap(projectRoot, ['.claude']);
+
+    const { text, count, replaced } = await runDivergence();
+    expect(text).not.toContain('differs from the synced copy');
+    expect(count).toBe(0);
+    expect(replaced).toBe(0);
   });
 
   it('warns "file" for a single-file extra (CLAUDE.md) divergence', async () => {

@@ -69,7 +69,7 @@ type PushOutcome = { ok: true; result: PushCoreResult } | { ok: false; message: 
 function isNoopSync(pull: WetPull, pushOutcome: PushOutcome): boolean {
   if (!pushOutcome.ok) return false;
   if (pull.settingsBlocked.length > 0) return false;
-  if (pull.localOnly !== 0 || pull.divergedKeptLocal !== 0) return false;
+  if (pull.localOnly !== 0 || pull.divergedKeptLocal + pull.divergedReplaced !== 0) return false;
   if (pushOutcome.result.tag !== 'nothing') return false;
   if (pushOutcome.result.aheadOfOrigin === true) return false;
   return !pull.incomingChanges;

@@ -71,7 +71,7 @@ function mockCleanPullPipeline(onApplySharedLinks: () => void = () => undefined)
   vi.doMock('../../sync/extras/extras.ts', () => ({
     remapExtrasPush: vi.fn(),
     remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-    divergenceCheckExtras: vi.fn(),
+    divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
   }));
   vi.doMock('../../core/utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
@@ -255,6 +255,7 @@ describe('cmdPull: extras integration', () => {
     const callOrder: string[] = [];
     const divergenceCheckExtrasMock = vi.fn(() => {
       callOrder.push('divergenceCheckExtras');
+      return { keptLocal: 0, replaced: 0 };
     });
     const remapExtrasPullMock = vi.fn(() => {
       callOrder.push('remapExtrasPull');
@@ -336,7 +337,7 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: remapExtrasPullMock,
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -357,7 +358,7 @@ describe('cmdPull: extras integration', () => {
     // remapExtrasPull entirely, but divergenceCheckExtras still fires
     // because it is read-only and the user wants to see the same
     // pre-pull WARN in both wet and dry modes.
-    const divergenceCheckExtrasMock = vi.fn();
+    const divergenceCheckExtrasMock = vi.fn(() => ({ keptLocal: 0, replaced: 0 }));
     const remapExtrasPullMock = vi.fn(() => ({
       unmapped: 0,
       skipped: 0,
@@ -405,7 +406,7 @@ describe('cmdPull: extras integration', () => {
     // extras-sync functions themselves return early when no extras key is
     // present (covered by sync/extras/extras.test.ts). cmdPull does not branch
     // on the presence of the extras key.
-    const divergenceCheckExtrasMock = vi.fn();
+    const divergenceCheckExtrasMock = vi.fn(() => ({ keptLocal: 0, replaced: 0 }));
     const remapExtrasPullMock = vi.fn(() => ({
       unmapped: 0,
       skipped: 0,
@@ -466,7 +467,7 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 3, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -512,7 +513,7 @@ describe('cmdPull: extras integration', () => {
         pulled: ['proj-a/.planning'],
         wouldPull: [],
       })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -611,7 +612,7 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 3, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -649,7 +650,7 @@ describe('cmdPull: extras integration', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -706,7 +707,7 @@ describe('cmdPull: extras integration', () => {
         pulled: ['foo/.planning'],
         wouldPull: [],
       })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -897,7 +898,7 @@ describe('cmdPull wedge preflight', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const { cmdPull } = await import('./pull.ts');
     expect(() => cmdPull()).not.toThrow();
@@ -1054,7 +1055,7 @@ describe('cmdPull forceRemote routing', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const { cmdPull } = await import('./pull.ts');
     // Run recovery: no throw expected (recovery succeeds; post-recovery pull
@@ -1094,7 +1095,7 @@ describe('cmdPull forceRemote routing', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const { cmdPull } = await import('./pull.ts');
     cmdPull({ forceRemote: true });
@@ -1178,7 +1179,7 @@ describe('cmdPull forceRemote routing', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
@@ -1238,7 +1239,7 @@ describe('cmdPull forceRemote routing', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const logSpyLocal = vi.spyOn(console, 'log').mockImplementation(() => {
       /* captured */
@@ -1394,7 +1395,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const { cmdPull } = await import('./pull.ts');
     cmdPull({ forceRemote: true });
@@ -1433,7 +1434,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const { cmdPull } = await import('./pull.ts');
     cmdPull({ forceRemote: true });
@@ -1480,7 +1481,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const { cmdPull } = await import('./pull.ts');
     cmdPull({ forceRemote: true });
@@ -1518,7 +1519,7 @@ describe('handleWedge unmerged-index dispatch', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     const { cmdPull } = await import('./pull.ts');
     expect(() => cmdPull()).not.toThrow();
@@ -1907,7 +1908,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
 
     const { cmdPull } = await import('./pull.ts');
@@ -1962,7 +1963,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../render/preview.ts', () => ({
       computePreview: vi.fn(() => ({ unmapped: 0 })),
@@ -2017,7 +2018,7 @@ describe('cmdPull end-to-end: HEAD capture and .planning overlay (TDD acceptance
     }));
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
 
     const { cmdPull } = await import('./pull.ts');
@@ -2100,7 +2101,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(() => 3),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 3, replaced: 1 })),
     }));
     vi.spyOn(console, 'error').mockImplementation(() => {
       /* captured */
@@ -2139,8 +2140,9 @@ describe('runPullCore: return shape and lock-free contract', () => {
     // localOnly comes straight from the mocked scanLocalOnly() return value.
     expect(result.localOnly).toBe(2);
     // divergedKeptLocal comes straight from the mocked divergenceCheckExtras()
-    // return value (the both-sides-modified count).
+    // return value (the both-sides-modified counts).
     expect(result.divergedKeptLocal).toBe(3);
+    expect(result.divergedReplaced).toBe(1);
     // gitCaptureRaw always returns '' in this suite's default mock, so both
     // the pre- and post-rebase HEAD captures are equal ('' === ''):
     // incomingChanges must be false.
@@ -2378,7 +2380,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(() => 0),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../render/preview.ts', () => ({ computePreview: opts.previewSpy ?? vi.fn() }));
     vi.doMock('../../core/utils.ts', async (importOriginal) => {
@@ -2681,7 +2683,7 @@ describe('runPullCore: win32 pre-pull shared-link mirror', () => {
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(() => 0),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../core/utils.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof utilsModule>();
@@ -2771,7 +2773,7 @@ describe('runPullCore: shared-name derivation across the rebase boundary', () =>
     vi.doMock('../../sync/extras/extras.ts', () => ({
       remapExtrasPush: vi.fn(),
       remapExtrasPull: vi.fn(() => ({ unmapped: 0, skipped: 0, pulled: [], wouldPull: [] })),
-      divergenceCheckExtras: vi.fn(() => 0),
+      divergenceCheckExtras: vi.fn(() => ({ keptLocal: 0, replaced: 0 })),
     }));
     vi.doMock('../../sync/skills-sync.ts', () => ({
       syncSkillsPull: vi.fn(),
