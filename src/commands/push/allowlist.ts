@@ -7,7 +7,7 @@ import {
   SUPPORTED_EXTRAS,
   type PathMap,
 } from '../../core/config.ts';
-import { isValidSharedDir } from '../../core/config.sharedDirs.guard.ts';
+import { assertSafeLogical, isValidSharedDir } from '../../core/config.sharedDirs.guard.ts';
 import { fail, NomadFatal } from '../../core/utils.ts';
 
 /**
@@ -140,9 +140,13 @@ export function deletedPathsZ(statusPorcelain: string): Set<string> {
  * each valid `sharedDirs` folder.
  * @param map - Parsed path-map.
  * @returns Entries matched by `isAllowed`.
+ * @throws NomadFatal when a project or extras key is not a safe logical name.
  */
 export function buildAllowList(map: PathMap): string[] {
   const extrasWhitelist: readonly string[] = SUPPORTED_EXTRAS;
+  for (const l of [...Object.keys(map.projects), ...Object.keys(map.extras ?? {})]) {
+    assertSafeLogical(l);
+  }
   return [
     ...PUSH_ALLOWED_STATIC,
     ...Object.keys(map.projects).map((l) => `shared/projects/${l}/`),
