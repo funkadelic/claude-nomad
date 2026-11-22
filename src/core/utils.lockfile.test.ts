@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   unlinkSync,
@@ -77,7 +78,7 @@ describe('acquireLock / releaseLock', () => {
     expect(existsSync(lockPath)).toBe(true);
   });
 
-  it('unlinks stale lockfile and retries when PID file references a dead process', async () => {
+  it('reaps stale lockfile and retries when PID file references a dead process', async () => {
     const deadPid = 2147483647;
     let guarded = false;
     try {
@@ -99,6 +100,7 @@ describe('acquireLock / releaseLock', () => {
     expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
     releaseLock(handle);
     expect(existsSync(lockPath)).toBe(false);
+    expect(readdirSync(join(testHome, '.cache', 'claude-nomad'))).toEqual([]);
   });
 
   it('returns null on double-acquire in the same process (own PID is alive)', async () => {

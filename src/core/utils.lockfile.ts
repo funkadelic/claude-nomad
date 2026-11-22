@@ -1,4 +1,13 @@
-import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  linkSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { home } from './config.ts';
@@ -30,40 +39,61 @@ function lockFilePath(): string {
 export type LockHandle = { fd: number; path: string };
 
 /**
+ * Remove `p`, ignoring any failure (missing file, permissions). Best effort.
+ */
+function unlinkQuietly(p: string): void {
+  try {
+    unlinkSync(p);
+  } catch {
+    /* best effort; nothing useful to do on failure */
+  }
+}
+
+/**
+ * Create the lock by writing our PID to a pid-unique temp sibling and hard
+ * linking it onto `lp`. The link is atomic and fails EEXIST while the lock is
+ * held, so the lock path never exists without its full PID. On failure nothing
+ * was published and the error is rethrown.
+ *
+ * @param lp Lock path resolved once by `acquireLock`.
+ */
+function createLock(lp: string): LockHandle {
+  const tmp = `${lp}.${process.pid}.tmp`;
+  // A tmp left by a crashed process may still be linked to a stale lock;
+  // unlink first so opening it with 'w' cannot truncate that shared inode.
+  unlinkQuietly(tmp);
+  const fd = openSync(tmp, 'w');
+  try {
+    writeFileSync(fd, String(process.pid));
+    linkSync(tmp, lp);
+  } catch (err) {
+    try {
+      closeSync(fd);
+    } catch {
+      /* already closed; ignore */
+    }
+    unlinkQuietly(tmp);
+    throw err;
+  }
+  unlinkQuietly(tmp);
+  return { fd, path: lp };
+}
+
+/**
  * Acquire the exclusive nomad lockfile so two pulls/pushes cannot mutate
  * `~/.claude/` concurrently. Returns the handle on success, or `null` on
  * contention (caller should `process.exit(EXIT.SUCCESS)`; skip-on-contention is the
- * intended UX for backgrounded shell-rc invocations). Detects stale locks by
- * probing the recorded pid with `kill(pid, 0)` and recovers via
- * `unlinkIfSamePid` + `retryOnce`. `verb` is `'pull'` or `'push'`; surfaces
- * in the contention-skip message.
+ * intended UX for backgrounded shell-rc invocations). The lock is published
+ * atomically by `createLock`. On EEXIST, detects stale locks by probing the
+ * recorded pid with `kill(pid, 0)` and recovers via `reapIfSamePid` +
+ * `retryOnce`. `verb` is `'pull'` or `'push'`; surfaces in the contention-skip
+ * message.
  */
 export function acquireLock(verb: string): LockHandle | null {
   const lp = lockFilePath();
   mkdirSync(dirname(lp), { recursive: true });
   try {
-    const fd = openSync(lp, 'wx');
-    try {
-      writeFileSync(fd, String(process.pid));
-    } catch (writeErr) {
-      // PID-write failed after the lock file was created. Best-effort cleanup:
-      // close the fd (ignore errors), then unlink the orphaned lock file
-      // (ignore ANY unlink failure). The original write error is rethrown
-      // unconditionally, so a cleanup failure can never mask it and non-EEXIST
-      // throw semantics are preserved.
-      try {
-        closeSync(fd);
-      } catch {
-        /* already closed; ignore */
-      }
-      try {
-        unlinkSync(lp);
-      } catch {
-        /* best-effort cleanup; the original write failure takes precedence */
-      }
-      throw writeErr;
-    }
-    return { fd, path: lp };
+    return createLock(lp);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== 'EEXIST') throw err;
@@ -93,39 +123,45 @@ export function releaseLock(handle: LockHandle | null): void {
 }
 
 /**
- * Compare-and-delete helper that closes most of the TOCTOU window between
- * reading a stale lock's pid and removing it: another process could
- * legitimately acquire the lock between those steps, and a naive unlink
- * would clobber it. Re-reads the file and only unlinks if the contents
- * still equal `expectedPidStr`. Returns `true` if the lock was unlinked,
- * `false` if the content drifted or the file already vanished. A microsecond
- * window between the re-read and the unlink remains; the residual race is
- * documented as a backlog item rather than fully closed here.
+ * Reap a stale lock without ever deleting a live one. The rename is atomic, so
+ * afterwards this process owns the inode; the PID check runs on the grave, never
+ * on the shared path. A mismatch means a live lock was moved and is restored.
+ * Returns `true` if the stale lock was removed, `false` otherwise.
  *
  * @param expectedPidStr The pid string read earlier from the lockfile.
  * @param lp Lock path resolved once by `acquireLock`.
  */
-function unlinkIfSamePid(expectedPidStr: string, lp: string): boolean {
-  let current: string;
+function reapIfSamePid(expectedPidStr: string, lp: string): boolean {
+  const grave = `${lp}.${process.pid}.stale`;
   try {
-    current = readFileSync(lp, 'utf8').trim();
+    renameSync(lp, grave);
   } catch {
     return false;
   }
-  /* c8 ignore next -- TOCTOU drift between the two reads is a documented residual race, hard to exercise deterministically */
-  if (current !== expectedPidStr) return false;
+  let stale = false;
   try {
-    unlinkSync(lp);
+    stale = readFileSync(grave, 'utf8').trim() === expectedPidStr;
+  } catch {
+    /* unreadable grave is treated as live and restored */
+  }
+  if (stale) {
+    unlinkQuietly(grave);
     return true;
-  } catch {
-    return false;
   }
+  // Residual: a third process can take the lock path in the gap before this restore.
+  try {
+    linkSync(grave, lp);
+  } catch {
+    /* the path was retaken meanwhile; keep theirs */
+  }
+  unlinkQuietly(grave);
+  return false;
 }
 
 /**
  * EEXIST recovery path for `acquireLock`. Reads the lockfile pid, probes
  * liveness with `kill(pid, 0)`, and tries one retry only when the pid is
- * dead AND the compare-and-delete in `unlinkIfSamePid` confirms the file
+ * dead AND the compare-and-reap in `reapIfSamePid` confirms the file
  * has not been replaced under us. Returns `null` (contention skip) in any
  * other case.
  *
@@ -141,7 +177,7 @@ function checkStaleAndRetry(verb: string, lp: string): LockHandle | null {
   }
   const pid = Number.parseInt(pidStr, 10);
   if (!Number.isFinite(pid) || pid <= 0) {
-    if (unlinkIfSamePid(pidStr, lp)) return retryOnce(verb, lp);
+    if (reapIfSamePid(pidStr, lp)) return retryOnce(verb, lp);
     warn(`another nomad ${verb} running, skipping`);
     return null;
   }
@@ -152,7 +188,7 @@ function checkStaleAndRetry(verb: string, lp: string): LockHandle | null {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ESRCH') {
-      if (unlinkIfSamePid(pidStr, lp)) return retryOnce(verb, lp);
+      if (reapIfSamePid(pidStr, lp)) return retryOnce(verb, lp);
       warn(`another nomad ${verb} running, skipping`);
       return null;
     }
@@ -162,7 +198,7 @@ function checkStaleAndRetry(verb: string, lp: string): LockHandle | null {
 }
 
 /**
- * Single retry of `openSync(..., 'wx')` after `unlinkIfSamePid` cleared a
+ * Single retry of the shared create step after `reapIfSamePid` cleared a
  * confirmed-stale lock. Bounded to one attempt to avoid spin loops if the
  * lock is being rapidly recreated by another live process.
  *
@@ -171,27 +207,7 @@ function checkStaleAndRetry(verb: string, lp: string): LockHandle | null {
  */
 function retryOnce(verb: string, lp: string): LockHandle | null {
   try {
-    const fd = openSync(lp, 'wx');
-    try {
-      writeFileSync(fd, String(process.pid));
-    } catch {
-      // Twin of the acquireLock write-failure guard. Best-effort cleanup: close
-      // the fd (ignore errors) and unlink the orphaned lock file (ignore ANY
-      // unlink failure). retryOnce's null-on-failure contract is preserved.
-      try {
-        closeSync(fd);
-      } catch {
-        /* already closed; ignore */
-      }
-      try {
-        unlinkSync(lp);
-      } catch {
-        /* best-effort cleanup; the null return below is the contract */
-      }
-      warn(`another nomad ${verb} running, skipping`);
-      return null;
-    }
-    return { fd, path: lp };
+    return createLock(lp);
   } catch {
     warn(`another nomad ${verb} running, skipping`);
     return null;
