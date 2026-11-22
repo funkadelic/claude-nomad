@@ -192,8 +192,8 @@ have to reason about which one to run first. The pull half is the same retain-me
 `nomad pull` runs (local-only work is kept, a diverged extras file is kept local with a warning),
 so it is safe to run first; the push half then reconciles everything local, including any
 local-only sessions and diverged extras files the pull half just retained, to the remote. The one
-exception is a `.claude` extra: the pull half backs up a diverged file there and takes the repo
-copy, so run `nomad push` first if you edited one.
+exception is a `.claude` extra: a real sync's pull half backs up a diverged file there and takes
+the repo copy (`--dry-run` only warns), so run `nomad push` first if you edited one.
 
 On native Windows the pull half also mirrors your shared-config copies into the repo before it
 fetches, and removes a file you deleted from a shared directory from the repo the same way (see

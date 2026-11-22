@@ -381,8 +381,8 @@ function runPullWithBackupTs(
   // function itself silently skips when no `extras` key is declared. Only the
   // dry-run gets prePostHeads for the delete-vs-edit keep-local preview; the
   // wet pull emits that WARN from remapExtrasPull, so passing heads here too
-  // would double it. The return value is the both-sides-modified count,
-  // carried into the wet result below for a composing caller's summary.
+  // would double it. The return value splits the both-sides-modified files
+  // into kept-local and replaced (`.claude`), carried into the wet result.
   const diverged = divergenceCheckExtras(ts, dryRun ? prePostHeads : undefined, dryRun);
   if (dryRun) {
     // computePreview renders the full tree including the Summary row with
