@@ -52,31 +52,48 @@ function unlinkQuietly(p: string): void {
 }
 
 /**
- * Returns the start time of `pid` (field 22 of `/proc/<pid>/stat`), or
- * `undefined` when it cannot be read or parsed (no `/proc`, process gone).
+ * Read and trim a small text file, or `undefined` when it cannot be read.
  *
- * @param pid Process id to inspect.
+ * @param p File path.
  */
-function procStartTime(pid: number): string | undefined {
+function readTrimmed(p: string): string | undefined {
   try {
-    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
-    // comm (field 2) may hold spaces and parens, so parse after the last ')'.
-    return stat
-      .slice(stat.lastIndexOf(')') + 1)
-      .trim()
-      .split(' ')[19];
+    return readFileSync(p, 'utf8').trim();
   } catch {
     return undefined;
   }
 }
 
 /**
- * Returns the content this process writes into the lock: `<pid> <starttime>`,
- * or just `<pid>` when the start time is unreadable.
+ * Returns `<starttime>@<boot_id>` for `pid` (start time is field 22 of
+ * `/proc/<pid>/stat`), or `undefined` without a readable `/proc`. The boot id
+ * keeps a pid and tick pair repeated after a reboot from matching.
+ *
+ * @param pid Process id to inspect.
+ */
+function procIdentity(pid: number): string | undefined {
+  const stat = readTrimmed(`/proc/${pid}/stat`);
+  if (stat === undefined) return undefined;
+  // comm (field 2) may hold spaces and parens, so parse after the last ')'.
+  const start = stat
+    .slice(stat.lastIndexOf(')') + 1)
+    .trim()
+    .split(' ')[19];
+  return [start, readTrimmed('/proc/sys/kernel/random/boot_id')].join('@');
+}
+
+let cachedContent: string | undefined;
+
+/**
+ * Returns the content this process writes into the lock, `<pid> <identity>` or
+ * just `<pid>` without `/proc`. Cached: it never changes within a process.
  */
 function lockContent(): string {
-  const start = procStartTime(process.pid);
-  return start === undefined ? String(process.pid) : `${process.pid} ${start}`;
+  if (cachedContent === undefined) {
+    const id = procIdentity(process.pid);
+    cachedContent = id === undefined ? String(process.pid) : `${process.pid} ${id}`;
+  }
+  return cachedContent;
 }
 
 /**
@@ -85,7 +102,7 @@ function lockContent(): string {
  * recycled PID may belong to another user. Unreadable evidence counts as alive.
  *
  * @param pid Owner pid read from the lock.
- * @param recordedStart Start time recorded in the lock, if any.
+ * @param recordedStart Identity recorded in the lock, if any.
  */
 function ownerAlive(pid: number, recordedStart: string | undefined): boolean {
   try {
@@ -94,7 +111,7 @@ function ownerAlive(pid: number, recordedStart: string | undefined): boolean {
     if ((err as NodeJS.ErrnoException).code === 'ESRCH') return false;
   }
   if (recordedStart === undefined) return true;
-  const current = procStartTime(pid);
+  const current = procIdentity(pid);
   return current === undefined || current === recordedStart;
 }
 
@@ -137,9 +154,10 @@ const NO_HARDLINK_CODES = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
  * @param lp Lock path resolved once by `acquireLock`.
  */
 function createLockExclusive(lp: string): LockHandle {
+  const content = lockContent();
   const fd = openSync(lp, 'wx');
   try {
-    writeFileSync(fd, lockContent());
+    writeFileSync(fd, content);
   } catch (err) {
     closeQuietly(fd);
     unlinkQuietly(lp);
@@ -259,10 +277,10 @@ function settleGrave(grave: string, lp: string, ours: boolean): void {
  * on the shared path. A mismatch means a live lock was moved and is restored.
  * Returns `true` if the stale lock was removed, `false` otherwise.
  *
- * @param expectedPidStr The pid string read earlier from the lockfile.
+ * @param expectedContent The lock content read earlier from the lockfile.
  * @param lp Lock path resolved once by `acquireLock`.
  */
-function reapIfSamePid(expectedPidStr: string, lp: string): boolean {
+function reapIfSamePid(expectedContent: string, lp: string): boolean {
   const grave = `${lp}.${process.pid}.stale`;
   try {
     renameSync(lp, grave);
@@ -271,7 +289,7 @@ function reapIfSamePid(expectedPidStr: string, lp: string): boolean {
   }
   let stale = false;
   try {
-    stale = readFileSync(grave, 'utf8').trim() === expectedPidStr;
+    stale = readFileSync(grave, 'utf8').trim() === expectedContent;
   } catch {
     /* unreadable grave is treated as live and restored */
   }

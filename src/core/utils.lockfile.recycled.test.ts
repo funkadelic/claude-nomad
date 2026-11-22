@@ -15,14 +15,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as fsModule from 'node:fs';
 
+/** Returns this boot's id, or '' where /proc has none. */
+function bootId(): string {
+  try {
+    return readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
 /**
- * Returns this process's start time (field 22 of /proc/self/stat), read
- * independently of the SUT.
+ * Returns this process's `<starttime>@<boot_id>` (start time is field 22 of
+ * /proc/self/stat), read independently of the SUT.
  */
-function selfStart(): string {
+function selfIdentity(): string {
   const stat = readFileSync('/proc/self/stat', 'utf8');
   const after = /\)([^)]*)$/.exec(stat)?.[1] ?? '';
-  return after.trim().split(/\s+/)[19];
+  return `${after.trim().split(/\s+/)[19]}@${bootId()}`;
 }
 
 const hasProc = existsSync('/proc/self/stat');
@@ -92,11 +101,11 @@ describe('acquireLock: recycled pid detection via recorded start time', () => {
 
   it.skipIf(!hasProc)('reaps a lock whose live pid carries a different start time', async () => {
     mkdirSync(lockDir, { recursive: true });
-    writeFileSync(lockPath, `${process.pid} ${Number(selfStart()) + 1}`);
+    writeFileSync(lockPath, `${process.pid} 1@not-this-boot`);
     const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
     const handle = acquireLock('pull');
     expect(handle).not.toBeNull();
-    expect(readFileSync(lockPath, 'utf8')).toBe(`${process.pid} ${selfStart()}`);
+    expect(readFileSync(lockPath, 'utf8')).toBe(`${process.pid} ${selfIdentity()}`);
     releaseLock(handle);
     expect(readdirSync(lockDir)).toEqual([]);
   });
@@ -104,13 +113,13 @@ describe('acquireLock: recycled pid detection via recorded start time', () => {
   it.skipIf(!hasProc)('a fresh acquire records pid and start time', async () => {
     const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
     const handle = acquireLock('pull');
-    expect(readFileSync(lockPath, 'utf8')).toBe(`${process.pid} ${selfStart()}`);
+    expect(readFileSync(lockPath, 'utf8')).toBe(`${process.pid} ${selfIdentity()}`);
     releaseLock(handle);
   });
 
   it.skipIf(!hasProc)('keeps a lock whose pid and start time both match', async () => {
     mkdirSync(lockDir, { recursive: true });
-    const content = `${process.pid} ${selfStart()}`;
+    const content = `${process.pid} ${selfIdentity()}`;
     writeFileSync(lockPath, content);
     const { acquireLock } = await import('./utils.lockfile.ts');
     expect(acquireLock('pull')).toBeNull();
@@ -120,7 +129,7 @@ describe('acquireLock: recycled pid detection via recorded start time', () => {
 
   it.skipIf(!hasProc)('reaps a mismatched-start lock when kill reports EPERM', async () => {
     mkdirSync(lockDir, { recursive: true });
-    writeFileSync(lockPath, `${process.pid} ${Number(selfStart()) + 1}`);
+    writeFileSync(lockPath, `${process.pid} 1@not-this-boot`);
     vi.spyOn(process, 'kill').mockImplementation(((): boolean => {
       const err = new Error('operation not permitted') as NodeJS.ErrnoException;
       err.code = 'EPERM';
@@ -148,6 +157,38 @@ describe('acquireLock: recycled pid detection via recorded start time', () => {
     const handle = acquireLock('pull');
     expect(handle).not.toBeNull();
     expect(readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    releaseLock(handle);
+    expect(readdirSync(lockDir)).toEqual([]);
+  });
+
+  it('parses the start time after the last paren of a comm holding spaces and parens', async () => {
+    mkdirSync(lockDir, { recursive: true });
+    const content = `${process.pid} 777@${bootId()}`;
+    writeFileSync(lockPath, content);
+    // Field 22 is 777; a split over the whole line would land elsewhere.
+    const fields = ['S', ...Array.from({ length: 18 }, (_, i) => String(i + 100)), '777', '9', '9'];
+    const stat = `${process.pid} (we) ird (na me) ${fields.join(' ')}`;
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        readFileSync: vi.fn((...args: Parameters<typeof actual.readFileSync>) =>
+          args[0] === `/proc/${process.pid}/stat` ? stat : actual.readFileSync(...args),
+        ),
+      };
+    });
+    const { acquireLock } = await import('./utils.lockfile.ts');
+    expect(acquireLock('pull')).toBeNull();
+    expect(readFileSync(lockPath, 'utf8')).toBe(content);
+  });
+
+  it('reaps a two-field lock whose pid is dead', async () => {
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(lockPath, '2147483647 1@some-boot');
+    const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    expect(readFileSync(lockPath, 'utf8').split(' ')[0]).toBe(String(process.pid));
     releaseLock(handle);
     expect(readdirSync(lockDir)).toEqual([]);
   });
