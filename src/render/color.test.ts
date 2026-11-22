@@ -52,7 +52,7 @@ function spawnRed(input: string, env: NodeJS.ProcessEnv): string {
   }).toString();
 }
 
-describe('color helpers (src/color.ts)', () => {
+describe('color helpers (src/render/color.ts)', () => {
   let originalNoColor: string | undefined;
   let originalForceColor: string | undefined;
 

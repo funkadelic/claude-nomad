@@ -14,7 +14,7 @@ import type { SpawnSyncFn } from '../../../core/spawn-sync.ts';
  * comparisons and gitleaks scans operate on exact bytes, so a checkout that
  * rewrites line endings permanently diverges that host's copy from every
  * other host's. `cmdInit` scaffolds new repos with a root `.gitattributes`
- * carrying `* -text` (see `src/init.ts`); this check WARNs (never FAILs) when
+ * carrying `* -text` (see `src/commands/init/init.ts`); this check WARNs (never FAILs) when
  * an existing repo lacks that guard, so an older or hand-cloned repo gets a
  * nudge to add it. No `process.platform` gate: a posix host with
  * `core.autocrlf` set is just as hazardous to the shared repo as a Windows

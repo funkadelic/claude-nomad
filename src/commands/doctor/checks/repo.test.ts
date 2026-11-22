@@ -183,7 +183,7 @@ describe('cmdDoctor SHARED_LINKS symlink integrity', () => {
       // not a defect. A real never-symlinked local entry sits beside a live
       // shared/<name> carrying content adopted from another host. Doctor used
       // to answer this with the same plain `run `nomad adopt <name>` to fix`
-      // row the case above gets, while assertNoClobber refuses it with
+      // row the case above gets, while refuseClobber refuses it with
       // `already exists; would clobber`, so the command doctor named could not
       // run. Refusing is the SAFE answer here (the copies diverged
       // independently, so moving either over the other destroys one), which is

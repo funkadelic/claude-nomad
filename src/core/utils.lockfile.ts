@@ -32,7 +32,7 @@ export type LockHandle = { fd: number; path: string };
 /**
  * Acquire the exclusive nomad lockfile so two pulls/pushes cannot mutate
  * `~/.claude/` concurrently. Returns the handle on success, or `null` on
- * contention (caller should `process.exit(0)`; skip-on-contention is the
+ * contention (caller should `process.exit(EXIT.SUCCESS)`; skip-on-contention is the
  * intended UX for backgrounded shell-rc invocations). Detects stale locks by
  * probing the recorded pid with `kill(pid, 0)` and recovers via
  * `unlinkIfSamePid` + `retryOnce`. `verb` is `'pull'` or `'push'`; surfaces

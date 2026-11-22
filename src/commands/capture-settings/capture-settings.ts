@@ -23,6 +23,7 @@ import { backupRepoWrite, freshBackupTs, writeJsonAtomic } from '../../core/util
 import { deepMerge, readJson } from '../../core/utils.json.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 import { die, log, warn } from '../../core/utils.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 
 /** Confirmation seam: given the destination label and sorted key list, return true to proceed. */
 type CaptureConfirm = (destLabel: string, keys: string[]) => Promise<boolean>;
@@ -226,7 +227,7 @@ export async function cmdCaptureSettings(opts: CaptureSettingsOpts): Promise<voi
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
 
   const handle = acquireLock('capture-settings');
-  if (handle === null) process.exit(0);
+  if (handle === null) process.exit(EXIT.SUCCESS);
   try {
     const claude = claudeHome();
     const basePath = join(repo, 'shared', 'settings.base.json');

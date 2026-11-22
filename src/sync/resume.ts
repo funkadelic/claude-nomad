@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { fail } from '../core/utils.ts';
 import { readJson, validatePathMapShape } from '../core/utils.json.ts';
+import { EXIT } from '../core/exit-codes.ts';
 
 type TranscriptLine = { type?: string; cwd?: string };
 
@@ -22,7 +23,7 @@ type TranscriptLine = { type?: string; cwd?: string };
  * prefixed with the red `✗` fail glyph; success goes to stdout as a bare
  * shell line (no glyph) so `eval "$(...)"` works.
  *
- * Error paths exit directly via `process.exit(1)` rather than throwing
+ * Error paths exit directly via `process.exit(EXIT.GENERIC_FAILURE)` rather than throwing
  * `NomadFatal` like the mutating commands do. That is intentional and safe ONLY
  * because this command is lockless and read-only: there is no lock to release
  * in a `finally`, so the `NomadFatal` + top-level-catch contract that protects
@@ -33,44 +34,44 @@ type TranscriptLine = { type?: string; cwd?: string };
 export function resumeCmd(sessionId: string): void {
   if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || sessionId.length > 128) {
     fail(`invalid session id: ${sessionId}`);
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
 
   const projectsRoot = join(claudeHome(), 'projects');
   if (!existsSync(projectsRoot)) {
     fail(`${projectsRoot} does not exist`);
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
 
   const jsonlPath = findTranscriptPath(projectsRoot, sessionId);
   if (jsonlPath === null) {
     fail(`session ${sessionId} not found in any ~/.claude/projects/<encoded>/`);
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
   const recordedCwd = extractRecordedCwd(jsonlPath);
   if (recordedCwd === null) {
     fail(`no cwd field found in ${jsonlPath}`);
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
   const mapPath = join(repoHome(), 'path-map.json');
   if (!existsSync(mapPath)) {
     fail('path-map.json missing');
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
   const map = readJson<unknown>(mapPath);
   const schemaError = validatePathMapShape(map);
   if (schemaError !== null) {
     fail(schemaError);
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
   const hit = lookupLocalPath(map as PathMap, recordedCwd);
   if (hit === null) {
     fail(`cwd ${recordedCwd} from session ${sessionId} not found in path-map.json`);
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
   if (hit.localPath === undefined) {
     fail(`session ${sessionId} not mapped on this host; add the logical to path-map.json`);
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
 
   // Single-quote both interpolations so paths with spaces (or any shell

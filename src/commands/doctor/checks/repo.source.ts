@@ -66,7 +66,7 @@ function adoptRefusalClause(name: string, state: PresenceState): string {
  *
  * Split from the plain adopt recommendation because `resolves` is the one
  * repo-side state where adopt refuses for a reason that is not a defect.
- * `assertNoClobber` answers this state with `already exists; would clobber.
+ * `refuseClobber` in `adopt.ts` answers this state with `already exists; would clobber.
  * Remove it first.`, which is the SAFE answer: the host copy and the adopted
  * content have diverged independently, and moving either one over the other
  * silently destroys a copy nothing else holds. So the row names the collision

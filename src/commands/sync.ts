@@ -30,6 +30,7 @@ import { dim, infoGlyph, warnGlyph, yellow } from '../render/color.ts';
 import { addItem, renderTree, section, type DoctorSection } from '../render/output-tree.ts';
 import { die, fail, log, ok, NomadFatal } from '../core/utils.ts';
 import { acquireLock, releaseLock } from '../core/utils.lockfile.ts';
+import { EXIT } from '../core/exit-codes.ts';
 
 /** The wet pull result shape carrying the sections a composing caller renders. */
 type WetPull = Extract<PullCoreResult, { tag: 'wet' }>;
@@ -423,7 +424,7 @@ export async function cmdSync(opts: { dryRun?: boolean; verbose?: boolean } = {}
     die("repo not initialized; run 'nomad init' to scaffold");
   }
   const handle = acquireLock('sync');
-  if (handle === null) process.exit(0);
+  if (handle === null) process.exit(EXIT.SUCCESS);
   try {
     if (dryRun) {
       await runSyncDryRun();

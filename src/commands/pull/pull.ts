@@ -30,8 +30,8 @@ import { discardEmptyBackupDir, freshBackupTs } from '../../core/utils.fs.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 import { readPathMap } from '../../core/utils.json.ts';
 
-// Re-exported so `commands.sync.ts` can string-match against the exact same
-// literal (`pullHasNoSyncedItems` and `pullPhrase`) instead of duplicating it.
+// Re-exported so `isDroppedSummaryHeader` in `src/commands/sync.ts` can
+// string-match against the exact same literal instead of duplicating it.
 export { PULL_SUMMARY_HEADER } from './wet-sections.ts';
 
 /**
@@ -492,7 +492,7 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
     die("repo not initialized; run 'nomad init' to scaffold");
   }
   const handle = acquireLock('pull');
-  if (handle === null) process.exit(0);
+  if (handle === null) process.exit(EXIT.SUCCESS);
   try {
     const result = runPullCore(opts);
     if (result.tag === 'wet') renderTree(result.sections);
