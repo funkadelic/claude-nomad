@@ -425,6 +425,26 @@ describe('divergenceCheckExtras early-exit and skip guards', () => {
     expect(replaced).toBe(1);
   });
 
+  it('skips .claude files the pull preserves (deny-set names, root worktrees)', async () => {
+    const projectRoot = join(testHome, 'proj-claude-preserved');
+    const localClaude = join(projectRoot, '.claude');
+    const repoClaude = join(testRepo, 'shared', 'extras', 'testproj', '.claude');
+    for (const [root, v] of [
+      [localClaude, 'local'],
+      [repoClaude, 'repo'],
+    ] as const) {
+      mkdirSync(join(root, 'worktrees', 'wt'), { recursive: true });
+      writeFileSync(join(root, 'scheduled_tasks.lock'), `${v}\n`);
+      writeFileSync(join(root, 'worktrees', 'wt', 'a.ts'), `${v}\n`);
+    }
+    writePathMap(projectRoot, ['.claude']);
+
+    const { text, count, replaced } = await runDivergence();
+    expect(text).not.toContain('differs from the synced copy');
+    expect(count).toBe(0);
+    expect(replaced).toBe(0);
+  });
+
   it('warns "file" for a single-file extra (CLAUDE.md) divergence', async () => {
     const projectRoot = join(testHome, 'proj-file');
     mkdirSync(projectRoot, { recursive: true });

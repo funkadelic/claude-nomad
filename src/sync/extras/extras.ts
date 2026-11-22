@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
-import { backupBase, isClaudeExtraName, repoHome } from '../../core/config.ts';
+import { backupBase, deniedSegmentFor, isClaudeExtraName, repoHome } from '../../core/config.ts';
 import { listDivergingModified } from './diff.ts';
 import { eachExtrasTarget, loadValidatedExtras, type ExtrasCounts } from './core.ts';
 import { warn } from '../../core/utils.ts';
@@ -18,6 +18,16 @@ import { keptDeletePreview, keptDeleteWarnLine } from './remap.ts';
 
 /** Diverged-file counts by what the pull does with them. */
 export type DivergenceCounts = { keptLocal: number; replaced: number };
+
+/**
+ * Diverged files the pull actually overwrites. The `.claude` pull preserves
+ * deny-set names and skips root `worktrees/`, so those are dropped here.
+ */
+function pullOverwritten(logical: string, dirname: string, modified: string[]): string[] {
+  if (!isClaudeExtraName(dirname)) return modified;
+  const repoRel = (f: string) => `shared/extras/${logical}/${dirname}/${f.split(sep).join('/')}`;
+  return modified.filter((f) => deniedSegmentFor(repoRel(f)) === null);
+}
 
 /**
  * Build the user-facing WARN line for one diverging extra. Phrases the entry
@@ -102,7 +112,7 @@ export function divergenceCheckExtras(
     // Repo-only (A) files are added by the pull and local-only (D) files survive
     // regardless, so neither is a conflict; counting them would over-state the
     // keep-local reassurance (the honest-count goal).
-    const modified = listDivergingModified(local, repoEntry);
+    const modified = pullOverwritten(logical, dirname, listDivergingModified(local, repoEntry));
     if (modified.length === 0) continue;
     if (isClaudeExtraName(dirname)) total.replaced += modified.length;
     else total.keptLocal += modified.length;
