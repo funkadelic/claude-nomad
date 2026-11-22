@@ -116,16 +116,16 @@ describe('enforceAllowList', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it('flags rename whose source half escapes the allow-list', () => {
-    // git mv random/escaped.dat shared/agents/escaped.dat would surface in -z
-    // porcelain as "R  shared/agents/escaped.dat\0random/escaped.dat\0". The OLD
-    // half is not allowed, so enforceAllowList must reject. (A non-credential
-    // name is used so the path surfaces as an allow-list violation rather than a
-    // NEVER_SYNC credential-pattern hard-block.)
+  it('gates the new half of a rename and lets its old half leave the repo', () => {
+    // "R  shared/agents/escaped.dat\0random/escaped.dat\0": the old half only
+    // leaves the repo, so it passes; the off-list new half is still rejected.
     const status = z(['R  shared/agents/escaped.dat', 'random/escaped.dat']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/escaped.dat'));
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('to sync shared/agents/escaped.dat'),
+    );
+    expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('random/escaped.dat'));
   });
 
   it('flags rename detected in the Y column (working-tree rename, X is space)', () => {
@@ -134,10 +134,13 @@ describe('enforceAllowList', () => {
     // OLD path record as a new entry on the next iteration, misclassifying
     // random/y and potentially smuggling unallowed sources past the
     // allow-list. parsePorcelainZ now checks both XY positions.
+    // The old half is consumed as a rename source (it only leaves the repo),
+    // and the new half is still gated.
     const status = z([' R shared/agents/new.md', 'random/escaped.md']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync random/escaped.md'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync shared/agents/new.md'));
+    expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('random/escaped.md'));
   });
 
   it('flags copy detected in the Y column (working-tree copy, X is space)', () => {
