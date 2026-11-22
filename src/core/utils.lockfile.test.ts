@@ -114,6 +114,17 @@ describe('acquireLock / releaseLock', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
+  it('release leaves the lock alone when the path now holds another process lock', async () => {
+    const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
+    const handle = acquireLock('pull');
+    expect(handle).not.toBeNull();
+    // Another contender took the path after ours was moved away.
+    unlinkSync(lockPath);
+    writeFileSync(lockPath, '424242');
+    releaseLock(handle);
+    expect(readFileSync(lockPath, 'utf8')).toBe('424242');
+  });
+
   it('releaseLock(null) is a safe no-op', async () => {
     const { releaseLock } = await import('./utils.lockfile.ts');
     expect(() => releaseLock(null)).not.toThrow();

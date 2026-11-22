@@ -1,10 +1,12 @@
 import {
   closeSync,
+  fstatSync,
   linkSync,
   mkdirSync,
   openSync,
   readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -104,12 +106,25 @@ export function acquireLock(verb: string): LockHandle | null {
 /**
  * Release a previously-acquired lock handle. No-op when `handle` is null
  * (matches `acquireLock`'s contention return). Tolerates the lockfile having
- * already been unlinked. MUST be called from a `finally` so it runs even when
- * the wrapped command throws.
+ * already been unlinked, and leaves it alone when the path now holds another
+ * process's lock. MUST be called from a `finally` so it runs even when the
+ * wrapped command throws.
  */
 export function releaseLock(handle: LockHandle | null): void {
   if (handle === null) return;
   const lp = handle.path;
+  let ours = true;
+  try {
+    const held = fstatSync(handle.fd, { bigint: true });
+    const now = statSync(lp, { bigint: true });
+    ours = held.ino === now.ino && held.dev === now.dev;
+  } catch {
+    /* cannot compare (path gone or fd closed); fall through to the tolerant unlink */
+  }
+  if (!ours) {
+    closeSync(handle.fd);
+    return;
+  }
   try {
     closeSync(handle.fd);
   } catch {
