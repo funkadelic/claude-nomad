@@ -28,6 +28,7 @@ import {
   skipRealMessage,
   type NameClass,
 } from './eject.materialize.ts';
+import { EXIT } from '../core/exit-codes.ts';
 
 export { errMessage };
 
@@ -371,7 +372,7 @@ export function cmdEject(
     );
   }
   if (dangling.length > 0) {
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
 
   const sharedRoot = resolveSharedRoot(repoHome);
@@ -388,6 +389,6 @@ export function cmdEject(
     runLiveEject(names, classifications, claudeHome, sharedRoot, cacheDir);
   } catch (err) {
     fail(errMessage(err));
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
 }

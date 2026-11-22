@@ -26,6 +26,7 @@ import {
 } from '../../core/utils.ts';
 import { freshBackupTs } from '../../core/utils.fs.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 
 export { reportSettingsAheadDrift } from './settings.ts';
 
@@ -429,7 +430,7 @@ export async function cmdPush(
   const repo = repoHome();
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
   const handle = acquireLock('push');
-  if (handle === null) process.exit(0);
+  if (handle === null) process.exit(EXIT.SUCCESS);
   try {
     await runPushCore(opts);
   } catch (err) {

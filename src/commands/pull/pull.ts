@@ -492,7 +492,7 @@ export function cmdPull(opts: { dryRun?: boolean; forceRemote?: boolean } = {}):
     die("repo not initialized; run 'nomad init' to scaffold");
   }
   const handle = acquireLock('pull');
-  if (handle === null) process.exit(0);
+  if (handle === null) process.exit(EXIT.SUCCESS);
   try {
     const result = runPullCore(opts);
     if (result.tag === 'wet') renderTree(result.sections);

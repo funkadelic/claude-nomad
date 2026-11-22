@@ -8,6 +8,7 @@ import { reportScrubHint } from './scrub-hint.ts';
 import { warnIfSessionPushed } from '../pushed-history.ts';
 import { die, fail, item, NomadFatal } from '../../core/utils.ts';
 import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
+import { EXIT } from '../../core/exit-codes.ts';
 
 /**
  * Surgical removal of a contaminated session from the staged tree of
@@ -41,7 +42,7 @@ import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 export function cmdDropSession(id: string): void {
   if (id.length === 0 || id.length > 128 || !/^[A-Za-z0-9_-]+$/.test(id)) {
     fail(`invalid session id: ${id}`);
-    process.exit(1);
+    process.exit(EXIT.GENERIC_FAILURE);
   }
   // Resolve root once per command invocation to avoid a time-of-check/
   // time-of-use race: resolving twice could observe a different filesystem
@@ -50,7 +51,7 @@ export function cmdDropSession(id: string): void {
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
 
   const handle = acquireLock('drop-session');
-  if (handle === null) process.exit(0);
+  if (handle === null) process.exit(EXIT.SUCCESS);
   try {
     const repoProjects = join(repo, 'shared', 'projects');
     if (!existsSync(repoProjects)) {

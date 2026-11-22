@@ -107,7 +107,7 @@ export function cmdRedact(
   if (!existsSync(repo)) die(`repo not cloned at ${repo}`);
 
   const handle = acquireLock('redact');
-  if (handle === null) process.exit(0);
+  if (handle === null) process.exit(EXIT.SUCCESS);
   try {
     const localPath = resolveLiveTranscript(id);
     if (localPath === null || !existsSync(localPath)) {
