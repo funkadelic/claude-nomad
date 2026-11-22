@@ -37,23 +37,31 @@ function selfIdentity(): string {
 const hasProc = existsSync('/proc/self/stat');
 
 /**
- * Makes every `/proc/` read through node:fs fail with ENOENT, as on a host with
- * no readable /proc. Other reads pass through.
+ * Mocks node:fs `readFileSync` so `handler` answers string paths first; a
+ * `undefined` answer passes the read through to the real fs.
+ *
+ * @param handler Returns the content for a path, throws, or returns undefined.
  */
-function mockProcUnreadable(): void {
+function mockReadFileSync(handler: (path: string) => string | undefined): void {
   vi.doMock('node:fs', async (importOriginal) => {
     const actual = await importOriginal<typeof fsModule>();
     return {
       ...actual,
       readFileSync: vi.fn((...args: Parameters<typeof actual.readFileSync>) => {
-        if (typeof args[0] === 'string' && args[0].startsWith('/proc/')) {
-          const err = new Error('no such file') as NodeJS.ErrnoException;
-          err.code = 'ENOENT';
-          throw err;
-        }
-        return actual.readFileSync(...args);
+        const hit = typeof args[0] === 'string' ? handler(args[0]) : undefined;
+        return hit ?? actual.readFileSync(...args);
       }),
     };
+  });
+}
+
+/** Makes every `/proc/` read fail with ENOENT, as on a host with no readable /proc. */
+function mockProcUnreadable(): void {
+  mockReadFileSync((path) => {
+    if (!path.startsWith('/proc/')) return undefined;
+    const err = new Error('no such file') as NodeJS.ErrnoException;
+    err.code = 'ENOENT';
+    throw err;
   });
 }
 
@@ -109,6 +117,19 @@ describe('acquireLock: recycled pid detection via recorded start time', () => {
     releaseLock(handle);
     expect(readdirSync(lockDir)).toEqual([]);
   });
+
+  it.skipIf(!hasProc)(
+    'reaps a lock whose live pid and start time match but the boot id differs',
+    async () => {
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(lockPath, `${process.pid} ${selfIdentity().split('@')[0]}@not-this-boot`);
+      const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
+      const handle = acquireLock('pull');
+      expect(handle).not.toBeNull();
+      expect(readFileSync(lockPath, 'utf8')).toBe(`${process.pid} ${selfIdentity()}`);
+      releaseLock(handle);
+    },
+  );
 
   it.skipIf(!hasProc)('a fresh acquire records pid and start time', async () => {
     const { acquireLock, releaseLock } = await import('./utils.lockfile.ts');
@@ -168,15 +189,7 @@ describe('acquireLock: recycled pid detection via recorded start time', () => {
     // Field 22 is 777; a split over the whole line would land elsewhere.
     const fields = ['S', ...Array.from({ length: 18 }, (_, i) => String(i + 100)), '777', '9', '9'];
     const stat = `${process.pid} (we) ird (na me) ${fields.join(' ')}`;
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof fsModule>();
-      return {
-        ...actual,
-        readFileSync: vi.fn((...args: Parameters<typeof actual.readFileSync>) =>
-          args[0] === `/proc/${process.pid}/stat` ? stat : actual.readFileSync(...args),
-        ),
-      };
-    });
+    mockReadFileSync((path) => (path === `/proc/${process.pid}/stat` ? stat : undefined));
     const { acquireLock } = await import('./utils.lockfile.ts');
     expect(acquireLock('pull')).toBeNull();
     expect(readFileSync(lockPath, 'utf8')).toBe(content);
