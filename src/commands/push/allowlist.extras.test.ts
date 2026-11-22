@@ -30,6 +30,34 @@ describe('enforceAllowList: extras prefix', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  it('lets a push delete the tree of a logical dropped from path-map.json', async () => {
+    const { enforceAllowList } = await import('./allowlist.ts');
+    const map: PathMap = { projects: {}, extras: {} };
+    const status = 'D  shared/extras/gone/.planning/PLAN.md\0 D shared/projects/gone/s.jsonl\0';
+    expect(() => enforceAllowList(status, map)).not.toThrow();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('still blocks an off-list path that is re-added after its deletion', async () => {
+    const { enforceAllowList } = await import('./allowlist.ts');
+    const { NomadFatal } = await import('../../core/utils.ts');
+    const map: PathMap = { projects: {}, extras: {} };
+    const p = 'shared/extras/gone/.planning/PLAN.md';
+    expect(() => enforceAllowList(`D  ${p}\0?? ${p}\0`, map)).toThrow(NomadFatal);
+  });
+
+  it.each([['../escape'], ['a/b']])(
+    'refuses an unsafe logical key %s before building the allow-list',
+    async (key) => {
+      const { buildAllowList } = await import('./allowlist.ts');
+      const { NomadFatal } = await import('../../core/utils.ts');
+      expect(() => buildAllowList({ projects: { [key]: {} } })).toThrow(NomadFatal);
+      expect(() => buildAllowList({ projects: {}, extras: { [key]: ['.planning'] } })).toThrow(
+        'invalid logical name',
+      );
+    },
+  );
+
   it('rejects shared/extras/<logical>/ paths when logical is not in extras map', async () => {
     const { enforceAllowList } = await import('./allowlist.ts');
     const { NomadFatal } = await import('../../core/utils.ts');

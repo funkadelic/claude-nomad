@@ -167,8 +167,8 @@ export function buildAllowList(map: PathMap): string[] {
 
 /**
  * Reject any staged path that is off the `buildAllowList` list or in `NEVER_SYNC`.
- * A `NEVER_SYNC` path that only leaves the repo (see `deletedPathsZ`) passes,
- * so a path a newer deny rule now filters cannot wedge every push.
+ * A path that only leaves the repo (see `deletedPathsZ`) always passes, so a
+ * newer deny rule or a dropped `path-map.json` entry cannot wedge every push.
  * Logs every violation, then throws `NomadFatal` so the caller releases the push lock.
  */
 export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
@@ -177,8 +177,9 @@ export function enforceAllowList(statusPorcelain: string, map: PathMap): void {
   const neverSyncHits: string[] = [];
   const violations: string[] = [];
   for (const path of parsePorcelainZ(statusPorcelain)) {
+    if (deleted.has(path)) continue;
     if (isNeverSync(path)) {
-      if (!deleted.has(path)) neverSyncHits.push(path);
+      neverSyncHits.push(path);
     } else if (isGsdDropped(path)) {
       // gsd-owned asset under a GSD_DROPPED_NAMES dir: silently skip.
       // gsd reinstalls these per-host; they are not sync candidates.
