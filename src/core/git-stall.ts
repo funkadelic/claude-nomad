@@ -6,7 +6,7 @@ export const SSH_STALL_COMMAND =
   'ssh -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4';
 
 /** Git config keys that mean the user already chose these settings; names as git prints them. */
-const USER_KEYS = /^(core\.sshcommand|ssh\.variant|http\.lowspeed(limit|time))$/;
+const USER_KEYS = /^(core\.sshcommand|ssh\.variant|http\..*lowspeed(limit|time))$/;
 
 /**
  * Make git children abort a stalled transfer themselves (HTTPS at 0 B/s for 120 s, ssh
@@ -16,7 +16,8 @@ const USER_KEYS = /^(core\.sshcommand|ssh\.variant|http\.lowspeed(limit|time))$/
 export function installGitStallBounds(env: NodeJS.ProcessEnv = process.env): void {
   const out = gitProbe(['config', '--get-regexp', USER_KEYS.source], repoHome()) ?? '';
   const set = new Set(out.split('\n').map((line) => line.split(' ')[0]));
-  if (!set.has('http.lowspeedlimit') && !set.has('http.lowspeedtime')) {
+  // Any http.lowSpeed* key, including a URL-scoped `http.<url>.lowSpeedLimit`.
+  if (![...set].some((k) => k.startsWith('http.'))) {
     env.GIT_HTTP_LOW_SPEED_LIMIT ??= '1';
     env.GIT_HTTP_LOW_SPEED_TIME ??= '120';
   }

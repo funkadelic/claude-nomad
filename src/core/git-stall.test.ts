@@ -64,6 +64,7 @@ describe('installGitStallBounds', () => {
   it.each([
     ['http.lowSpeedLimit', '0'],
     ['http.lowSpeedTime', '900'],
+    ['http.https://Example.com/.lowSpeedLimit', '5'],
   ])('leaves HTTPS alone when git config sets %s', (key, value) => {
     gitConfig(key, value);
     const env: NodeJS.ProcessEnv = {};

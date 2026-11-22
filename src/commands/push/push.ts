@@ -15,6 +15,7 @@ import { syncSharedLinksPush } from '../../sync/links.mirror.ts';
 import { syncSkillsPush } from '../../sync/skills-sync.ts';
 import { probeGitleaks, rebaseBeforePush } from './checks.ts';
 import { remapPush } from '../../sync/remap.ts';
+import { shQuote } from '../../sync/resume.ts';
 import { withSpinner } from '../../render/spinner.ts';
 import {
   die,
@@ -90,16 +91,16 @@ function aheadOfUpstream(repo: string): boolean {
 }
 
 /**
- * Warn a standalone push that found nothing new but sits on commits an earlier,
- * failed push never sent; sending them here would skip the leak scan.
+ * Warn a standalone push that found nothing new but sits on commits an earlier, failed
+ * push never sent. Not sent here: a hand-made commit never went through the leak scan.
  * @param repo - Resolved repo root path for the ahead-of-upstream probe.
  */
 function warnIfUnsent(repo: string): void {
-  if (aheadOfUpstream(repo)) {
-    warn(
-      `the sync repo has commits an earlier push did not send; run \`git -C ${repo} push\` to send them`,
-    );
-  }
+  if (!aheadOfUpstream(repo)) return;
+  const git = `git -C ${shQuote(repo)}`;
+  warn(
+    `the sync repo has commits an earlier push did not send; review them with \`${git} log @{u}..\`, then send them with \`${git} push\``,
+  );
 }
 
 /**

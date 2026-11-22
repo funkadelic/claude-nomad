@@ -135,7 +135,7 @@ function lookupLocalPath(
  * metacharacters in the resume output from being interpreted by the user's
  * shell when they pipe the output through `eval`.
  */
-function shQuote(s: string): string {
+export function shQuote(s: string): string {
   const escaped = s.replaceAll("'", String.raw`'\''`);
   return `'${escaped}'`;
 }

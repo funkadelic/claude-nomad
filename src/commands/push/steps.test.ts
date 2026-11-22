@@ -505,7 +505,9 @@ describe('runPushCore compose mode', () => {
       const result = await runPushCore({});
       expect(result.tag).toBe('nothing');
       expect(errOutput(env)).toContain('commits an earlier push did not send');
-      expect(errOutput(env)).toMatch(/git -C \S+ push/);
+      expect(errOutput(env)).toMatch(
+        /`git -C '[^']+' log @\{u\}\.\.`, then send them with `git -C '[^']+' push`/,
+      );
     },
   );
 
