@@ -19,7 +19,10 @@ import { withSpinner } from '../../render/spinner.ts';
 import { summaryRow } from '../../render/summary.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 
-/** The pull half's grouped-tree summary header; re-exported via `pull.ts` so `commands.sync.ts` can string-match it. */
+/**
+ * The pull half's grouped-tree summary header; re-exported via `pull.ts` so
+ * `src/commands/sync.ts` can string-match it.
+ */
 export const PULL_SUMMARY_HEADER = 'Pull summary';
 
 /**

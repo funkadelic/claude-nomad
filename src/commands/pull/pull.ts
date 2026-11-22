@@ -31,7 +31,7 @@ import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
 import { readPathMap } from '../../core/utils.json.ts';
 
 // Re-exported so `src/commands/sync.ts` can string-match against the exact same
-// literal (`pullHasNoSyncedItems` and `pullPhrase`) instead of duplicating it.
+// literal (`isDroppedSummaryHeader`) instead of duplicating it.
 export { PULL_SUMMARY_HEADER } from './wet-sections.ts';
 
 /**
