@@ -354,6 +354,7 @@ describe('isNeverSync: .claude extra uses full NEVER_SYNC boundary', () => {
     ['a staged deletion whose file came back', 'D  {p}\0?? {p}\0'],
     ['a copy from a denied source', 'C  shared/extras/foo/.claude/commands/a.md\0{p}\0'],
     ['an add left in the index', 'AD {p}\0'],
+    ['an unmerged both-deleted path', 'DD {p}\0'],
   ])('still blocks %s', async (_label, status) => {
     const { enforceAllowList } = await import('./allowlist.ts');
     const { NomadFatal } = await import('../../core/utils.ts');

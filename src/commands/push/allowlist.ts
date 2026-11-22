@@ -126,7 +126,8 @@ export function deletedPathsZ(statusPorcelain: string): Set<string> {
       continue;
     }
     const xy = rec.slice(0, 2);
-    (/^[D ]{2}$/.test(xy) ? deleted : live).add(rec.slice(3));
+    // `DD` is unmerged, and a re-created unmerged path gets no `??` record.
+    (xy === 'D ' || xy === ' D' ? deleted : live).add(rec.slice(3));
     if (xy.includes('R')) oldPathOf = 'R';
     else if (xy.includes('C')) oldPathOf = 'C';
   }

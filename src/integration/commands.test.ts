@@ -139,8 +139,8 @@ describe('enforceAllowList', () => {
     const status = z([' R shared/agents/new.md', 'random/escaped.md']);
     const map: PathMap = { projects: {} };
     expect(() => enforceAllowList(status, map)).toThrow(NomadFatal);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('to sync shared/agents/new.md'));
-    expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('random/escaped.md'));
   });
 
   it('flags copy detected in the Y column (working-tree copy, X is space)', () => {
