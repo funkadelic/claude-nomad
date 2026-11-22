@@ -69,16 +69,63 @@ function createLock(lp: string): LockHandle {
     writeFileSync(fd, String(process.pid));
     linkSync(tmp, lp);
   } catch (err) {
-    try {
-      closeSync(fd);
-    } catch {
-      /* already closed; ignore */
-    }
+    closeQuietly(fd);
     unlinkQuietly(tmp);
+    if (NO_HARDLINK_CODES.has(String((err as NodeJS.ErrnoException).code))) {
+      return createLockExclusive(lp);
+    }
     throw err;
   }
   unlinkQuietly(tmp);
   return { fd, path: lp };
+}
+
+/** Link errors meaning the filesystem has no hard links (FAT, exFAT, some SMB mounts). */
+const NO_HARDLINK_CODES = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
+
+/**
+ * Fallback create for filesystems without hard links: exclusive create, then
+ * write the PID. The lock is briefly visible without its PID here.
+ *
+ * @param lp Lock path resolved once by `acquireLock`.
+ */
+function createLockExclusive(lp: string): LockHandle {
+  const fd = openSync(lp, 'wx');
+  try {
+    writeFileSync(fd, String(process.pid));
+  } catch (err) {
+    closeQuietly(fd);
+    unlinkQuietly(lp);
+    throw err;
+  }
+  return { fd, path: lp };
+}
+
+/**
+ * Rename `from` to `to`, ignoring any failure. Best effort.
+ *
+ * @param from Source path.
+ * @param to Destination path.
+ */
+function renameQuietly(from: string, to: string): void {
+  try {
+    renameSync(from, to);
+  } catch {
+    /* best effort; nothing useful to do on failure */
+  }
+}
+
+/**
+ * Close `fd`, ignoring an already-closed descriptor.
+ *
+ * @param fd Descriptor to close.
+ */
+function closeQuietly(fd: number): void {
+  try {
+    closeSync(fd);
+  } catch {
+    /* already closed; ignore */
+  }
 }
 
 /**
@@ -133,24 +180,27 @@ export function releaseLock(handle: LockHandle | null): void {
     }
     settleGrave(grave, lp, ours);
   } finally {
-    try {
-      closeSync(handle.fd);
-    } catch {
-      /* already closed; ignore */
-    }
+    closeQuietly(handle.fd);
   }
 }
 
 /**
  * Finish a move-then-check: delete `grave` if `ours`, else link it back onto `lp` first.
- * @param grave Pid-unique name the lock was renamed to. @param lp Lock path. @param ours Ownership.
+ * @param grave Pid-unique name the lock was renamed to.
+ * @param lp Lock path to restore onto.
+ * @param ours Whether the moved file belongs to this process.
  */
 function settleGrave(grave: string, lp: string, ours: boolean): void {
   if (!ours) {
     try {
       linkSync(grave, lp);
-    } catch {
-      /* the path was retaken meanwhile; keep theirs */
+    } catch (err) {
+      // No hard links: rename back instead (may overwrite a lock retaken meanwhile).
+      if (NO_HARDLINK_CODES.has(String((err as NodeJS.ErrnoException).code))) {
+        renameQuietly(grave, lp);
+        return;
+      }
+      /* otherwise the path was retaken meanwhile; keep theirs */
     }
   }
   unlinkQuietly(grave);
