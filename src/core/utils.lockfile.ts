@@ -123,13 +123,13 @@ export function releaseLock(handle: LockHandle | null): void {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       return;
     }
-    let ours = true;
+    let ours = false;
     try {
       const held = fstatSync(handle.fd, { bigint: true });
       const moved = statSync(grave, { bigint: true });
       ours = held.ino === moved.ino && held.dev === moved.dev;
     } catch {
-      /* cannot compare (fd already closed); treat as ours, as before */
+      /* identity unknown; restore rather than delete a lock we cannot prove is ours */
     }
     settleGrave(grave, lp, ours);
   } finally {
