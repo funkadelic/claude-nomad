@@ -7,7 +7,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { installGitStallBounds, SSH_STALL_COMMAND } from './git-stall.ts';
 
-const ISOLATED = ['NOMAD_REPO', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM'] as const;
+// Inherited repo-location or injected-config vars (e.g. GIT_DIR inside a git hook) would point
+// the probe and the config writes at another repo.
+const ISOLATED = [
+  'NOMAD_REPO',
+  'GIT_CONFIG_GLOBAL',
+  'GIT_CONFIG_NOSYSTEM',
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_CONFIG_PARAMETERS',
+  'GIT_CONFIG_COUNT',
+] as const;
 
 describe('installGitStallBounds', () => {
   const saved = Object.fromEntries(ISOLATED.map((k) => [k, process.env[k]]));
@@ -15,6 +27,7 @@ describe('installGitStallBounds', () => {
   let repo: string;
 
   beforeEach(() => {
+    for (const k of ISOLATED) delete process.env[k];
     dir = mkdtempSync(join(tmpdir(), 'nomad-stall-'));
     repo = join(dir, 'repo');
     execFileSync('git', ['init', '-q', repo]);
