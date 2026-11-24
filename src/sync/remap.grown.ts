@@ -71,17 +71,22 @@ function walk(srcRoot: string, srcDir: string, dstDir: string, out: Set<string>)
   }
   for (const name of readdirSync(srcDir)) {
     const srcPath = join(srcDir, name);
-    const st = lstatSync(srcPath);
-    if (st.isDirectory()) {
+    if (lstatSync(srcPath).isDirectory()) {
       walk(srcRoot, srcPath, join(dstDir, name), out);
-    } else if (
-      name.endsWith('.jsonl') &&
-      st.isFile() &&
-      isGrownLocally(srcPath, st.size, join(dstDir, name))
-    ) {
+    } else if (isGrownEntry(srcPath, join(dstDir, name))) {
       out.add(relative(srcRoot, srcPath));
     }
   }
+}
+
+/**
+ * True when `srcPath` is a repo `.jsonl` regular file whose local copy at `dstPath`
+ * grew since the last push. Repo symlinks are never followed.
+ */
+export function isGrownEntry(srcPath: string, dstPath: string): boolean {
+  if (!srcPath.endsWith('.jsonl')) return false;
+  const st = lstatSync(srcPath);
+  return st.isFile() && isGrownLocally(srcPath, st.size, dstPath);
 }
 
 /**

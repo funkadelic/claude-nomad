@@ -6,7 +6,7 @@ import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras/core.ts';
 import { assertSafeLocalRoot } from './extras/guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { type ManifestDiff } from './manifest.ts';
-import { listGrownLocally } from './remap.grown.ts';
+import { isGrownEntry, listGrownLocally } from './remap.grown.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
 import { encodePath, readPathMap } from '../core/utils.json.ts';
@@ -80,9 +80,20 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
  */
 function overlaySessionDir(src: string, dst: string): number {
   stripCollidingDstSymlinks(src, dst, () => false);
-  const kept = listGrownLocally(src, dst);
-  cpSyncGuarded(src, dst, (srcEntry) => !kept.has(relative(src, srcEntry)), 'overlaySessionDir');
-  return kept.size;
+  let kept = 0;
+  // Checked per entry as cpSync reaches it, not in an earlier walk, so an append
+  // during the copy of earlier files is still seen. Claude Code offers no lock to close the rest.
+  cpSyncGuarded(
+    src,
+    dst,
+    (srcEntry) => {
+      if (!isGrownEntry(srcEntry, join(dst, relative(src, srcEntry)))) return true;
+      kept++;
+      return false;
+    },
+    'overlaySessionDir',
+  );
+  return kept;
 }
 
 /**
