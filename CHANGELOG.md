@@ -3,6 +3,18 @@
 ## [0.69.11](https://github.com/funkadelic/claude-nomad/compare/v0.69.10...v0.69.11) (2026-11-24)
 
 
+### What's new
+
+* If you kept working in a session after your last push, the next `nomad pull` (or `nomad sync`) used to replace it with the shorter copy from the repo, losing everything since. Pull now keeps your longer copy and the next push sends it. The pull summary, `pull --dry-run` and `nomad diff` say how many sessions were kept. A session that changed on another machine still updates from the repo.
+* `pull`, `push` and `sync` stop with an error when the connection to your sync repo drops or stalls, instead of waiting forever. A dead connection ends within about two minutes, and stall settings you already set in git config are left alone. If a push saved its commit but never sent it, the next `nomad push` says so and shows the `git push` command that sends it.
+* Pull no longer deletes Claude Code worktrees under a project's `.claude/worktrees/`, which can hold uncommitted work, and push no longer copies them into the sync repo. Claude Code's `scheduled_tasks.lock` file no longer syncs.
+* The pull warning for a project's `.claude` folder used to promise to keep your unpushed edits. It now says the synced copy replaces them. Run `nomad push` before pulling to keep them. `nomad sync` no longer lists those replaced files as pushed.
+* Push can now remove files from the sync repo that nomad no longer syncs, such as files left behind after you remove a project from `path-map.json`. Before, those files blocked every push. Push also refuses unsafe project names in `path-map.json`.
+* A lock left by a crashed run no longer blocks every pull and push when another program gets its process ID (Linux and WSL). Two runs starting at the same moment can no longer both take the lock.
+* `pull`, `push` and `diff` now tell you to run `nomad doctor -v` to list unmapped projects, since plain `nomad doctor` doesn't show them.
+* The docs now say that each machine has to install synced plugins itself, and explain how to set up per-project plugins on each machine.
+
+
 ### Fixed
 
 * **extras:** correct the .claude pull warning and stop syncing the scheduled tasks lock ([#726](https://github.com/funkadelic/claude-nomad/issues/726)) ([ae9ffd8](https://github.com/funkadelic/claude-nomad/commit/ae9ffd834348b4c13e98f8fd9a8fd30fb5412a51))
