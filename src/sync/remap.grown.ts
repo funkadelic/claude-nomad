@@ -1,21 +1,40 @@
-import { closeSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
+import { closeSync, fstatSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const CHUNK = 64 * 1024;
 
 /**
+ * Open `path` for reading and return its fd only when it is a regular file, not a
+ * symlink, larger than `minSize`. Checks run on the open fd so the file cannot be
+ * swapped between check and read; the caller closes the fd.
+ */
+function openLargerRegular(path: string, minSize: number): number | null {
+  let fd: number;
+  try {
+    fd = openSync(path, 'r');
+  } catch {
+    return null;
+  }
+  const st = fstatSync(fd);
+  const link = lstatSync(path, { throwIfNoEntry: false });
+  if (st.isFile() && st.size > minSize && link?.ino === st.ino && !link.isSymbolicLink()) {
+    return fd;
+  }
+  closeSync(fd);
+  return null;
+}
+
+/**
  * True when the local file is strictly longer than the repo file and begins with
- * the repo file's bytes. Only the repo-length prefix is read, in fixed chunks;
- * files that are not strictly larger are never opened.
+ * the repo file's bytes. Only the repo-length prefix is read, in fixed chunks.
  */
 function isGrownLocally(repoFile: string, repoSize: number, localFile: string): boolean {
-  const local = lstatSync(localFile, { throwIfNoEntry: false });
-  if (!local?.isFile() || local.size <= repoSize) return false;
+  const localFd = openLargerRegular(localFile, repoSize);
+  if (localFd === null) return false;
   const repoBuf = Buffer.allocUnsafe(CHUNK);
   const localBuf = Buffer.allocUnsafe(CHUNK);
-  const repoFd = openSync(repoFile, 'r');
   try {
-    const localFd = openSync(localFile, 'r');
+    const repoFd = openSync(repoFile, 'r');
     try {
       let pos = 0;
       for (;;) {
@@ -26,10 +45,10 @@ function isGrownLocally(repoFile: string, repoSize: number, localFile: string): 
         pos += n;
       }
     } finally {
-      closeSync(localFd);
+      closeSync(repoFd);
     }
   } finally {
-    closeSync(repoFd);
+    closeSync(localFd);
   }
 }
 
