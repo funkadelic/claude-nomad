@@ -54,7 +54,12 @@ function isGrownLocally(repoFile: string, repoSize: number, localFile: string): 
 
 /** Recursive walk behind `listGrownLocally`; both dirs must be real directories to descend. */
 function walk(srcRoot: string, srcDir: string, dstDir: string, out: Set<string>): void {
-  if (!lstatSync(dstDir, { throwIfNoEntry: false })?.isDirectory()) return;
+  if (
+    !lstatSync(srcDir, { throwIfNoEntry: false })?.isDirectory() ||
+    !lstatSync(dstDir, { throwIfNoEntry: false })?.isDirectory()
+  ) {
+    return;
+  }
   for (const name of readdirSync(srcDir)) {
     const srcPath = join(srcDir, name);
     const st = lstatSync(srcPath);

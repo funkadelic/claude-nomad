@@ -258,7 +258,10 @@ describe('summaryText grown-kept phrase', () => {
   });
 
   it('diff phrases it like pull and push ignores it', () => {
-    expect(summaryText('diff', 0, 0, 0, 0, 3).text).toContain('3 grew locally, kept');
+    expect(summaryText('diff', 0, 0, 0, 0, 3)).toEqual({
+      text: 'summary: 0 unmapped on diff (run nomad doctor -v to list), 3 grew locally, kept (push to reconcile)',
+      clean: false,
+    });
     expect(summaryText('push', 0, 0, 0, 0, 3)).toEqual({ text: 'summary: clean', clean: true });
   });
 

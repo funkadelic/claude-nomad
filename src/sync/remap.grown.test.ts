@@ -56,7 +56,13 @@ describe('listGrownLocally', () => {
     expect(listGrownLocally(src, dst).size).toBe(0);
   });
 
-  it('never follows a repo-side symlink', () => {
+  it('returns nothing when the repo entry is not a real directory', () => {
+    const file = join(root, 'file');
+    writeFileSync(file, 'A');
+    expect(listGrownLocally(file, dst).size).toBe(0);
+  });
+
+  it.skipIf(process.platform === 'win32')('never follows a repo-side symlink', () => {
     writeFileSync(join(root, 'target'), 'A');
     symlinkSync(join(root, 'target'), join(src, 'link.jsonl'));
     writeFileSync(join(dst, 'link.jsonl'), 'AAAA');

@@ -148,7 +148,8 @@ repo state. The `settings.json` diff filters gsd-owned hook entries from both si
 comparing, so GSD's per-session hook self-heal does not show up as a phantom `hooks` change; the
 preview reflects what a real pull would write. Also renders the same `Extras` section as
 `pull --dry-run`, listing every `<logical>/<dirname>` a pull would copy, including extras with no
-local copy yet. On native Windows it shows the same shared-config capture and removal rows
+local copy yet, and the same counts of retained local-only sessions and of transcripts kept because
+they grew locally. On native Windows it shows the same shared-config capture and removal rows
 `pull --dry-run` shows, reading the host-local record those rows are gated on without ever writing
 to it, so `nomad diff` stays fully read-only.
 
