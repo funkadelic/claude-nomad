@@ -6,6 +6,7 @@ import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras/core.ts';
 import { assertSafeLocalRoot } from './extras/guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { type ManifestDiff } from './manifest.ts';
+import { listGrownLocally } from './remap.grown.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
 import { encodePath, readPathMap } from '../core/utils.json.ts';
@@ -69,13 +70,19 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
  * `nomad pull --force-remote`, matching the `.planning` extras overlays rather
  * than crashing `cmdPull` with a raw fs error.
  *
+ * A `.jsonl` whose local copy grew since the last push (longer, and starting
+ * with the repo bytes) keeps the local copy instead of being truncated.
+ *
  * @param src - Repo-side `shared/projects/<logical>/` dir to overlay from.
  * @param dst - Host-side `~/.claude/projects/<encoded>/` dir; local-only
  *   entries survive unchanged after the overlay.
+ * @returns Count of grown transcripts kept.
  */
-function overlaySessionDir(src: string, dst: string): void {
+function overlaySessionDir(src: string, dst: string): number {
   stripCollidingDstSymlinks(src, dst, () => false);
-  cpSyncGuarded(src, dst, undefined, 'overlaySessionDir');
+  const kept = listGrownLocally(src, dst);
+  cpSyncGuarded(src, dst, (srcEntry) => !kept.has(relative(src, srcEntry)), 'overlaySessionDir');
+  return kept.size;
 }
 
 /**
@@ -200,9 +207,10 @@ function emitPreview(
 /**
  * Pull: copy from repo's logical project names into local path-encoded dirs.
  *
- * Returns `{ unmapped, pulled, wouldPull }`. `unmapped` counts path-map entries
- * skipped for this host (`'TBD'` placeholder or no entry for `HOST`); `pulled`
- * holds logical names copied (wet), `wouldPull` those that would copy under
+ * Returns `{ unmapped, pulled, wouldPull, grownKept }`. `grownKept` is the count of
+ * session transcripts kept because they grew locally (same in wet and dry-run).
+ * `unmapped` counts path-map entries skipped for this host (`'TBD'` placeholder or no
+ * entry for `HOST`); `pulled` holds logical names copied (wet), `wouldPull` those that would copy under
  * `dryRun`. The arrays let cmdPull render a grouped tree; the wet path no longer
  * logs per-project `pulled X -> Y` / `skip ...` inline. The dry-run path KEEPS
  * its `would overwrite:` line because `computePreview` renders those as the
@@ -222,11 +230,12 @@ function emitPreview(
 export function remapPull(
   ts: string,
   opts: { dryRun?: boolean; onPreview?: (e: RemapPullPreviewEvent) => void } = {},
-): { unmapped: number; pulled: string[]; wouldPull: string[] } {
+): { unmapped: number; pulled: string[]; wouldPull: string[]; grownKept: number } {
   const dryRun = opts.dryRun === true;
   let unmapped = 0;
   const pulled: string[] = [];
   const wouldPull: string[] = [];
+  let grownKept = 0;
   const repo = repoHome();
   const claude = claudeHome();
   const mapPath = join(repo, 'path-map.json');
@@ -234,7 +243,7 @@ export function remapPull(
   if (!existsSync(mapPath) || !existsSync(repoProjects)) {
     const text = 'no path-map or repo projects dir; skipping session remap';
     emitPreview(opts.onPreview, { kind: 'note', text }, text);
-    return { unmapped: 0, pulled, wouldPull };
+    return { unmapped: 0, pulled, wouldPull, grownKept: 0 };
   }
 
   const map = readPathMap(mapPath);
@@ -259,6 +268,7 @@ export function remapPull(
     const dst = join(localProjects, encodePath(localPath));
     if (dryRun) {
       wouldPull.push(logical);
+      grownKept += listGrownLocally(src, dst).size;
       emitPreview(
         opts.onPreview,
         { kind: 'overwrite', dst, src },
@@ -272,10 +282,10 @@ export function remapPull(
     backupBeforeWrite(dst, ts);
     // Retain-merge overlay (never mirror-replace): local-only transcripts,
     // subagents/ dirs, and memory/ files absent from the repo survive the pull.
-    overlaySessionDir(src, dst);
+    grownKept += overlaySessionDir(src, dst);
     pulled.push(logical);
   }
-  return { unmapped, pulled, wouldPull };
+  return { unmapped, pulled, wouldPull, grownKept };
 }
 
 /**
