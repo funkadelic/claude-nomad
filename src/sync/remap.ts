@@ -6,7 +6,7 @@ import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras/core.ts';
 import { assertSafeLocalRoot } from './extras/guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { type ManifestDiff } from './manifest.ts';
-import { isGrownEntry, listGrownLocally } from './remap.grown.ts';
+import { forgetPushed, isGrownEntry, listGrownLocally } from './remap.grown.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
 import { encodePath, readPathMap } from '../core/utils.json.ts';
@@ -76,24 +76,23 @@ function atomicMirror(src: string, dst: string, options: Parameters<typeof cpSyn
  * @param src - Repo-side `shared/projects/<logical>/` dir to overlay from.
  * @param dst - Host-side `~/.claude/projects/<encoded>/` dir; local-only
  *   entries survive unchanged after the overlay.
- * @returns Count of grown transcripts kept.
+ * @param kept - Collects the absolute local paths of the grown transcripts kept.
  */
-function overlaySessionDir(src: string, dst: string): number {
+function overlaySessionDir(src: string, dst: string, kept: string[]): void {
   stripCollidingDstSymlinks(src, dst, () => false);
-  let kept = 0;
   // Checked per entry as cpSync reaches it, not in an earlier walk, so an append
   // during the copy of earlier files is still seen. Claude Code offers no lock to close the rest.
   cpSyncGuarded(
     src,
     dst,
     (srcEntry) => {
-      if (!isGrownEntry(srcEntry, join(dst, relative(src, srcEntry)))) return true;
-      kept++;
+      const dstEntry = join(dst, relative(src, srcEntry));
+      if (!isGrownEntry(srcEntry, dstEntry)) return true;
+      kept.push(dstEntry);
       return false;
     },
     'overlaySessionDir',
   );
-  return kept;
 }
 
 /**
@@ -247,6 +246,7 @@ export function remapPull(
   const pulled: string[] = [];
   const wouldPull: string[] = [];
   let grownKept = 0;
+  const kept: string[] = [];
   const repo = repoHome();
   const claude = claudeHome();
   const mapPath = join(repo, 'path-map.json');
@@ -293,10 +293,11 @@ export function remapPull(
     backupBeforeWrite(dst, ts);
     // Retain-merge overlay (never mirror-replace): local-only transcripts,
     // subagents/ dirs, and memory/ files absent from the repo survive the pull.
-    grownKept += overlaySessionDir(src, dst);
+    overlaySessionDir(src, dst, kept);
     pulled.push(logical);
   }
-  return { unmapped, pulled, wouldPull, grownKept };
+  forgetPushed(kept);
+  return { unmapped, pulled, wouldPull, grownKept: grownKept + kept.length };
 }
 
 /**

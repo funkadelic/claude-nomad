@@ -1,10 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { listGrownLocally } from './remap.grown.ts';
+import { manifestPath } from '../core/config.ts';
+import { readManifest, writeManifest } from './manifest.ts';
+import { forgetPushed, listGrownLocally } from './remap.grown.ts';
 
 const CHUNK = 64 * 1024;
 
@@ -95,5 +97,44 @@ describe('listGrownLocally', () => {
     writeFileSync(join(src, 'subagents', 'a.jsonl'), 'A\n');
     writeFileSync(join(dst, 'subagents', 'a.jsonl'), 'A\nB\n');
     expect([...listGrownLocally(src, dst)]).toEqual([join('subagents', 'a.jsonl')]);
+  });
+});
+
+describe('forgetPushed', () => {
+  let home: string;
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+
+  // home() reads USERPROFILE on win32, so both must point at the temp dir.
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'nomad-forget-'));
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+  });
+
+  afterEach(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  const entry = { size: 1, mtime: 1, hash: 'h' };
+
+  it('drops the kept paths and leaves the rest', () => {
+    writeManifest(manifestPath(), {
+      schema: 1,
+      scannerVersion: 'v',
+      configHash: 'c',
+      files: { '/a.jsonl': entry, '/b.jsonl': entry },
+    });
+    forgetPushed(['/a.jsonl']);
+    expect(Object.keys(readManifest(manifestPath())?.files ?? {})).toEqual(['/b.jsonl']);
+  });
+
+  it('writes nothing when no manifest exists or nothing was kept', () => {
+    forgetPushed(['/a.jsonl']);
+    forgetPushed([]);
+    expect(existsSync(manifestPath())).toBe(false);
   });
 });

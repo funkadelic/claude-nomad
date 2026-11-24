@@ -9,6 +9,9 @@ import {
 } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import { manifestPath } from '../core/config.ts';
+import { readManifest, writeManifest } from './manifest.ts';
+
 const CHUNK = 64 * 1024;
 
 /**
@@ -98,4 +101,21 @@ export function listGrownLocally(src: string, dst: string): Set<string> {
   const out = new Set<string>();
   walk(src, src, dst, out);
   return out;
+}
+
+/**
+ * Drop kept local transcripts from the push manifest so the next push resends
+ * them. Without this, a file this host already pushed reads as unchanged and the
+ * shorter repo copy (rewritten by another host's full rescan) is never replaced.
+ *
+ * @param localPaths - Absolute local paths of the transcripts pull kept.
+ */
+export function forgetPushed(localPaths: readonly string[]): void {
+  if (localPaths.length === 0) return;
+  const path = manifestPath();
+  const manifest = readManifest(path);
+  // No manifest means the next push is a full rescan, which sends everything.
+  if (manifest === null) return;
+  for (const p of localPaths) delete manifest.files[p];
+  writeManifest(path, manifest);
 }

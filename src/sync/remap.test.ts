@@ -136,6 +136,24 @@ describe('remapPull (integration)', () => {
       expect(result.grownKept).toBe(1);
     });
 
+    it('drops a kept transcript from the push manifest so the next push resends it', async () => {
+      setup({ 's.jsonl': 'A\n' }, { 's.jsonl': 'A\nB\n', 'other.jsonl': 'x' });
+      const { manifestPath } = await import('../core/config.ts');
+      const { readManifest, writeManifest } = await import('./manifest.ts');
+      const entry = { size: 4, mtime: 1, hash: 'h' };
+      writeManifest(manifestPath(), {
+        schema: 1,
+        scannerVersion: 'v',
+        configHash: 'c',
+        files: { [join(encoded(), 's.jsonl')]: entry, [join(encoded(), 'other.jsonl')]: entry },
+      });
+      const { remapPull } = await import('./remap.ts');
+      remapPull('20260516-000000');
+      expect(Object.keys(readManifest(manifestPath())?.files ?? {})).toEqual([
+        join(encoded(), 'other.jsonl'),
+      ]);
+    });
+
     it('still copies the repo file when the repo copy is longer', async () => {
       setup({ 's.jsonl': 'A\nB\n' }, { 's.jsonl': 'A\n' });
       const { remapPull } = await import('./remap.ts');
