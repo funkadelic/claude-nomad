@@ -627,6 +627,32 @@ describe('computePreview orchestration', () => {
     expect(result.localOnly).toBe(1);
   });
 
+  it('surfaces a kept grown transcript in the Sessions row and Summary without mutating', async () => {
+    writeFileSync(join(sharedDir, 'settings.base.json'), JSON.stringify({ model: 'opus' }) + '\n');
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 's1.jsonl'), 'A\n');
+    const encodedLocal = join(claudeDir, 'projects', '-tmp-foo');
+    mkdirSync(encodedLocal, { recursive: true });
+    writeFileSync(join(encodedLocal, 's1.jsonl'), 'A\nB\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const { computePreview } = await import('./preview.ts');
+    computePreview('20260516-000000', { projects: {} });
+
+    const joined = logs.join('\n');
+    expect(joined).toContain('1 grew locally since last push, kept (push to reconcile)');
+    expect(joined).toContain('1 grew locally, kept (push to reconcile)');
+    expect(readFileSync(join(encodedLocal, 's1.jsonl'), 'utf8')).toBe('A\nB\n');
+  });
+
   it('emits no local-only row and keeps a clean Summary when nothing is local-only', async () => {
     // Mapped project foo -> /tmp/foo, but the host encoded dir mirrors the repo
     // exactly (no unpushed leaf). scanLocalOnly returns 0; Summary stays 'clean'.

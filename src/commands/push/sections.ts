@@ -95,12 +95,14 @@ export function buildSettingsSection(
  * @param items - The logical names synced this run.
  * @param unmapped - Count of path-map entries skipped for this host.
  * @param localOnly - Count of retained local-only session files (pull only).
+ * @param grownKept - Count of transcripts kept because they grew locally (pull only).
  * @returns A `Sessions` `DoctorSection` (possibly empty).
  */
 export function buildSessionsSection(
   items: string[],
   unmapped: number,
   localOnly = 0,
+  grownKept = 0,
 ): DoctorSection {
   const s = section('Sessions');
   for (const logical of items) addItem(s, `${green(okGlyph)} ${logical}`);
@@ -110,6 +112,12 @@ export function buildSessionsSection(
     addItem(
       s,
       `${yellow(warnGlyph)} ${localOnly} local-only present, not in repo (push to reconcile)`,
+    );
+  }
+  if (grownKept > 0) {
+    addItem(
+      s,
+      `${yellow(warnGlyph)} ${grownKept} grew locally since last push, kept (push to reconcile)`,
     );
   }
   return s;

@@ -238,6 +238,40 @@ describe('summaryText', () => {
   });
 });
 
+describe('summaryText grown-kept phrase', () => {
+  it('pull with only grown-kept is non-clean and names the count', () => {
+    expect(summaryText('pull', 0, 0, 0, 0, 1)).toEqual({
+      text: 'summary: 0 unmapped on pull (run nomad doctor -v to list), 1 grew locally, kept (push to reconcile)',
+      clean: false,
+    });
+  });
+
+  it('places the grown phrase after the local-only phrase', () => {
+    expect(summaryText('pull', 0, 0, 0, 2, 1).text).toBe(
+      'summary: 0 unmapped on pull (run nomad doctor -v to list), 2 local-only present (push to reconcile), 1 grew locally, kept (push to reconcile)',
+    );
+  });
+
+  it('stays clean when grown-kept is 0 or omitted', () => {
+    expect(summaryText('pull', 0, 0, 0, 0, 0).clean).toBe(true);
+    expect(summaryText('pull', 0).clean).toBe(true);
+  });
+
+  it('diff phrases it like pull and push ignores it', () => {
+    expect(summaryText('diff', 0, 0, 0, 0, 3)).toEqual({
+      text: 'summary: 0 unmapped on diff (run nomad doctor -v to list), 3 grew locally, kept (push to reconcile)',
+      clean: false,
+    });
+    expect(summaryText('push', 0, 0, 0, 0, 3)).toEqual({ text: 'summary: clean', clean: true });
+  });
+
+  it('summaryRow forwards grown-kept without the summary prefix', () => {
+    expect(summaryRow('pull', 0, 0, 0, 0, 2)).toBe(
+      '0 unmapped on pull (run nomad doctor -v to list), 2 grew locally, kept (push to reconcile)',
+    );
+  });
+});
+
 describe('summaryRow', () => {
   it('renders the clean outcome as plain text', () => {
     expect(summaryRow('pull', 0)).toBe('clean');

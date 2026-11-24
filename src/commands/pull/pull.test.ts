@@ -2057,6 +2057,7 @@ describe('runPullCore: return shape and lock-free contract', () => {
   // second doMock of a module already wired into an imported graph is racy
   // (the re-import may keep the first factory's instances).
   let gitCaptureRawMock: ReturnType<typeof vi.fn>;
+  let remapPullMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -2093,9 +2094,10 @@ describe('runPullCore: return shape and lock-free contract', () => {
       regenerateSettings: vi.fn(() => ({ label: 'no host overrides', blocked: [] })),
     }));
     mockMirrorModule();
+    remapPullMock = vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] }));
     vi.doMock('../../sync/remap.ts', () => ({
       scanLocalOnly: vi.fn(() => 2),
-      remapPull: vi.fn(() => ({ unmapped: 0, pulled: ['proj-a'], wouldPull: [] })),
+      remapPull: remapPullMock,
       remapPush: vi.fn(),
     }));
     vi.doMock('../../sync/extras/extras.ts', () => ({
@@ -2149,6 +2151,25 @@ describe('runPullCore: return shape and lock-free contract', () => {
     expect(result.incomingChanges).toBe(false);
     // runPullCore never calls acquireLock: no lockfile is written.
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('surfaces the grown-kept count in the Sessions section and the Pull summary', async () => {
+    remapPullMock.mockReturnValue({
+      unmapped: 0,
+      pulled: ['proj-a'],
+      wouldPull: [],
+      grownKept: 1,
+    });
+    const { runPullCore } = await import('./pull.ts');
+    const result = runPullCore();
+    expect(result.tag).toBe('wet');
+    if (result.tag !== 'wet') throw new Error('unreachable');
+    const itemsOf = (header: string): string =>
+      (result.sections.find((sec) => sec.header === header)?.items ?? []).join('\n');
+    expect(itemsOf('Sessions')).toContain(
+      '1 grew locally since last push, kept (push to reconcile)',
+    );
+    expect(itemsOf('Pull summary')).toContain('1 grew locally, kept (push to reconcile)');
   });
 
   it('renders no Symlinks group when the mirror produced no events (posix / mocked-mirror parity)', async () => {

@@ -104,10 +104,87 @@ describe('remapPull (integration)', () => {
 
     const finalFiles = readdirSync(encodedDir).sort();
     expect(finalFiles).toEqual(['a.jsonl', 'b.jsonl', 'c.jsonl']);
-    // a.jsonl overwritten with the repo copy; c.jsonl added; b.jsonl retained.
+    // a.jsonl is a same-size divergent copy, so the repo wins; c.jsonl added; b.jsonl retained.
     expect(readFileSync(join(encodedDir, 'a.jsonl'), 'utf8')).toBe('{"a":1}\n');
     expect(readFileSync(join(encodedDir, 'b.jsonl'), 'utf8')).toBe('{"b":1}\n');
     expect(readFileSync(join(encodedDir, 'c.jsonl'), 'utf8')).toBe('{"c":1}\n');
+  });
+
+  describe('grown local transcripts', () => {
+    const encoded = (): string => join(claudeProjects, '-tmp-foo');
+    const setup = (files: Record<string, string>, local: Record<string, string>): void => {
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+      );
+      for (const [root, set] of [
+        [join(sharedProjects, 'foo'), files],
+        [encoded(), local],
+      ] as const) {
+        for (const [rel, body] of Object.entries(set)) {
+          mkdirSync(join(root, rel, '..'), { recursive: true });
+          writeFileSync(join(root, rel), body);
+        }
+      }
+    };
+
+    it('keeps a local transcript that is a longer prefix-extension of the repo copy', async () => {
+      setup({ 's.jsonl': 'A\n' }, { 's.jsonl': 'A\nB\n' });
+      const { remapPull } = await import('./remap.ts');
+      const result = remapPull('20260516-000000');
+      expect(readFileSync(join(encoded(), 's.jsonl'), 'utf8')).toBe('A\nB\n');
+      expect(result.grownKept).toBe(1);
+    });
+
+    it('drops a kept transcript from the push manifest so the next push resends it', async () => {
+      setup({ 's.jsonl': 'A\n' }, { 's.jsonl': 'A\nB\n', 'other.jsonl': 'x' });
+      const { manifestPath } = await import('../core/config.ts');
+      const { readManifest, writeManifest } = await import('./manifest.ts');
+      const entry = { size: 4, mtime: 1, hash: 'h' };
+      writeManifest(manifestPath(), {
+        schema: 1,
+        scannerVersion: 'v',
+        configHash: 'c',
+        files: { [join(encoded(), 's.jsonl')]: entry, [join(encoded(), 'other.jsonl')]: entry },
+      });
+      const { remapPull } = await import('./remap.ts');
+      remapPull('20260516-000000');
+      expect(Object.keys(readManifest(manifestPath())?.files ?? {})).toEqual([
+        join(encoded(), 'other.jsonl'),
+      ]);
+    });
+
+    it('still copies the repo file when the repo copy is longer', async () => {
+      setup({ 's.jsonl': 'A\nB\n' }, { 's.jsonl': 'A\n' });
+      const { remapPull } = await import('./remap.ts');
+      const result = remapPull('20260516-000000');
+      expect(readFileSync(join(encoded(), 's.jsonl'), 'utf8')).toBe('A\nB\n');
+      expect(result.grownKept).toBe(0);
+    });
+
+    it('still copies the repo file when the longer local copy diverges', async () => {
+      setup({ 's.jsonl': 'A\nX\n' }, { 's.jsonl': 'A\nB\nC\n' });
+      const { remapPull } = await import('./remap.ts');
+      const result = remapPull('20260516-000000');
+      expect(readFileSync(join(encoded(), 's.jsonl'), 'utf8')).toBe('A\nX\n');
+      expect(result.grownKept).toBe(0);
+    });
+
+    it('keeps a grown nested subagents transcript', async () => {
+      setup({ 'subagents/agent-1.jsonl': 'A\n' }, { 'subagents/agent-1.jsonl': 'A\nB\n' });
+      const { remapPull } = await import('./remap.ts');
+      const result = remapPull('20260516-000000');
+      expect(readFileSync(join(encoded(), 'subagents', 'agent-1.jsonl'), 'utf8')).toBe('A\nB\n');
+      expect(result.grownKept).toBe(1);
+    });
+
+    it('leaves non-jsonl files repo-wins even when the local copy grew', async () => {
+      setup({ 'memory/notes.md': 'x\n' }, { 'memory/notes.md': 'x\ny\n' });
+      const { remapPull } = await import('./remap.ts');
+      const result = remapPull('20260516-000000');
+      expect(readFileSync(join(encoded(), 'memory', 'notes.md'), 'utf8')).toBe('x\n');
+      expect(result.grownKept).toBe(0);
+    });
   });
 
   it('retains local-only subagents/ and memory/ entries absent from the repo (incident class)', async () => {
@@ -431,6 +508,27 @@ describe('remapPull dry-run and unmapped count', () => {
     expect(existsSync(join(claudeProjects, '-tmp-foo'))).toBe(false);
     const backupRoot = join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000');
     expect(existsSync(backupRoot)).toBe(false);
+  });
+
+  it('counts grown transcripts under dryRun without mutating or backing up', async () => {
+    mkdirSync(join(sharedProjects, 'foo'), { recursive: true });
+    writeFileSync(join(sharedProjects, 'foo', 's.jsonl'), 'A\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const encodedDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(encodedDir, { recursive: true });
+    writeFileSync(join(encodedDir, 's.jsonl'), 'A\nB\n');
+
+    const { remapPull } = await import('./remap.ts');
+    const result = remapPull('20260516-000000', { dryRun: true });
+
+    expect(result.grownKept).toBe(1);
+    expect(readFileSync(join(encodedDir, 's.jsonl'), 'utf8')).toBe('A\nB\n');
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'backup', '20260516-000000'))).toBe(
+      false,
+    );
   });
 
   it('default (no opts) returns the same unmapped count AND performs the copy for non-skipped entries', async () => {

@@ -35,7 +35,9 @@ empty scaffold, and a non-interactive shell skips the prompt and prints a `--sna
 `git pull --rebase --autostash`, apply symlinks (real copies on native Windows), regenerate
 `settings.json`, remap session paths,
 and pull opted-in per-project extras. Errors out if scaffold missing. Non-destructive: unpushed
-local-only session transcripts are retained, and a repo-tracked extras file you have edited locally
+local-only session transcripts are retained, a transcript that kept growing on this machine after
+its last push is kept instead of being replaced by the older synced copy (push to reconcile), and a
+repo-tracked extras file you have edited locally
 is kept (not overwritten) when it diverges from the incoming copy, with a warning to push and
 reconcile.
 
@@ -134,7 +136,7 @@ added and the pull exits 6. Save or delete the setting as above and pull again.
 
 | Flag             | Description                                                                                                                                                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions, and any extras-divergence warning). When the settings refusal above would fire, the preview reports it (naming the settings and both fixes) instead of showing a settings diff, since pull would never write it; the preview itself still exits 0. On native Windows the same tree also shows every shared-config capture the pre-rebase mirror would perform and every removal the same step would make in the repo, so the preview matches the wet run in both directions. Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
+| `--dry-run`      | Network-aware preview: acquire lock + `git pull --rebase`, print planned changes (symlink moves, `settings.json` diff, transcript overwrites, an `Extras` section listing every `<logical>/<dirname>` a wet pull would copy including extras with no local copy yet, a count of retained local-only sessions and of transcripts kept because they grew locally, and any extras-divergence warning). When the settings refusal above would fire, the preview reports it (naming the settings and both fixes) instead of showing a settings diff, since pull would never write it; the preview itself still exits 0. On native Windows the same tree also shows every shared-config capture the pre-rebase mirror would perform and every removal the same step would make in the repo, so the preview matches the wet run in both directions. Writes nothing to `~/.claude/`, but the `git pull --rebase` above updates the sync repo (`~/claude-nomad/`) first so the preview reflects the remote.                                                                            |
 | `--force-remote` | Recover from a wedged sync repo. Two recovery paths depending on state: (1) stuck mid-rebase or mid-merge: abort the in-progress operation, park stranded commits on `nomad/stranded-<ts>`, reset to `origin/main`, and re-pull; refuses if stranded or dirty tracked changes touch synced config (shared/, hosts/, path-map.json). (2) unmerged index with no active rebase or merge: clear the stuck index via `git reset --mixed HEAD` (preserves working-tree edits), surface any orphaned autostash entry with a hint, and re-pull; no abort, no park step. On a repo that is not wedged, prints an info line reporting there is nothing to recover and continues as a normal pull (exit status success); when the check for a stuck index cannot run at all (git missing, or the index lock still held when the check times out), it reports that it could not determine whether the repo is wedged instead of claiming the repo is clean, and continues the same way. On native Windows, when recovery genuinely runs via path (1), the pre-pull shared-config mirror is skipped because the reset to `origin/main` would otherwise be undone immediately after; the pull warns, naming how many shared names were restored from the repo copy and the backup directory holding their previous host copies. Cannot combine with `--dry-run` (it performs mutations incompatible with preview mode). |
 
 ## `diff`
@@ -146,7 +148,8 @@ repo state. The `settings.json` diff filters gsd-owned hook entries from both si
 comparing, so GSD's per-session hook self-heal does not show up as a phantom `hooks` change; the
 preview reflects what a real pull would write. Also renders the same `Extras` section as
 `pull --dry-run`, listing every `<logical>/<dirname>` a pull would copy, including extras with no
-local copy yet. On native Windows it shows the same shared-config capture and removal rows
+local copy yet, and the same counts of retained local-only sessions and of transcripts kept because
+they grew locally. On native Windows it shows the same shared-config capture and removal rows
 `pull --dry-run` shows, reading the host-local record those rows are gated on without ever writing
 to it, so `nomad diff` stays fully read-only.
 

@@ -239,7 +239,10 @@ real path when you bring up that host.
 
 On `push`, sessions in `~/.claude/projects/-Users-you-code-my-example-repo/` get copied to
 `shared/projects/my-example-repo/`. On `nomad pull` on another machine, they get copied to that
-host's encoded path. `claude --resume` then finds them.
+host's encoded path. `claude --resume` then finds them. If a transcript grew on this host since its
+last push (the local file is longer and starts with the synced copy), pull keeps the local file and
+the pull summary counts it; other files present on both sides take the synced copy, and local-only
+files stay.
 
 The `extras` block is additive and back-compatible: legacy `path-map.json` files without it keep
 working unchanged. Each value is an array of directory or root-file names (e.g. `.planning`,
