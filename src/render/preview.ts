@@ -379,6 +379,7 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *   Sessions
  *     overwrite  <dst> (from <src>)
  *     <N> local-only present, not in repo (push to reconcile)   <- when N > 0
+ *     <N> grew locally since last push, kept (push to reconcile)   <- when N > 0
  *     ...
  *   Skills                 <- omitted when no shared/skills/ dir
  *     <name>
@@ -388,7 +389,7 @@ function buildSettingsSectionForPreview(result: { diff: string; notes: string[] 
  *     <logical>/<dirname>
  *     ...
  *   Summary
- *     <summaryRow(verb, unmapped + extrasUnmapped, 0, extrasSkipped, localOnly)>
+ *     <summaryRow(verb, unmapped + extrasUnmapped, 0, extrasSkipped, localOnly, grownKept)>
  *
  * The Summary row combines the session-unmapped and extras-unmapped counts,
  * matching the wet pull's Summary for the same starting state.
@@ -506,6 +507,12 @@ export function computePreview(
   if (localOnly > 0) {
     addItem(sessions, `${localOnly} local-only present, not in repo (push to reconcile)`);
   }
+  if (remapResult.grownKept > 0) {
+    addItem(
+      sessions,
+      `${remapResult.grownKept} grew locally since last push, kept (push to reconcile)`,
+    );
+  }
 
   // Skills section: one glyph-free row per shared/skills/ entry a wet pull
   // would overlay, plus a retained local-only count when non-zero. See
@@ -541,7 +548,14 @@ export function computePreview(
   const summary = section('Summary');
   addItem(
     summary,
-    summaryRow(verb, remapResult.unmapped + extrasUnmapped, 0, extrasSkipped, localOnly),
+    summaryRow(
+      verb,
+      remapResult.unmapped + extrasUnmapped,
+      0,
+      extrasSkipped,
+      localOnly,
+      remapResult.grownKept,
+    ),
   );
 
   renderTree([links, settingsSection, sessions, skills, extras, summary]);
