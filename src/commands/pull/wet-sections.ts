@@ -62,11 +62,19 @@ export function buildWetPullSections(
   const localOnly = scanLocalOnly();
   const unmapped = remapResult.unmapped + extrasResult.unmapped;
   const summary = section(PULL_SUMMARY_HEADER);
-  addItem(summary, summaryRow('pull', unmapped, 0, extrasResult.skipped, localOnly));
+  addItem(
+    summary,
+    summaryRow('pull', unmapped, 0, extrasResult.skipped, localOnly, remapResult.grownKept),
+  );
   return {
     sections: [
       buildSettingsSection(label, blocked, removed),
-      buildSessionsSection(remapResult.pulled, remapResult.unmapped, localOnly),
+      buildSessionsSection(
+        remapResult.pulled,
+        remapResult.unmapped,
+        localOnly,
+        remapResult.grownKept,
+      ),
       buildExtrasSection(extrasResult.pulled, extrasResult.skipped),
       summary,
     ],

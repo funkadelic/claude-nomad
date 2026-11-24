@@ -29,6 +29,7 @@ type SummaryVerb = 'pull' | 'push' | 'diff';
  * @param collisions - push-only collision count (ignored for pull/diff).
  * @param extrasSkipped - count of extras dirnames the whitelist declined.
  * @param localOnly - count of retained local-only session files (pull/diff).
+ * @param grownKept - count of session transcripts kept because they grew locally (pull/diff).
  * @returns `{ text, clean }` where `clean` is true on the no-warning outcome.
  */
 export function summaryText(
@@ -37,6 +38,7 @@ export function summaryText(
   collisions = 0,
   extrasSkipped = 0,
   localOnly = 0,
+  grownKept = 0,
 ): { text: string; clean: boolean } {
   const extras = extrasSkipped > 0 ? `, ${extrasSkipped} extras skipped` : '';
   if (verb === 'push') {
@@ -46,13 +48,14 @@ export function summaryText(
     const base = `summary: ${unmapped} unmapped on push, ${collisions} collisions`;
     return { text: `${base}${extras} (run nomad doctor -v to list)`, clean: false };
   }
-  if (unmapped === 0 && extrasSkipped === 0 && localOnly === 0) {
+  if (unmapped === 0 && extrasSkipped === 0 && localOnly === 0 && grownKept === 0) {
     return { text: 'summary: clean', clean: true };
   }
   const localOnlyPhrase =
     localOnly > 0 ? `, ${localOnly} local-only present (push to reconcile)` : '';
+  const grownPhrase = grownKept > 0 ? `, ${grownKept} grew locally, kept (push to reconcile)` : '';
   return {
-    text: `summary: ${unmapped} unmapped on ${verb}${extras} (run nomad doctor -v to list)${localOnlyPhrase}`,
+    text: `summary: ${unmapped} unmapped on ${verb}${extras} (run nomad doctor -v to list)${localOnlyPhrase}${grownPhrase}`,
     clean: false,
   };
 }
@@ -71,6 +74,7 @@ export function summaryText(
  * @param collisions - push-only collision count (ignored for pull/diff).
  * @param extrasSkipped - count of extras dirnames the whitelist declined.
  * @param localOnly - count of retained local-only session files (pull/diff).
+ * @param grownKept - count of session transcripts kept because they grew locally (pull/diff).
  * @returns the plain row string for the Summary section.
  */
 export function summaryRow(
@@ -79,8 +83,9 @@ export function summaryRow(
   collisions = 0,
   extrasSkipped = 0,
   localOnly = 0,
+  grownKept = 0,
 ): string {
-  const { text } = summaryText(verb, unmapped, collisions, extrasSkipped, localOnly);
+  const { text } = summaryText(verb, unmapped, collisions, extrasSkipped, localOnly, grownKept);
   return text.replace(/^summary: /, '');
 }
 

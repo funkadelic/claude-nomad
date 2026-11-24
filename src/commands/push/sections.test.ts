@@ -78,3 +78,26 @@ describe('buildSessionsSection localOnly WARN row', () => {
     expect(warnIdx).toBeGreaterThan(skipIdx);
   });
 });
+
+/** `buildSessionsSection`'s additive `grownKept` parameter: pull-only WARN row. */
+describe('buildSessionsSection grownKept WARN row', () => {
+  it('emits one WARN row with the count when grownKept > 0', () => {
+    const s = buildSessionsSection([], 0, 0, 2);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toContain('⚠︎');
+    expect(s.items[0]).toContain('2 grew locally since last push, kept (push to reconcile)');
+  });
+
+  it('places the grown row after the local-only row', () => {
+    const s = buildSessionsSection([], 0, 3, 1);
+    const localIdx = s.items.findIndex((row) => row.includes('local-only present'));
+    const grownIdx = s.items.findIndex((row) => row.includes('grew locally'));
+    expect(localIdx).toBeGreaterThanOrEqual(0);
+    expect(grownIdx).toBeGreaterThan(localIdx);
+  });
+
+  it('emits no grown row when omitted or 0 (push output unchanged)', () => {
+    expect(buildSessionsSection(['foo'], 0).items.join('\n')).not.toContain('grew locally');
+    expect(buildSessionsSection([], 0, 0, 0).items).toEqual([]);
+  });
+});
