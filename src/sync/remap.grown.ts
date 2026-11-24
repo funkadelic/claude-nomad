@@ -1,4 +1,12 @@
-import { closeSync, fstatSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 
 const CHUNK = 64 * 1024;
@@ -11,7 +19,8 @@ const CHUNK = 64 * 1024;
 function openLargerRegular(path: string, minSize: number): number | null {
   let fd: number;
   try {
-    fd = openSync(path, 'r');
+    // O_NONBLOCK so a FIFO with no writer cannot hang pull; undefined (no-op) on Windows.
+    fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch {
     return null;
   }
