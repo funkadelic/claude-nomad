@@ -176,6 +176,21 @@ describe.skipIf(!hasGitleaks)(
       },
     );
 
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+      'fails the scan without touching an unreadable local attributes file',
+      () => {
+        execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+        const local = join(scanRoot, '.git', 'info', 'attributes');
+        mkdirSync(dirname(local), { recursive: true });
+        writeFileSync(local, '*.jsonl -diff\n');
+        chmodSync(local, 0o000);
+        write(transcript, betasLine(realToken));
+        expect(scanStagedTree(scanRoot)).toBeNull();
+        chmodSync(local, 0o644);
+        expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n');
+      },
+    );
+
     it('removes the attributes file it created', () => {
       write(transcript, betasLine(realToken));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);

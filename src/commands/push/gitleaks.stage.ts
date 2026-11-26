@@ -50,8 +50,9 @@ export function forceTextDiff(opts: ExecFileSyncOptions): () => void {
   try {
     body = readFileSync(path, 'utf8');
     mode = statSync(path).mode & 0o777;
-  } catch {
-    // Absent: written fresh below and removed on restore.
+  } catch (err) {
+    // Only absent is safe to write fresh (and remove on restore); an unreadable file would be lost.
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
   mkdirSync(dirname(path), { recursive: true });
   const prior = body ?? '';
