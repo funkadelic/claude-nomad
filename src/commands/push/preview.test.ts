@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './gitleaks.ts';
+import type * as configModule from '../../core/config.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 import { encodePath } from '../../core/utils.json.ts';
 
@@ -93,6 +94,7 @@ function makePreviEnv(): PreviewEnv {
 function teardownPreviewEnv(env: PreviewEnv): void {
   vi.restoreAllMocks();
   vi.doUnmock('./gitleaks.ts');
+  vi.doUnmock('../../core/config.ts');
   vi.doUnmock('node:child_process');
   vi.doUnmock('node:fs');
   process.exitCode = env.originalExitCode;
@@ -1037,6 +1039,40 @@ describe('previewPushLeaks: selective staging via selection.changed', () => {
     // Only session-a.jsonl was in selection.changed for this dir; session-b is absent.
     expect(stagedFiles).toEqual(['session-a.jsonl']);
     expect(verdict.leak).toBe(false);
+  });
+
+  it('does not stage a changed file over the per-file cap', async () => {
+    vi.doMock('../../core/config.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof configModule>()),
+      MAX_SESSION_FILE_BYTES: 16,
+    }));
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    const projectsDir = join(env.claudeHome, 'projects', encodePath(localPath));
+    mkdirSync(projectsDir, { recursive: true });
+    const small = join(projectsDir, 'small.jsonl');
+    const big = join(projectsDir, 'big.jsonl');
+    writeFileSync(small, '{}\n');
+    writeFileSync(big, 'x'.repeat(64));
+    writeFileSync(
+      join(env.repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { [logical]: { 'test-host': localPath } } }) + '\n',
+    );
+    let stagedFiles: string[] = [];
+    vi.doMock('./gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+          stagedFiles = readdirSync(join(dir, 'shared', 'projects', logical));
+          return [];
+        }),
+      };
+    });
+    const { previewPushLeaks } = await import('./preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    previewPushLeaks(map, { selection: { changed: new Set([small, big]), deleted: [] } });
+    expect(stagedFiles).toEqual(['small.jsonl']);
   });
 
   it('returns nothing-to-scan when selection.changed has no files for the mapped dir', async () => {

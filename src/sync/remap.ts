@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from '../core/config.sharedDirs.guard.ts';
 import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras/core.ts';
@@ -7,6 +7,7 @@ import { assertSafeLocalRoot } from './extras/guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { forgetPushed, isGrownEntry, listGrownLocally } from './remap.grown.ts';
+import { skipOversize } from './remap.size.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
 import { encodePath, readPathMap } from '../core/utils.json.ts';
@@ -142,12 +143,20 @@ function skipForSelection(sel: ManifestDiff | undefined, localDir: string): bool
  * @param sel - Manifest diff from `diffManifest`.
  * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
  * @param repoDst - Absolute path of `shared/projects/<logical>/`.
+ * @param cap - Per-file byte limit; larger changed files are skipped with a warning.
  */
-function applySelective(sel: ManifestDiff, localDir: string, repoDst: string): void {
+export function applySelective(
+  sel: ManifestDiff,
+  localDir: string,
+  repoDst: string,
+  cap?: number,
+): void {
   const prefix = `${localDir}${sep}`;
   for (const src of sel.changed) {
     if (!src.startsWith(prefix)) continue;
-    copyFileAtomic(src, join(repoDst, relative(localDir, src)));
+    const rel = relative(localDir, src);
+    if (skipOversize(src, join(basename(repoDst), rel), cap)) continue;
+    copyFileAtomic(src, join(repoDst, rel));
   }
   for (const src of sel.deleted) {
     if (!src.startsWith(prefix)) continue;
@@ -169,15 +178,16 @@ function applySelective(sel: ManifestDiff, localDir: string, repoDst: string): v
  * curated by the push gate and local-only entries must survive. Uses the same
  * atomic temp-then-rename swap as the other push-side copies;
  * the filter keys off `relative(src, ...)` so it is unaffected by the staging
- * destination.
+ * destination. Files over `cap` at any depth are skipped with a warn line.
  */
-export function copyDirJsonlOnly(src: string, dst: string): void {
+export function copyDirJsonlOnly(src: string, dst: string, cap?: number): void {
   atomicMirror(src, dst, {
     recursive: true,
     force: true,
     filter: (srcPath) => {
       const rel = relative(src, srcPath);
       if (rel === '') return true;
+      if (skipOversize(srcPath, join(basename(dst), rel), cap)) return false;
       if (rel.split(sep).length > 1) return true;
       if (statSync(srcPath).isDirectory()) return true;
       if (srcPath.endsWith('.jsonl')) return true;

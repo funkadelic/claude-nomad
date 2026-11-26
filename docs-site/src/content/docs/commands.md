@@ -168,6 +168,9 @@ setting in the sync repo's own git config still stops gitleaks from reading your
 `diff.orderFile` naming a missing file, say), push stops with a scan error rather than pushing
 unscanned.
 
+A session file over 100 MiB, the largest single file GitHub accepts, is left out of the push with a
+warning that names it; it stays on this machine only, and the rest of the push goes ahead.
+
 On native Windows, before any of that, push also carries your local edits back into the sync repo
 for names the repo already shares, the same as `nomad pull` does before it fetches. A directory the
 repo does not carry yet stays on this machine until you run `nomad adopt <name>`, the same as on

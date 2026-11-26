@@ -178,8 +178,9 @@ function enumerateDir(dir: string, results: string[]): void {
 
 /**
  * Enumerate all source files that `copyDirJsonlOnly` would copy for a given
- * project directory, returning their absolute paths. The selection predicate is
- * byte-identical to `copyDirJsonlOnly`'s cpSync filter (see `remap.ts`):
+ * project directory, returning their absolute paths. The selection predicate matches
+ * `copyDirJsonlOnly`'s cpSync filter (see `remap.ts`), except that files over the
+ * per-file size cap are still listed here (the copy skips them):
  *   - Depth-0 `*.jsonl` files are included.
  *   - All files under any subdirectory are included regardless of extension
  *     (`subagents/*.jsonl`, `memory/*.md`, `tool-results/*.txt`, etc.).
