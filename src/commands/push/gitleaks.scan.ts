@@ -171,6 +171,31 @@ function repoExecOpts(repoDir: string): ExecFileSyncOptions {
   return { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'] };
 }
 
+/** Local attributes line that makes git show every file to gitleaks as text. */
+const FORCE_DIFF = '* diff';
+
+/**
+ * Append `* diff` to the repo's local (uncommitted) `info/attributes` unless it
+ * is already the last line. A global or committed `-diff`/`binary` would make
+ * `git diff` hide the content, so gitleaks would scan nothing; the last
+ * matching line wins, and `diff` changes only diff output, never what is staged.
+ */
+function forceTextDiff(opts: ExecFileSyncOptions): void {
+  const rel = String(execFileSync('git', ['rev-parse', '--git-path', 'info/attributes'], opts));
+  const path = resolve(String(opts.cwd), rel.trim() || join('.git', 'info', 'attributes'));
+  let body = '';
+  try {
+    body = readFileSync(path, 'utf8');
+  } catch {
+    // Absent: written fresh below.
+  }
+  const lines = body.split(/\r?\n/).filter((l) => l.trim() !== '');
+  if (lines.at(-1)?.trim() === FORCE_DIFF) return;
+  mkdirSync(dirname(path), { recursive: true });
+  const glue = body === '' || body.endsWith('\n') ? '' : '\n';
+  writeFileSync(path, `${body}${glue}${FORCE_DIFF}\n`);
+}
+
 /**
  * Run `git init` then `git <addArgs>` in the repo `opts` point at. The add
  * call drops stdout and raises the stderr buffer: a per-file CRLF warning
@@ -179,6 +204,7 @@ function repoExecOpts(repoDir: string): ExecFileSyncOptions {
  */
 function initAndStage(opts: ExecFileSyncOptions, addArgs: string[]): void {
   execFileSync('git', ['init', '-q'], opts);
+  forceTextDiff(opts);
   execFileSync('git', addArgs, {
     ...opts,
     stdio: ['ignore', 'ignore', 'pipe'],

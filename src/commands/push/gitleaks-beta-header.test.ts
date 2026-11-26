@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -135,6 +136,28 @@ describe.skipIf(!hasGitleaks)(
     it('still fires on the beta-flag list outside a synced transcript', () => {
       write('shared/skills/demo/notes.md', betasLine(flag));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
+    });
+
+    it.each(['-diff', 'binary'])('scans the text despite a global %s attribute', (attr) => {
+      const attrs = join(testHome, 'global-attributes');
+      writeFileSync(attrs, `* ${attr}\n`);
+      writeFileSync(
+        join(testHome, '.gitconfig'),
+        `[core]\n\tattributesFile = ${attrs.replaceAll('\\', '/')}\n`,
+      );
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+    });
+
+    it('keeps local attributes, overrides their -diff, and appends the diff line once', () => {
+      execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+      const local = join(scanRoot, '.git', 'info', 'attributes');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, '*.jsonl -diff');
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+      expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n* diff\n');
     });
 
     it('suppresses the beta-flag list in the redact re-scan of a local transcript', () => {
