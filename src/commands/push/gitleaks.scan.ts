@@ -17,10 +17,12 @@ import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import {
   closeSync,
   copyFileSync,
+  fstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
+  readSync,
   rmSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -204,18 +206,25 @@ const ERR_LOG_LINE = /^\S+ ERR /m;
  * nothing, so a clean exit with an ERR line must not count as clean.
  */
 function runGitleaks(args: string[], opts: ExecFileSyncOptions, logPath: string): string | null {
-  const fd = openSync(logPath, 'w', 0o600);
+  const fd = openSync(logPath, 'w+', 0o600);
   try {
     execFileSync('gitleaks', [...args, '--no-color'], { ...opts, stdio: ['ignore', 'pipe', fd] });
+    const log = readFd(fd).toString('utf8');
+    return ERR_LOG_LINE.test(log) ? log : null;
   } catch (err) {
     // stderr goes to the log, so restore it for the crash diagnostic.
-    (err as { stderr?: Buffer | null }).stderr ??= readFileSync(logPath);
+    (err as { stderr?: Buffer | null }).stderr ??= readFd(fd);
     throw err;
   } finally {
     closeSync(fd);
   }
-  const log = readFileSync(logPath, 'utf8');
-  return ERR_LOG_LINE.test(log) ? log : null;
+}
+
+/** The whole file behind `fd`, read through the fd so the path cannot be swapped in between. */
+function readFd(fd: number): Buffer {
+  const buf = Buffer.alloc(fstatSync(fd).size);
+  readSync(fd, buf, 0, buf.length, 0);
+  return buf;
 }
 
 /** Scan-failed result for a clean gitleaks exit that logged an error (see `runGitleaks`). */
