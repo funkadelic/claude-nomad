@@ -126,7 +126,13 @@ describe('withFilteredFindings and scanStagedTree clean-filter re-scan', () => {
     expect(calls).toEqual([
       [
         join(scanRoot, 'a.txt'),
-        { stagedRel: 'a.txt', redact: true, repoDir: scanRoot, forwardStreams: false },
+        {
+          timeoutMs: expect.any(Number) as number,
+          stagedRel: 'a.txt',
+          redact: true,
+          repoDir: scanRoot,
+          forwardStreams: false,
+        },
       ],
     ]);
   });
@@ -212,6 +218,26 @@ describe('withFilteredFindings and scanStagedTree clean-filter re-scan', () => {
       finding('fp2'),
       finding('fp2'),
     ]);
+  });
+
+  it('keys a finding with no fingerprint on its file, rule and line', () => {
+    stageAttributed('a.txt filter=fake\n');
+    const line2 = { ...finding(''), StartLine: 2 };
+    const { scan } = recorder([finding(''), line2]);
+    expect(withFilteredFindings(scanRoot, [finding('')], scan, false)).toEqual([
+      finding(''),
+      line2,
+    ]);
+  });
+
+  it('fails closed once the shared re-scan timeout runs out', () => {
+    stageAttributed('a.txt filter=fake\n');
+    const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(Number.MAX_SAFE_INTEGER);
+    const { scan, calls } = recorder([]);
+    expect(withFilteredFindings(scanRoot, [], scan, true)).toBeNull();
+    expect(calls).toEqual([]);
+    expect(write).toHaveBeenCalledWith('scan aborted: timed out before re-scanning a.txt\n');
   });
 
   it('returns null when a per-file scan fails, naming the path only when forwarding', () => {

@@ -7,6 +7,7 @@
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { join } from 'node:path';
 
+import { GITLEAKS_SCAN_TIMEOUT_MS } from '../../core/config.ts';
 import type { Finding, ScanFn } from './gitleaks.scan.ts';
 import { repoExecOpts } from './gitleaks.stage.ts';
 
@@ -91,15 +92,22 @@ function filteredPaths(repoDir: string): string[] {
   return [...paths];
 }
 
-/** Dedupe key: gitleaks fingerprints carry no column, so two secrets on one line share one. */
-const findingKey = (f: Finding): string => `${f.Fingerprint}:${f.StartColumn}:${f.EndColumn}`;
+/**
+ * Dedupe key: gitleaks fingerprints carry no column, so two secrets on one line
+ * share one; an empty fingerprint falls back to file, rule and line.
+ */
+const findingKey = (f: Finding): string => {
+  const fp = f.Fingerprint === '' ? `${f.File}:${f.RuleID}:${f.StartLine}` : f.Fingerprint;
+  return `${fp}:${f.StartColumn}:${f.EndColumn}`;
+};
 
 /**
  * Re-scan each changed regular file whose index content is a transform of its
  * working-tree file via `scan` (which stages with every transform off) and
  * merge the results into `staged`, dropping only findings the staged scan
- * already reported at the same position. Returns `null` when the listing or any
- * per-file scan fails, so the push gate fails closed.
+ * already reported at the same position. All re-scans share one scan timeout.
+ * Returns `null` when the listing or any per-file scan fails or the time runs
+ * out, so the push gate fails closed.
  */
 export function withFilteredFindings(
   repoDir: string,
@@ -117,10 +125,14 @@ export function withFilteredFindings(
   } catch (err) {
     return abort(String((err as Error).message).split('\n')[0]);
   }
+  const deadline = Date.now() + GITLEAKS_SCAN_TIMEOUT_MS;
   const stagedKeys = new Set(staged.map(findingKey));
   const merged = [...staged];
   for (const rel of paths) {
+    const timeoutMs = deadline - Date.now();
+    if (timeoutMs <= 0) return abort(`timed out before re-scanning ${rel}`);
     const found = scan(join(repoDir, rel), {
+      timeoutMs,
       stagedRel: rel,
       redact: true,
       repoDir,

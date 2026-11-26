@@ -25,6 +25,29 @@ import {
  * because `vi.restoreAllMocks` does NOT clear `vi.doMock` module mocks (they
  * would otherwise leak across files).
  */
+
+/**
+ * Mock `execFileSync` so git calls succeed and gitleaks exits 1, writing
+ * `report` to its `--report-path` when given (none means no report file).
+ */
+function mockGitleaksExit1(report?: string): void {
+  vi.doMock('node:child_process', async (importOriginal) => {
+    const actual = await importOriginal<typeof cpModule>();
+    return {
+      ...actual,
+      execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        const list = args ?? [];
+        if (list[0] === 'version') return Buffer.from('8.0.0');
+        if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
+          return Buffer.from('');
+        const rp = list.find((a) => a.startsWith('--report-path='));
+        if (rp && report !== undefined) writeFileSync(rp.slice('--report-path='.length), report);
+        throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
+      }),
+    };
+  });
+}
+
 describe('reportCheckShared (mocked scan cleanup + partition)', () => {
   let snapshot: EnvSnapshot;
   let testHome: string;
@@ -63,19 +86,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         }),
       };
     });
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          const list = args ?? [];
-          if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
-            return Buffer.from('');
-          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
-        }),
-      };
-    });
+    mockGitleaksExit1();
 
     const { existsSync } = await import('node:fs');
     const { reportCheckShared } = await import('./shared.ts');
@@ -105,24 +116,10 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
     );
     writePathMap(testHome, { foo: { 'test-host': env.localPath } });
 
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          const list = args ?? [];
-          if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
-            return Buffer.from('');
-          // gitleaks protect --staged exits non-zero but writes a parseable
-          // empty array: both partition buckets are empty, so the reporter emits
-          // the clean row (staged count) rather than a phantom-session fail.
-          const rp = list.find((a) => a.startsWith('--report-path='));
-          if (rp) writeFileSync(rp.slice('--report-path='.length), '[]');
-          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
-        }),
-      };
-    });
+    // gitleaks protect --staged exits non-zero but writes a parseable
+    // empty array: both partition buckets are empty, so the reporter emits
+    // the clean row (staged count) rather than a phantom-session fail.
+    mockGitleaksExit1('[]');
 
     const { reportCheckShared } = await import('./shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
@@ -181,21 +178,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         Fingerprint: 'fp-d',
       },
     ]);
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          const list = args ?? [];
-          if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
-            return Buffer.from('');
-          const rp = list.find((a) => a.startsWith('--report-path='));
-          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
-          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
-        }),
-      };
-    });
+    mockGitleaksExit1(report);
 
     const { reportCheckShared } = await import('./shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
@@ -257,21 +240,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         Fingerprint: 'fp-x',
       },
     ]);
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          const list = args ?? [];
-          if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
-            return Buffer.from('');
-          const rp = list.find((a) => a.startsWith('--report-path='));
-          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
-          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
-        }),
-      };
-    });
+    mockGitleaksExit1(report);
 
     const { reportCheckShared } = await import('./shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
@@ -335,21 +304,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         Fingerprint: 'fp-anchor-start-real',
       },
     ]);
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          const list = args ?? [];
-          if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
-            return Buffer.from('');
-          const rp = list.find((a) => a.startsWith('--report-path='));
-          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
-          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
-        }),
-      };
-    });
+    mockGitleaksExit1(report);
 
     const { reportCheckShared } = await import('./shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
@@ -407,21 +362,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         Fingerprint: 'fp-anchor-end-real',
       },
     ]);
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          const list = args ?? [];
-          if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
-            return Buffer.from('');
-          const rp = list.find((a) => a.startsWith('--report-path='));
-          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
-          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
-        }),
-      };
-    });
+    mockGitleaksExit1(report);
 
     const { reportCheckShared } = await import('./shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };
@@ -475,21 +416,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         Fingerprint: 'fp-db',
       },
     ]);
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          const list = args ?? [];
-          if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
-            return Buffer.from('');
-          const rp = list.find((a) => a.startsWith('--report-path='));
-          if (rp) writeFileSync(rp.slice('--report-path='.length), report);
-          throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
-        }),
-      };
-    });
+    mockGitleaksExit1(report);
 
     const { reportCheckShared } = await import('./shared.ts');
     const section: Section = { header: 'Shared scan', items: [] };

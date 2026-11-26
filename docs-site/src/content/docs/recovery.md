@@ -174,8 +174,9 @@ Session <sid-aaaa>:
 After recovery, re-run nomad push.
 ```
 
-Files that use a git clean filter (Git LFS or git-crypt, for example) are scanned as they are on
-disk, so the scan can flag content that the repo stores encrypted or as an LFS pointer.
+Changed files that use a git clean filter (Git LFS or git-crypt, for example) are scanned as they
+are on disk, so the scan can flag content that the repo stores encrypted or as an LFS pointer. A
+filtered file this push does not change is not scanned again.
 
 When a leak appears only in non-session paths (a subagent transcript under
 `shared/projects/<logical>/<id>/subagents/`, or an opted-in extra such as `.planning` or
