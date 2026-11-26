@@ -7,7 +7,8 @@
  *
  * `commands/push/gitleaks.ts` re-exports these so existing import sites are unaffected.
  * Dependency flows one way (`commands/push/gitleaks.ts` -> this module -> `gitleaks.config.ts`
- * for `resolveTomlConfig` and `gitleaks.stage.ts` for the git staging steps); no cycle.
+ * for `resolveTomlConfig`, `gitleaks.stage.ts` for the git staging steps, and
+ * `gitleaks.filtered.ts` for the clean-filter re-scan, which imports only types back); no cycle.
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
@@ -27,6 +28,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { GITLEAKS_SCAN_TIMEOUT_MS, repoHome } from '../../core/config.ts';
 import { resolveTomlConfig } from './gitleaks.config.ts';
+import { withFilteredFindings } from './gitleaks.filtered.ts';
 import {
   forceTextDiff,
   removeScratch,
@@ -70,8 +72,8 @@ export type Finding = {
   /**
    * The matched secret value. `scanStagedTree` passes `--redact`, so on the
    * push path this arrives as the literal string `REDACTED`, never the real
-   * value; `scanFile` (no `--redact`) returns the real value. Absent on older
-   * gitleaks reports.
+   * value; `scanFile` returns the real value unless `redact` is set. Absent on
+   * older gitleaks reports.
    */
   Secret?: string;
   /**
@@ -267,8 +269,19 @@ function loggedErrorFailure(log: string, forwardStreams: boolean): Finding[] | n
  * `gitleaks detect --no-git` also diverges from this mechanism (it chunks large
  * files and misses a keyword-gated match whose keyword is far away), which is
  * why `scanFile` uses the same staged scan.
+ *
+ * Staged paths with a clean filter (git-lfs, say) hold only the filter output in
+ * the index, so their working-tree files are re-scanned via `scanFile` and merged
+ * in; any failure there also returns `null`.
  */
 export function scanStagedTree(repoDir: string, forwardStreams = false): Finding[] | null {
+  const staged = scanStagedIndex(repoDir, forwardStreams);
+  if (staged === null) return null;
+  return withFilteredFindings(repoDir, staged, scanFile, forwardStreams);
+}
+
+/** The `gitleaks protect --staged` scan of the index in `repoDir`, as described on `scanStagedTree`. */
+function scanStagedIndex(repoDir: string, forwardStreams: boolean): Finding[] | null {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   const reportPath = join(cacheDir, `gitleaks-${nowTimestamp()}-${process.pid}.json`);
@@ -320,6 +333,10 @@ export type ScanFileOptions = {
   forwardStreams?: boolean;
   /** Ceiling (ms) for the whole scan, shared by the git calls and gitleaks. Default `GITLEAKS_SCAN_TIMEOUT_MS`. */
   timeoutMs?: number;
+  /** Adds `--redact` so the report never holds real values. */
+  redact?: boolean;
+  /** Repo whose `.gitleaksignore` applies when `stagedRel` is given. Default `repoHome()`. */
+  repoDir?: string;
 };
 
 /** Injectable single-file scan seam; `scanFile` is the default implementation. */
@@ -328,13 +345,13 @@ export type ScanFn = (filePath: string, opts?: ScanFileOptions) => Finding[] | n
 /**
  * Scan a single non-staged file by staging a copy into a private temp repo at
  * its push-layout path and running `gitleaks protect --staged` with the same
- * `resolveTomlConfig` config as the push gate, plus the sync repo's
- * `.gitleaksignore` when `stagedRel` is given, so the same allowlists and
+ * `resolveTomlConfig` config as the push gate, plus the `.gitleaksignore` of
+ * `repoDir` (default the sync repo) when `stagedRel` is given, so the same allowlists and
  * Allowed fingerprints apply (`detect --no-git`
  * chunks large files and misses a keyword-gated match whose keyword is far
  * away). Omits `--config` when no base config exists.
  *
- * Intentionally does NOT pass `--redact` so that `Finding.Match` and
+ * Does NOT pass `--redact` unless `opts.redact` is set, so that `Finding.Match` and
  * `Finding.Secret` carry the real secret value. Callers that need to perform
  * value-based redaction (e.g. the push recovery `applyRedact` and `cmdRedact`)
  * require the literal match to replace it in the transcript. Because this report
@@ -396,10 +413,11 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
       `--report-path=${reportPath}`,
     ];
     if (toml !== null) args.push('--config', toml);
+    if (opts.redact === true) args.push('--redact');
     // Push-layout files only: the push gate's ignore file, so Redact leaves Allowed values alone.
     // Resolved because gitleaks runs inside the scratch repo, where a relative NOMAD_REPO breaks.
     if (opts.stagedRel !== undefined) {
-      args.push(`--gitleaks-ignore-path=${resolve(repoHome(), '.gitleaksignore')}`);
+      args.push(`--gitleaks-ignore-path=${resolve(opts.repoDir ?? repoHome(), '.gitleaksignore')}`);
     }
     const env = gitleaksEnv(execOpts, join(reportDir, 'no-gitconfig'));
     const errLog = runGitleaks(args, { ...until(execOpts, deadline), env }, `${reportPath}.log`);

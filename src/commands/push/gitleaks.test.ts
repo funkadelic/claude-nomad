@@ -1398,7 +1398,8 @@ describe('--config wiring (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin !== 'gitleaks') return Buffer.from('');
           capturedArgs = [...(args ?? [])];
           // Simulate a clean scan so the function returns without throwing.
           const flag = capturedArgs.find((a) => a.startsWith('--report-path='));
@@ -1431,7 +1432,8 @@ describe('--config wiring (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin !== 'gitleaks') return Buffer.from('');
           capturedArgs = [...(args ?? [])];
           const flag = capturedArgs.find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {

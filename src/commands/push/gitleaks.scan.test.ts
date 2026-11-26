@@ -195,6 +195,43 @@ describe('scanFile (mocked child_process)', () => {
     );
   });
 
+  it('passes --redact when asked', async () => {
+    let gitleaksArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'gitleaks') gitleaksArgs = args ?? [];
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(target, { redact: true })).toEqual([]);
+    expect(gitleaksArgs).toContain('--redact');
+  });
+
+  it('reads the ignore file from the repoDir option', async () => {
+    let gitleaksArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'gitleaks') gitleaksArgs = args ?? [];
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    const stagedRel = join('shared', 'projects', 'myproj', 's.jsonl');
+    expect(scanFile(target, { stagedRel, repoDir: 'other-repo' })).toEqual([]);
+    expect(gitleaksArgs).toContain(
+      `--gitleaks-ignore-path=${resolve('other-repo', '.gitleaksignore')}`,
+    );
+  });
+
   it('returns null without running anything when stagedRel escapes the scratch repo', async () => {
     const exec = vi.fn(() => Buffer.from(''));
     vi.doMock('node:child_process', async (importOriginal) => {
@@ -669,8 +706,8 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          seenArgs = args ?? [];
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'gitleaks') seenArgs = args ?? [];
           return Buffer.from('');
         }),
       };
@@ -691,8 +728,8 @@ describe('scanStagedTree (mocked child_process, resolveTomlPath wiring)', () => 
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
-          seenArgs = args ?? [];
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin === 'gitleaks') seenArgs = args ?? [];
           return Buffer.from('');
         }),
       };
@@ -1104,6 +1141,23 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
       recursive: true,
       force: true,
     });
+  });
+
+  it('scanStagedTree names the cause when git fails with no captured output', async () => {
+    const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          throw new Error('git broke');
+        }),
+      };
+    });
+    const { scanStagedTree } = await import('./gitleaks.scan.ts');
+    expect(scanStagedTree(testHome, true)).toBeNull();
+    expect(write).toHaveBeenCalledWith('scan aborted: git broke\n');
+    write.mockRestore();
   });
 
   it('scanStagedTree removes the temp config on the failure path', async () => {
