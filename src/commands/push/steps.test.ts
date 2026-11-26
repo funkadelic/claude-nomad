@@ -87,6 +87,7 @@ function mockCommitDeps(opts: {
     const actual = await importOriginal<typeof leakVerdictModule>();
     return { ...actual, scanPushVerdict: vi.fn(() => opts.verdict ?? CLEAN_VERDICT) };
   });
+  vi.doMock('./size-gate.ts', () => ({ assertStagedUnderCap: vi.fn() }));
   if (opts.resolveSpy !== undefined) {
     vi.doMock('./recovery/recovery.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof recoveryModule>();

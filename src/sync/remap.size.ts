@@ -4,7 +4,7 @@ import { MAX_SESSION_FILE_BYTES } from '../core/config.ts';
 import { warn } from '../core/utils.ts';
 
 /** Bytes to whole MiB, rounded up so an over-cap size never prints equal to the limit. */
-const mib = (n: number): number => Math.ceil(n / (1024 * 1024));
+export const mib = (n: number): number => Math.ceil(n / (1024 * 1024));
 
 /**
  * Warn and return `true` when `srcPath` is a regular file over `cap` bytes, so
