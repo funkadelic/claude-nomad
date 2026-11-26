@@ -473,12 +473,11 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
   /**
    * Generate a real temp config for `overlay` and return its body (temp dir removed).
    * @param overlay The overlay file contents.
-   * @param singleFile Resolve in the single-file (redact re-scan) mode.
    */
-  async function generatedBody(overlay: string, singleFile = false): Promise<string> {
+  async function generatedBody(overlay: string): Promise<string> {
     writeFileSync(join(repoHome, '.gitleaks.overlay.toml'), overlay);
     const { resolveTomlConfig } = await import('./gitleaks.config.ts');
-    const result = resolveTomlConfig({ singleFile });
+    const result = resolveTomlConfig();
     try {
       return readFileSync(result.path!, 'utf8');
     } finally {
@@ -486,109 +485,28 @@ describe('resolveTomlConfig (overlay merge logic)', () => {
     }
   }
 
-  it('carries exactly the bundled targetRules allowlist block after the overlay body', async () => {
-    const body = await generatedBody(
-      "[[allowlists]]\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = \"AND\"\n",
-    );
-    const { resolveTomlPath } = await import('./gitleaks.config.ts');
-    const keyLine = /^[ \t]*targetRules[ \t]*=/gm;
-    const expected = readFileSync(resolveTomlPath()!, 'utf8').match(keyLine)?.length ?? 0;
-    expect(expected).toBeGreaterThan(0);
-    expect(body.match(keyLine)).toHaveLength(expected);
-    // One overlay block plus one per carried block; a comment-only mention adds none.
-    expect(body.match(/^\[\[allowlists\]\]/gm)).toHaveLength(1 + expected);
-    expect(body.indexOf('zzunrelated')).toBeLessThan(body.search(keyLine));
-  });
-
-  it.each(['[allowlist]', '["allowlist"]', "[ 'allowlist' ]"])(
-    'carries nothing for a legacy %s overlay (gitleaks rejects the mix)',
-    async (header) => {
-      const body = await generatedBody(
-        `${header}\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = "AND"\n`,
-      );
-      expect(body).not.toMatch(/^[ \t]*targetRules[ \t]*=/m);
-      expect(body).toContain(header);
-    },
-  );
-
-  const keyLine = /^[ \t]*targetRules[ \t]*=/gm;
   const globalBlock = (marker: string): string =>
     `[[allowlists]]\nregexes = ['''${marker}''']\npaths = ['''^nothing/''']\ncondition = "AND"\n`;
-  const scopedBlock = (marker: string, header = '[[allowlists]]', key = 'targetRules'): string =>
-    `${header}\n${key} = ["github-pat"]\nregexes = ['''${marker}''']\npaths = ['''^nothing/''']\ncondition = "AND"\n`;
 
-  /** Count of targetRules key lines in the bundled config. */
-  async function bundledCount(): Promise<number> {
-    const { resolveTomlPath } = await import('./gitleaks.config.ts');
-    return readFileSync(resolveTomlPath()!, 'utf8').match(keyLine)?.length ?? 0;
-  }
-
-  it('single-file drops a global overlay block, keeps a targetRules one, carries the bundled blocks', async () => {
-    const overlay = `${globalBlock('zzglobal')}\n${scopedBlock('zzkept')}`;
-    const body = await generatedBody(overlay, true);
-    expect(body).not.toContain('zzglobal');
-    expect(body).toContain('zzkept');
-    expect(body.match(keyLine)).toHaveLength((await bundledCount()) + 1);
-  });
-
-  it('single-file matches TargetRules in any letter case', async () => {
-    const overlay = `${globalBlock('zzglobal')}\n${scopedBlock('zzkept', '[[allowlists]]', 'TargetRules')}`;
-    const body = await generatedBody(overlay, true);
-    expect(body).not.toContain('zzglobal');
-    expect(body).toContain('zzkept');
-  });
-
-  it.each([
-    ['no targetRules key', globalBlock('zzglobal')],
-    [
-      'an empty targetRules',
-      globalBlock('zzglobal').replace('regexes', 'targetRules = []\nregexes'),
-    ],
-  ])(
-    'single-file with only a global block (%s) emits no inline allowlists',
-    async (_l, overlay) => {
-      const body = await generatedBody(overlay, true);
-      expect(body).not.toContain('zzglobal');
-      expect(body).not.toMatch(/^allowlists\s*=/m);
-      const expected = await bundledCount();
-      expect(expected).toBeGreaterThan(0);
-      expect(body.match(keyLine)).toHaveLength(expected);
-    },
-  );
-
-  it.each(['[allowlist]', '["allowlist"]', "[ 'allowlist' ]"])(
-    'single-file drops a legacy %s overlay and carries the bundled blocks',
-    async (header) => {
-      const body = await generatedBody(
-        `${header}\nregexes = ['''zzunrelated''']\npaths = ['''^nothing/''']\ncondition = "AND"\n`,
-        true,
-      );
-      expect(body).not.toContain('zzunrelated');
-      expect(body).not.toContain(header);
-      const expected = await bundledCount();
-      expect(expected).toBeGreaterThan(0);
-      expect(body.match(keyLine)).toHaveLength(expected);
-    },
-  );
-
-  it('single-file leaves an overlay with no global block byte-identical', async () => {
-    const overlay = `# zzcomment\n[[allowlists]]\n  targetRules   =   ["github-pat"]\nregexes=['''zzkept''']\npaths = ['''^nothing/''']\ncondition="AND"\n`;
-    const body = await generatedBody(overlay, true);
-    expect(body.indexOf(overlay)).toBeGreaterThanOrEqual(0);
-    expect(body.indexOf(overlay)).toBe(body.lastIndexOf(overlay));
-  });
-
-  it('default mode splices a mixed overlay verbatim, global block included', async () => {
-    const overlay = `${globalBlock('zzglobal')}\n${scopedBlock('zzkept')}`;
+  it('splices a mixed overlay verbatim, global block included', async () => {
+    const scoped = globalBlock('zzkept').replace(
+      'regexes',
+      'targetRules = ["github-pat"]\nregexes',
+    );
+    const overlay = `${globalBlock('zzglobal')}\n${scoped}`;
     expect(await generatedBody(overlay)).toContain(overlay);
   });
 
-  it('single-file still rejects an unscoped overlay before stripping it', async () => {
-    writeFileSync(join(repoHome, '.gitleaks.overlay.toml'), '[[allowlists]]\nregexes = ["X"]\n');
-    const { resolveTomlConfig } = await import('./gitleaks.config.ts');
-    const { NomadFatal } = await import('../../core/utils.ts');
-    expect(() => resolveTomlConfig({ singleFile: true })).toThrow(NomadFatal);
-  });
+  it.each(['[allowlist]', '["allowlist"]', "[ 'allowlist' ]"])(
+    'splices a legacy %s overlay with no extra allowlist blocks (gitleaks rejects the mix)',
+    async (header) => {
+      const body = await generatedBody(
+        globalBlock('zzunrelated').replace('[[allowlists]]', header),
+      );
+      expect(body).toContain(header);
+      expect(body).not.toMatch(/^\[\[allowlists\]\]/m);
+    },
+  );
 });
 
 /**

@@ -1,13 +1,12 @@
 /**
  * Validates a user-owned `.gitleaks.overlay.toml` before it is chained onto the
  * bundled ruleset. The overlay syncs to every host, so an allowlist that is not
- * scoped to specific files would disable secret scanning fleet-wide. It also
- * strips the global blocks a single-file scan cannot scope.
+ * scoped to specific files would disable secret scanning fleet-wide.
  */
 
 import { join } from 'node:path';
 
-import { parse, stringify, type TomlError } from 'smol-toml';
+import { parse, type TomlError } from 'smol-toml';
 
 import { claudeHome } from '../../core/config.ts';
 import { NomadFatal } from '../../core/utils.ts';
@@ -17,8 +16,8 @@ type Table = Record<string, unknown>;
 
 /**
  * Paths no scoped pattern should match: one per common synced file type, as a
- * repo-relative path (push), and as absolute paths at the filesystem root and
- * under this host's Claude projects dir (the Redact re-scan matches absolute paths).
+ * repo-relative path (what every scan reports), and as absolute paths at the
+ * filesystem root and under this host's Claude projects dir.
  */
 function canaryPaths(): string[] {
   const local = join(claudeHome(), 'projects', 'nomad-canary-q7z');
@@ -307,19 +306,4 @@ export function assertOverlaySafe(overlayBody: string): { legacy: boolean } {
   for (const allowlist of allowlistTables(doc)) assertAllowlistScoped(allowlist);
   for (const rule of ruleTables(doc)) assertRuleIdNew(rule);
   return { legacy: doc.allowlist !== undefined };
-}
-
-/**
- * The overlay without its global allowlist blocks: the legacy `[allowlist]` table
- * and every `[[allowlists]]` entry lacking a non-empty `targetRules`. A global
- * block makes single-file detect skip the whole file on a path match, so there it
- * can only hide findings. Returns `overlayBody` unchanged when nothing is dropped.
- * @param overlayBody An overlay that already passed `assertOverlaySafe`.
- */
-export function stripGlobalAllowlists(overlayBody: string): string {
-  const { allowlist, allowlists, ...rest } = parseOverlay(overlayBody);
-  const blocks = [allowlists].flat().filter(isTable);
-  const kept = blocks.filter((b) => [lowerKeys(b).targetrules].flat().some(Boolean));
-  if (allowlist === undefined && kept.length === blocks.length) return overlayBody;
-  return stringify(kept.length > 0 ? { ...rest, allowlists: kept } : rest);
 }

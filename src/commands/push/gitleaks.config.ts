@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { repoHome } from '../../core/config.ts';
 import { packageRoot } from '../../core/package-root.ts';
 import { NomadFatal, warn } from '../../core/utils.ts';
-import { assertOverlaySafe, stripGlobalAllowlists } from './gitleaks.overlay-guard.ts';
+import { assertOverlaySafe } from './gitleaks.overlay-guard.ts';
 
 /**
  * Two-tier `.gitleaks.toml` lookup: returns `REPO_HOME/.gitleaks.toml` when
@@ -102,25 +102,6 @@ function notify(
   return undefined;
 }
 
-/** An allowlist table header in the bundled file: `[allowlist]` or `[[allowlists]]`. */
-const ALLOWLIST_HEADER_RE = /^\s*\[\[?\s*(["']?)allowlists?\1\s*\]\]?/;
-
-/** A `targetRules = ...` key line (not a comment mention). */
-const TARGET_RULES_KEY_RE = /^[ \t]*targetRules[ \t]*=/m;
-
-/**
- * Every allowlist table chunk of `tomlBody` that carries a real `targetRules`
- * key, concatenated. Chunks are split at table-header lines.
- *
- * @param tomlBody The bundled `.gitleaks.toml` contents.
- */
-function targetRulesBlocks(tomlBody: string): string {
-  return tomlBody
-    .split(/^(?=[ \t]*\[)/m)
-    .filter((chunk) => ALLOWLIST_HEADER_RE.test(chunk) && TARGET_RULES_KEY_RE.test(chunk))
-    .join('');
-}
-
 /**
  * Read the overlay body and write the generated temp config that chains it onto
  * the bundled base. Separated from `resolveTomlConfig` so the I/O try/catch
@@ -130,32 +111,26 @@ function targetRulesBlocks(tomlBody: string): string {
  * never swallowed by the generation-failure fallback catch.
  *
  * The temp body is `extend = { path = <bundled abs path JSON> }\n\n<overlay body>` (an
- * inline table, so the overlay's leading bare keys stay top-level, not in `extend`)
- * followed by every bundled `[[allowlists]]` block with a `targetRules` key
- * (gitleaks drops those from an extended parent), skipped when the overlay uses
- * a legacy `[allowlist]` table. It is written as `config.toml` inside a private
+ * inline table, so the overlay's leading bare keys stay top-level, not in `extend`).
+ * It is written as `config.toml` inside a private
  * directory created atomically with `mkdtempSync` (mode 0o700) under `tmpdir()`
  * with a `nomad-gitleaks-cfg-` prefix (CWE-377: the private dir plus the `wx`
  * exclusive-create flag defeat a symlink-redirect in the world-writable temp
  * dir). The config file is written mode 0o600. If the write fails the directory
- * is removed before the error is rethrown. The `extend` path is the ABSOLUTE
- * bundled path because the scan CWD is uncontrolled at the `scanFile` and
- * `probeGitleaks` sites.
+ * is removed before the error is rethrown. The `extend` path is ABSOLUTE because
+ * the scan CWD is never the package root (a scratch repo, or uncontrolled at the
+ * `probeGitleaks` site).
  *
  * @param overlayBody The already-read overlay body (read once by the caller so a
  *   single buffer is both guarded and spliced, closing the guard/build TOCTOU).
  * @param bundled Absolute path to the bundled `.gitleaks.toml` (from `resolveTomlPath`).
- * @param legacy True when the overlay uses a legacy `[allowlist]` table.
  * @returns The generated temp directory and the config file path inside it.
  */
 function buildOverlayTempConfig(
   overlayBody: string,
   bundled: string,
-  legacy: boolean,
 ): { configPath: string; tempPath: string } {
-  // gitleaks rejects a file mixing `[allowlist]` and `[[allowlists]]`.
-  const carried = legacy ? '' : targetRulesBlocks(readFileSync(bundled, 'utf8'));
-  const tempBody = `extend = { path = ${JSON.stringify(bundled)} }\n\n${overlayBody}\n${carried}`;
+  const tempBody = `extend = { path = ${JSON.stringify(bundled)} }\n\n${overlayBody}\n`;
   const tempPath = mkdtempSync(join(tmpdir(), 'nomad-gitleaks-cfg-'));
   const configPath = join(tempPath, 'config.toml');
   try {
@@ -199,7 +174,6 @@ function buildOverlayTempConfig(
  *     the overlay syncs across hosts, disable scanning fleet-wide.
  *   - Overlay present, bundled base resolvable: generates the temp config and
  *     returns `{ path: tempPath, tempPath }`.
- *   - Single-file mode drops global overlay blocks after the safety guard ran.
  *   - Generation failure for any reason: if reading the overlay or the bundled
  *     base, or writing the temp, throws (ENOSPC, EACCES, EROFS, missing tmpdir,
  *     unreadable overlay, etc.), emit a notice (once per process) and fall back
@@ -211,18 +185,11 @@ function buildOverlayTempConfig(
  *
  * In quiet mode each notice is returned on the result instead of being printed.
  *
- * @param options.singleFile True for a one-file scan (`scanFile`): global overlay
- *   blocks (no `targetRules`) are dropped, since single-file detect would skip the
- *   whole file on a path match. The legacy `[allowlist]` table goes too, so the
- *   bundled targetRules blocks are carried.
  * @param options.quiet Return the notice on the result instead of printing it.
  * @returns A `TomlConfigResult`; the caller passes `path` to `--config` (omitting
  *   the flag on `null`) and removes a non-null `tempPath` in a `finally`.
  */
-export function resolveTomlConfig({
-  singleFile = false,
-  quiet = false,
-}: { singleFile?: boolean; quiet?: boolean } = {}): TomlConfigResult {
+export function resolveTomlConfig({ quiet = false }: { quiet?: boolean } = {}): TomlConfigResult {
   const repo = repoHome();
   const overlayPath = join(repo, '.gitleaks.overlay.toml');
   const repoToml = join(repo, '.gitleaks.toml');
@@ -253,9 +220,8 @@ export function resolveTomlConfig({
   // this fallback.
   try {
     const overlayBody = readFileSync(overlayPath, 'utf8');
-    const { legacy } = assertOverlaySafe(overlayBody);
-    const body = singleFile ? stripGlobalAllowlists(overlayBody) : overlayBody;
-    const { configPath, tempPath } = buildOverlayTempConfig(body, bundled, legacy && !singleFile);
+    assertOverlaySafe(overlayBody);
+    const { configPath, tempPath } = buildOverlayTempConfig(overlayBody, bundled);
     return { path: configPath, tempPath };
   } catch (err) {
     if (err instanceof NomadFatal) throw err;

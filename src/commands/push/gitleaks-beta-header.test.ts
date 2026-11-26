@@ -144,7 +144,7 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(local)?.map((f) => f.Secret)).toEqual([realToken]);
     });
 
-    it('applies only rule-scoped overlay blocks in the redact re-scan', () => {
+    it('applies global and rule-scoped overlay blocks in the redact re-scan, as push does', () => {
       rmSync(join(repoUnderHome, '.gitleaks.toml'));
       const paths = String.raw`paths = ['''abc123\.jsonl$''']`;
       writeFileSync(
@@ -155,7 +155,7 @@ describe.skipIf(!hasGitleaks)(
       const local = join(testHome, '.claude', 'projects', '-enc', 'abc123.jsonl');
       mkdirSync(dirname(local), { recursive: true });
       writeFileSync(local, `token ${patFor(0)}\ntoken ${patFor(1)}\n`);
-      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(1)]);
+      expect(scanFile(local)).toEqual([]);
     });
 
     it('still fires in the redact re-scan outside ~/.claude/projects', () => {
