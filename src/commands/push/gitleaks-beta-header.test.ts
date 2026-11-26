@@ -190,7 +190,9 @@ describe.skipIf(!hasGitleaks)(
       mkdirSync(dirname(local), { recursive: true });
       writeFileSync(local, `token ${patFor(2)}\n`);
       expect(scanFile(local)?.length).toBe(1);
-      expect(scanFile(local, { stagedRel: 'shared/projects/myproj/s.jsonl' })).toEqual([]);
+      // Built with join, as callers do: native separators must still match the `/` allowlist.
+      const stagedRel = join('shared', 'projects', 'myproj', 's.jsonl');
+      expect(scanFile(local, { stagedRel })).toEqual([]);
     });
 
     it('fails closed when git stages nothing for the file', () => {
