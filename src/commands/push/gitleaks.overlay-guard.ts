@@ -4,33 +4,23 @@
  * scoped to specific files would disable secret scanning fleet-wide.
  */
 
-import { join } from 'node:path';
-
 import { parse, type TomlError } from 'smol-toml';
 
-import { claudeHome } from '../../core/config.ts';
 import { NomadFatal } from '../../core/utils.ts';
 import { GITLEAKS_DEFAULT_RULE_IDS } from './gitleaks.default-rule-ids.ts';
 
 type Table = Record<string, unknown>;
 
 /**
- * Paths no scoped pattern should match: one per common synced file type, as a
- * repo-relative path (what every scan reports), and as absolute paths at the
- * filesystem root and under this host's Claude projects dir.
+ * Paths no scoped pattern should match: one per common synced file type, as the
+ * repo-relative path every scan reports.
  */
-function canaryPaths(): string[] {
-  const local = join(claudeHome(), 'projects', 'nomad-canary-q7z');
-  return [
-    'zz9q7.qk',
-    ...['qk', 'md', 'json', 'jsonl', 'toml', 'txt', 'yml'].flatMap((ext) => [
-      `nomad-canary-q7z/zz9.${ext}`,
-      `/nomad-canary-q7z/zz9.${ext}`,
-      String.raw`C:\nomad-canary-q7z\zz9.${ext}`,
-      join(local, `zz9.${ext}`),
-    ]),
-  ];
-}
+const CANARY_PATHS = [
+  'zz9q7.qk',
+  ...['qk', 'md', 'json', 'jsonl', 'toml', 'txt', 'yml'].map(
+    (ext) => `nomad-canary-q7z/zz9.${ext}`,
+  ),
+];
 
 /** Text no specific `regexes` pattern should match. */
 const CANARY_MATCHES = ['nomad-canary-zz9q7', ''];
@@ -47,9 +37,6 @@ const ROOT_KEYS = new Set([
   'allowlists',
   'rules',
 ]);
-
-/** Top-level block keys, which must be written in lowercase. */
-const BLOCK_KEYS = new Set(['allowlist', 'allowlists', 'rules']);
 
 /** Top-level metadata keys, which gitleaks only loads as strings. */
 const TEXT_KEYS = ['title', 'description', 'minversion'];
@@ -236,7 +223,7 @@ function assertAllowlistScoped(allowlist: Table): void {
       '.gitleaks.overlay.toml allowlist must be path-scoped: every [[allowlists]] block needs a `paths` entry so it cannot suppress findings repo-wide. Anchor `paths` to the files you intend to allow (e.g. shared/projects/<logical>/...jsonl).',
     );
   }
-  const broad: unknown = allowlist.paths.find((p) => isBroad(p, canaryPaths()));
+  const broad: unknown = allowlist.paths.find((p) => isBroad(p, CANARY_PATHS));
   if (broad !== undefined) {
     throw new NomadFatal(
       `.gitleaks.overlay.toml allowlist path ${JSON.stringify(broad)} is a catch-all: it matches unrelated files, or nomad cannot check its regex syntax. Anchor it to the files you intend to allow.`,
@@ -251,12 +238,10 @@ function assertAllowlistScoped(allowlist: Table): void {
 }
 
 /**
- * Reject an `extend` key, an unknown top-level key, or a block key not written in
- * lowercase (a `[[Allowlists]]` header collides with the bundled blocks nomad appends).
- * @param raw The parsed overlay with its keys as written.
+ * Reject an `extend` key, an unknown top-level key, or non-text metadata.
  * @param doc The same overlay with lowercased top-level keys.
  */
-function assertRootKeys(raw: Table, doc: Table): void {
+function assertRootKeys(doc: Table): void {
   if ('extend' in doc) {
     throw new NomadFatal(
       '.gitleaks.overlay.toml must not contain an [extend] block; it is generated automatically. Remove the [extend] section and retry.',
@@ -274,26 +259,16 @@ function assertRootKeys(raw: Table, doc: Table): void {
       `.gitleaks.overlay.toml top-level ${JSON.stringify(notText)} must be text, like ${notText} = "...".`,
     );
   }
-  // Only the block keys collide with the [[allowlists]] nomad appends; `minVersion` may stay camelCase.
-  const mixed = Object.keys(raw).find(
-    (key) => BLOCK_KEYS.has(key.toLowerCase()) && key !== key.toLowerCase(),
-  );
-  if (mixed !== undefined) {
-    throw new NomadFatal(
-      `.gitleaks.overlay.toml top-level key ${JSON.stringify(mixed)} must be written in lowercase, as ${JSON.stringify(mixed.toLowerCase())}.`,
-    );
-  }
 }
 
 /**
- * Throw `NomadFatal` unless the overlay is valid TOML with only known lowercase
+ * Throw `NomadFatal` unless the overlay is valid TOML with only known
  * top-level keys (no `extend`), path-scoped allowlists, and new rule ids.
  * @param overlayBody The already-read overlay file contents.
  */
 export function assertOverlaySafe(overlayBody: string): void {
-  const raw = parseOverlay(overlayBody);
-  const doc = lowerKeys(raw);
-  assertRootKeys(raw, doc);
+  const doc = lowerKeys(parseOverlay(overlayBody));
+  assertRootKeys(doc);
   for (const allowlist of allowlistTables(doc)) assertAllowlistScoped(allowlist);
   for (const rule of ruleTables(doc)) assertRuleIdNew(rule);
 }

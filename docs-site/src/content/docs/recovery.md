@@ -463,8 +463,7 @@ Five rules:
   Pick one approach: the overlay for additive tweaks, or a full `.gitleaks.toml` for total control.
 - Each top-level `[[allowlists]]` block must list the files it applies to in `paths`, and must not
   use a pattern that matches anything (such as `.*`) or every file of a common synced type (such as
-  `\.md$` or `\.jsonl$`), or, for an absolute path, every file under your home folder or
-  `~/.claude/projects/`. The overlay syncs to every host, so an allowlist without that
+  `\.md$` or `\.jsonl$`). The overlay syncs to every host, so an allowlist without that
   limit would hide real secrets on all of them; `nomad push` stops with an error instead, and so
   does `nomad doctor --check-shared`. A block that also has `regexes` must set `condition = "AND"`,
   as in the example below: without it gitleaks ignores every finding in the listed files, not just
@@ -480,9 +479,8 @@ Five rules:
   error instead, and so does `nomad doctor --check-shared`.
 - Outside its blocks, the overlay may only set `title`, `description`, and `minVersion`, each as
   text. Any other top-level setting (such as `disabledRules`) stops `nomad push` and
-  `nomad doctor --check-shared` with an error. Write block names in lowercase (`[[allowlists]]`, not
-  `[[Allowlists]]`). A legacy `[allowlist]` table is accepted on its own, but not mixed with
-  `[[allowlists]]` blocks: gitleaks cannot load that overlay.
+  `nomad doctor --check-shared` with an error. A legacy `[allowlist]` table is accepted on its own,
+  but not mixed with `[[allowlists]]` blocks: gitleaks cannot load that overlay.
 
 Example `<REPO_HOME>/.gitleaks.overlay.toml` (note: no `[extend]` block, and `paths` limits it to
 synced session transcripts):

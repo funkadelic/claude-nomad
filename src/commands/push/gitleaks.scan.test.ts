@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -475,6 +476,50 @@ describe('scanFile (mocked child_process)', () => {
       expect(bins.includes('gitleaks')).toBe(failing === 'gitleaks');
     },
   );
+
+  it('warns instead of throwing when the scratch dir cannot be removed', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        rmSync: vi.fn((p: unknown, o?: object) => {
+          if (String(p).includes('gitleaks-file-')) throw new Error('EBUSY');
+          actual.rmSync(String(p), o);
+        }),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(target)).toEqual([]);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('could not remove scan scratch'));
+  });
+
+  it('fails closed when gitleaks exits 0 but logged an ERR line', async () => {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (bin: string, _args?: readonly string[], opts?: { stdio?: unknown }) => {
+            if (bin === 'gitleaks') {
+              const fd = (opts?.stdio as number[])[2];
+              writeSync(fd, '11:47AM ERR [git] fatal: failed to read orderfile\n');
+            }
+            return Buffer.from('');
+          },
+        ),
+      };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(target, { forwardStreams: true })).toBeNull();
+    expect(stderrSpy).toHaveBeenCalledWith(
+      'scan aborted: gitleaks logged an error, so a clean result cannot be trusted\n',
+    );
+  });
 
   it('names the killing signal in the cause line on the crash path', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {

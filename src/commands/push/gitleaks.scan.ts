@@ -5,20 +5,38 @@
  * `commands/doctor/checks/shared.ts`): the `Finding` shape, the JSON-report
  * parser `readGitleaksReport`, `scanStagedTree`, and `scanFile`.
  *
- * Split into its own module so adding the git-stage step keeps both
- * `commands/push/gitleaks.ts` and `commands/doctor/checks/shared.ts` under the 200-line
- * cap. `commands/push/gitleaks.ts` re-exports these so existing import sites are
- * unaffected. Dependency flows one way (`commands/push/gitleaks.ts` -> this module, and
- * this module -> `commands/push/gitleaks.config.ts` for `resolveTomlConfig`); no cycle.
+ * `commands/push/gitleaks.ts` re-exports these so existing import sites are unaffected.
+ * Dependency flows one way (`commands/push/gitleaks.ts` -> this module -> `gitleaks.config.ts`
+ * for `resolveTomlConfig` and `gitleaks.stage.ts` for the git staging steps); no cycle.
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  copyFileSync,
+  fstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readSync,
+  rmSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
-import { claudeHome, GITLEAKS_SCAN_TIMEOUT_MS, repoHome } from '../../core/config.ts';
+import { GITLEAKS_SCAN_TIMEOUT_MS, repoHome } from '../../core/config.ts';
 import { resolveTomlConfig } from './gitleaks.config.ts';
+import {
+  forceTextDiff,
+  removeScratch,
+  repoExecOpts,
+  stageAll,
+  scratchExecOpts,
+  stagedRelPath,
+  stageScratchCopy,
+  until,
+} from './gitleaks.stage.ts';
 import { nowTimestamp } from '../../core/utils.fs.ts';
 
 /**
@@ -159,57 +177,6 @@ function resolveScanFailure(
 }
 
 /**
- * Scan exec options for a repo dir. An inherited GIT_DIR/GIT_INDEX_FILE/
- * GIT_WORK_TREE (e.g. from a git hook) would stage into the caller's repo
- * instead of `repoDir`, so they are stripped.
- */
-function repoExecOpts(repoDir: string): ExecFileSyncOptions {
-  const env = { ...process.env };
-  delete env.GIT_DIR;
-  delete env.GIT_INDEX_FILE;
-  delete env.GIT_WORK_TREE;
-  return { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'] };
-}
-
-/** Local attributes line that makes git show every file to gitleaks as text. */
-const FORCE_DIFF = '* diff';
-
-/**
- * Append `* diff` to the repo's local `info/attributes` and return a function
- * that puts the file back. A global or committed `-diff`/`binary` would make
- * `git diff` hide the content, so gitleaks would scan nothing; the last
- * matching line wins, and `diff` changes only diff output, never what is staged.
- */
-function forceTextDiff(opts: ExecFileSyncOptions): () => void {
-  const rel = String(execFileSync('git', ['rev-parse', '--git-path', 'info/attributes'], opts));
-  const path = resolve(String(opts.cwd), rel.trim() || join('.git', 'info', 'attributes'));
-  let body: string | null = null;
-  try {
-    body = readFileSync(path, 'utf8');
-  } catch {
-    // Absent: written fresh below and removed on restore.
-  }
-  mkdirSync(dirname(path), { recursive: true });
-  const prior = body ?? '';
-  const glue = prior === '' || prior.endsWith('\n') ? '' : '\n';
-  writeFileSync(path, `${prior}${glue}${FORCE_DIFF}\n`);
-  return () => (body === null ? rmSync(path, { force: true }) : writeFileSync(path, body));
-}
-
-/**
- * `git add -A` in the repo `opts` point at. Drops stdout and raises the stderr
- * buffer: a per-file CRLF warning (Git for Windows default) across thousands
- * of files would overflow the 1 MB default.
- */
-function stageAll(opts: ExecFileSyncOptions): void {
-  execFileSync('git', ['add', '-A'], {
-    ...opts,
-    stdio: ['ignore', 'ignore', 'pipe'],
-    maxBuffer: 64 * 1024 * 1024,
-  });
-}
-
-/**
  * Env for the gitleaks process. gitleaks runs its own `git diff` and reports
  * "no leaks" when that diff fails or is colored, so it skips the global and
  * system git config (`noGlobal` is a path that never exists) and forces color
@@ -226,69 +193,41 @@ function gitleaksEnv(opts: ExecFileSyncOptions, noGlobal: string): NodeJS.Proces
   };
 }
 
+/** A `--no-color` gitleaks log line at ERR level, e.g. `11:47AM ERR [git] fatal: ...`. */
+const ERR_LOG_LINE = /^\S+ ERR /m;
+
 /**
- * Fallback repo-relative staging path for a local file, used when the caller
- * does not pass the real one. The projects segment stays the encoded dir (push
- * uses the logical name), which the bundled `[^/]+` path patterns still match.
- * Files outside projects/ and skills/ get a fixed neutral name, so a source
- * named like `.gitattributes` is never interpreted by git or gitleaks.
+ * Run gitleaks with its log written to `logPath`, returning the log when it holds an
+ * ERR line and null otherwise. gitleaks logs ERR and still exits 0 when its own
+ * `git diff` fails (a bad `diff.orderFile` in the repo config, say), having scanned
+ * nothing, so a clean exit with an ERR line must not count as clean.
  */
-function stagedRelPath(filePath: string): string {
-  const abs = resolve(filePath);
-  for (const dir of ['projects', 'skills']) {
-    const root = join(claudeHome(), dir) + sep;
-    if (abs.startsWith(root)) return join('shared', dir, abs.slice(root.length));
+function runGitleaks(args: string[], opts: ExecFileSyncOptions, logPath: string): string | null {
+  const fd = openSync(logPath, 'w+', 0o600);
+  try {
+    execFileSync('gitleaks', [...args, '--no-color'], { ...opts, stdio: ['ignore', 'pipe', fd] });
+    const log = readFd(fd).toString('utf8');
+    return ERR_LOG_LINE.test(log) ? log : null;
+  } catch (err) {
+    // stderr goes to the log, so restore it for the crash diagnostic.
+    (err as { stderr?: Buffer | null }).stderr ??= readFd(fd);
+    throw err;
+  } finally {
+    closeSync(fd);
   }
-  return join('scan', 'file.txt');
 }
 
-/** Config overrides for the scratch repo: no CRLF rewrite, no fsmonitor daemon, no hooks. */
-const SCRATCH_GIT_CONFIG = [
-  '-c',
-  'core.autocrlf=false',
-  '-c',
-  'core.fsmonitor=false',
-  '-c',
-  'core.hooksPath=.nomad-no-hooks',
-];
-
-/**
- * Exec options for the scratch repo. Every inherited `GIT_*` var is dropped: an
- * object-dir or alternates override would write the unredacted blob outside
- * the private scratch dir.
- */
-function scratchExecOpts(repoDir: string): ExecFileSyncOptions {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => !k.toUpperCase().startsWith('GIT_')),
-  );
-  return { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'] };
+/** The whole file behind `fd`, read through the fd so the path cannot be swapped in between. */
+function readFd(fd: number): Buffer {
+  const buf = Buffer.alloc(fstatSync(fd).size);
+  readSync(fd, buf, 0, buf.length, 0);
+  return buf;
 }
 
-/** `opts` with the time left until `deadline` (epoch ms) as its timeout, at least 1 ms. */
-function until(opts: ExecFileSyncOptions, deadline: number): ExecFileSyncOptions {
-  return { ...opts, timeout: Math.max(1, deadline - Date.now()) };
-}
-
-/**
- * Init the scratch repo and stage its one file byte-for-byte. Repo-level
- * attributes override any global `core.attributesFile` (EOL, LFS filter, ident,
- * encoding), `-f` beats a global exclude, and the final `ls-files` throws when
- * git staged nothing (a `.git` path segment, say), so a skipped file fails
- * closed instead of scanning clean.
- */
-function stageScratchCopy(opts: ExecFileSyncOptions, rel: string, deadline: number): void {
-  execFileSync('git', ['init', '-q'], until(opts, deadline));
-  const info = join(String(opts.cwd), '.git', 'info');
-  mkdirSync(info, { recursive: true });
-  // `diff` beats an inherited `-diff`/`binary`, which would hide the content from gitleaks.
-  writeFileSync(join(info, 'attributes'), '* -text -filter -ident -working-tree-encoding diff\n');
-  execFileSync('git', [...SCRATCH_GIT_CONFIG, 'add', '-f', '-A'], {
-    ...until(opts, deadline),
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-  const pathspec = rel.split(sep).join('/');
-  const ls = [...SCRATCH_GIT_CONFIG, '--literal-pathspecs', 'ls-files', '--error-unmatch'];
-  execFileSync('git', [...ls, '--', pathspec], until(opts, deadline));
+/** Scan-failed result for a clean gitleaks exit that logged an error (see `runGitleaks`). */
+function loggedErrorFailure(log: string, forwardStreams: boolean): Finding[] | null {
+  const e = { message: 'gitleaks logged an error, so a clean result cannot be trusted' };
+  return resolveScanFailure(undefined, { ...e, stderr: Buffer.from(log) }, forwardStreams);
 }
 
 /**
@@ -355,8 +294,8 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     execFileSync('git', ['init', '-q'], opts);
     restore = forceTextDiff(opts);
     stageAll(opts);
-    execFileSync('gitleaks', args, gitleaksOpts);
-    return [];
+    const errLog = runGitleaks(args, gitleaksOpts, `${reportPath}.log`);
+    return errLog === null ? [] : loggedErrorFailure(errLog, forwardStreams);
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') throw err;
@@ -365,6 +304,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     restore();
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
     rmSync(reportPath, { force: true });
+    rmSync(`${reportPath}.log`, { force: true });
   }
 }
 
@@ -412,8 +352,9 @@ export type ScanFn = (filePath: string, opts?: ScanFileOptions) => Finding[] | n
  * report is treated as success-with-findings. Exit 0 means clean. Any other
  * failure (git or gitleaks missing, crashed or timed out, the file not staged,
  * a `stagedRel` outside the scratch repo, or a missing/unparseable report)
- * returns `null` rather than throwing, so callers get a clear scan-failed
- * signal without a stack trace.
+ * returns `null`, so callers get a clear scan-failed signal without a stack
+ * trace. The one throw is `resolveTomlConfig`'s `NomadFatal` for an unsafe
+ * overlay, which carries the fix the user needs.
  *
  * @param filePath Path to the file to scan (a relative path resolves against the CWD).
  * @param opts Staged path, stream forwarding and timeout; see `ScanFileOptions`.
@@ -424,7 +365,6 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
   const deadline = Date.now() + timeoutMs;
   const rel = opts.stagedRel ?? stagedRelPath(filePath);
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
-  mkdirSync(cacheDir, { recursive: true });
   // Resolve the config (which may generate its own temp file) BEFORE creating
   // the scratch dir: if resolveTomlConfig throws, no reportDir exists yet, so
   // the finally below cannot orphan an empty scratch dir under the cache.
@@ -437,6 +377,7 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
   let reportDir: string | undefined;
   let reportPath: string | undefined;
   try {
+    mkdirSync(cacheDir, { recursive: true });
     // mkdtempSync creates the dir 0o700; the prefix keeps it recognizable.
     reportDir = mkdtempSync(join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}-`));
     reportPath = join(reportDir, 'report.json');
@@ -461,14 +402,14 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
       args.push(`--gitleaks-ignore-path=${resolve(repoHome(), '.gitleaksignore')}`);
     }
     const env = gitleaksEnv(execOpts, join(reportDir, 'no-gitconfig'));
-    execFileSync('gitleaks', args, { ...until(execOpts, deadline), env });
-    return [];
+    const errLog = runGitleaks(args, { ...until(execOpts, deadline), env }, `${reportPath}.log`);
+    return errLog === null ? [] : loggedErrorFailure(errLog, forwardStreams);
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') return null;
     return resolveScanFailure(reportPath, e, forwardStreams);
   } finally {
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
-    if (reportDir !== undefined) rmSync(reportDir, { recursive: true, force: true });
+    if (reportDir !== undefined) removeScratch(reportDir);
   }
 }

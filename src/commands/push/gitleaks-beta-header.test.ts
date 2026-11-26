@@ -1,13 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -159,6 +163,65 @@ describe.skipIf(!hasGitleaks)(
       expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff');
     });
 
+    it.skipIf(process.platform === 'win32')(
+      'scans past a read-only local attributes file and restores it as it was',
+      () => {
+        execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+        const local = join(scanRoot, '.git', 'info', 'attributes');
+        mkdirSync(dirname(local), { recursive: true });
+        writeFileSync(local, '*.jsonl -diff\n');
+        chmodSync(local, 0o444);
+        write(transcript, betasLine(realToken));
+        expect(scanStagedTree(scanRoot)?.length).toBe(1);
+        expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n');
+        expect(statSync(local).mode & 0o777).toBe(0o444);
+      },
+    );
+
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+      'fails the scan without touching an unreadable local attributes file',
+      () => {
+        execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+        const local = join(scanRoot, '.git', 'info', 'attributes');
+        mkdirSync(dirname(local), { recursive: true });
+        writeFileSync(local, '*.jsonl -diff\n');
+        chmodSync(local, 0o000);
+        write(transcript, betasLine(realToken));
+        expect(scanStagedTree(scanRoot)).toBeNull();
+        chmodSync(local, 0o644);
+        expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n');
+      },
+    );
+
+    it.skipIf(process.platform === 'win32')(
+      'keeps a symlinked local attributes file a symlink and restores its target',
+      () => {
+        execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+        const local = join(scanRoot, '.git', 'info', 'attributes');
+        mkdirSync(dirname(local), { recursive: true });
+        const real = join(testHome, 'real-attributes');
+        writeFileSync(real, '*.jsonl -diff\n');
+        symlinkSync(real, local);
+        write(transcript, betasLine(realToken));
+        expect(scanStagedTree(scanRoot)?.length).toBe(1);
+        expect(lstatSync(local).isSymbolicLink()).toBe(true);
+        expect(readFileSync(real, 'utf8')).toBe('*.jsonl -diff\n');
+      },
+    );
+
+    it.skipIf(process.platform === 'win32').each([
+      ['a dangling', (_local: string) => join(testHome, 'missing-attributes')],
+      ['a looping', (local: string) => local],
+    ])('fails the scan without touching %s attributes symlink', (_label, targetOf) => {
+      execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+      const local = join(scanRoot, '.git', 'info', 'attributes');
+      mkdirSync(dirname(local), { recursive: true });
+      symlinkSync(targetOf(local), local);
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)).toBeNull();
+      expect(lstatSync(local).isSymbolicLink()).toBe(true);
+    });
+
     it('removes the attributes file it created', () => {
       write(transcript, betasLine(realToken));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
@@ -172,6 +235,16 @@ describe.skipIf(!hasGitleaks)(
       writeFileSync(join(testHome, '.gitconfig'), gitconfig);
       write(transcript, betasLine(realToken));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
+    });
+
+    it.each([
+      ['diff.orderFile naming a missing file', ['diff.orderFile', '.no-such-order']],
+      ['an unknown diff.algorithm', ['diff.algorithm', 'bogus']],
+    ])('fails closed on a repo %s that breaks the gitleaks diff', (_label, kv) => {
+      execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+      execFileSync('git', ['config', ...kv], { cwd: scanRoot });
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)).toBeNull();
     });
 
     it('scans a text file that holds a NUL byte', () => {
