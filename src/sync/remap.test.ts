@@ -8,6 +8,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,6 +16,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MAX_SESSION_FILE_BYTES } from '../core/config.ts';
 import type { ManifestDiff } from './manifest.ts';
 import type { RemapPullPreviewEvent } from './remap.ts';
 
@@ -1517,6 +1519,27 @@ describe('remapPush selective', () => {
     expect(existsSync(join(sharedProjects, 'foo', 'remaining.jsonl'))).toBe(true);
   });
 
+  it('does not report a project as pushed when its only change is over the cap', async () => {
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(localDir, { recursive: true });
+    const big = join(localDir, 'big.jsonl');
+    writeFileSync(big, '');
+    // Sparse, so the over-cap fixture costs no disk.
+    truncateSync(big, MAX_SESSION_FILE_BYTES + 1);
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const selection: ManifestDiff = { changed: new Set([big]), deleted: [] };
+
+    const { remapPush } = await import('./remap.ts');
+    const result = remapPush('20260630-000000', { selection });
+
+    expect(result.pushed).toEqual([]);
+    expect(existsSync(join(sharedProjects, 'foo', 'big.jsonl'))).toBe(false);
+  });
+
   it('copies a changed nested file under a subdirectory (memory/notes.md)', async () => {
     const localDir = join(claudeProjects, '-tmp-foo');
     mkdirSync(join(localDir, 'memory'), { recursive: true });
@@ -1649,8 +1672,8 @@ describe('remapPush selective', () => {
     const { remapPush } = await import('./remap.ts');
     // Must not throw even though the repo-side copy is absent.
     const result = remapPush('20260630-000000', { selection });
-    // foo had delta (the deleted ghost path), so it is recorded as pushed.
-    expect(result.pushed).toEqual(['foo']);
+    // Nothing changed on the repo side, so foo is not reported as pushed.
+    expect(result.pushed).toEqual([]);
     // The repo side was already clean: no error and no stray files created.
     expect(readdirSync(join(sharedProjects, 'foo'))).toHaveLength(0);
   });

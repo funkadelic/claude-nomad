@@ -4,7 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { applySelective, copyDirJsonlOnly } from './remap.ts';
+import { copyDirJsonlOnly } from './remap.ts';
+import { applySelective } from './remap.selective.ts';
 import { skipOversize } from './remap.size.ts';
 
 /** Test cap: 1 MiB, so fixtures stay small on every platform. */
@@ -117,19 +118,37 @@ describe('per-file size cap', () => {
     it('skips an over-cap changed file and copies the small one', () => {
       const big = put(src, 'big.jsonl', OVER);
       const small = put(src, 'small.jsonl', 8);
-      applySelective({ changed: new Set([big, small]), deleted: [] }, src, dst, CAP);
+      expect(applySelective({ changed: new Set([big, small]), deleted: [] }, src, dst, CAP)).toBe(
+        1,
+      );
       expect(existsSync(join(dst, 'big.jsonl'))).toBe(false);
       expect(existsSync(join(dst, 'small.jsonl'))).toBe(true);
       expect(errSpy).toHaveBeenCalledTimes(1);
       expect(warned()).toContain(`not syncing ${join(src, 'big.jsonl')} (2 MiB)`);
     });
 
-    it('leaves an existing repo copy of a skipped file untouched', () => {
+    it('removes an older repo copy of a skipped file, as a full mirror does', () => {
       const big = put(src, 'big.jsonl', OVER);
       mkdirSync(dst, { recursive: true });
       writeFileSync(join(dst, 'big.jsonl'), 'older');
-      applySelective({ changed: new Set([big]), deleted: [] }, src, dst, CAP);
-      expect(readFileSync(join(dst, 'big.jsonl'), 'utf8')).toBe('older');
+      expect(applySelective({ changed: new Set([big]), deleted: [] }, src, dst, CAP)).toBe(1);
+      expect(existsSync(join(dst, 'big.jsonl'))).toBe(false);
+    });
+
+    it('returns 0 when every changed file is over the cap and none was in the repo', () => {
+      const big = put(src, 'big.jsonl', OVER);
+      expect(applySelective({ changed: new Set([big]), deleted: [] }, src, dst, CAP)).toBe(0);
+    });
+
+    it('counts a removed repo copy of a deleted source file', () => {
+      mkdirSync(dst, { recursive: true });
+      writeFileSync(join(dst, 'gone.jsonl'), 'x');
+      const sel = {
+        changed: new Set<string>(),
+        deleted: [join(src, 'gone.jsonl'), join(src, 'never.jsonl')],
+      };
+      expect(applySelective(sel, src, dst, CAP)).toBe(1);
+      expect(existsSync(join(dst, 'gone.jsonl'))).toBe(false);
     });
 
     it('copies a changed file of exactly the cap with no warning', () => {
