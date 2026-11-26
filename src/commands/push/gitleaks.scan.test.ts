@@ -268,7 +268,7 @@ describe('scanFile (mocked child_process)', () => {
     const add = calls.find((c) => c.args.includes('add'))!.args;
     expect(add).toEqual(expect.arrayContaining(['core.autocrlf=false', 'core.fsmonitor=false']));
     expect(add.some((a) => a.startsWith('core.hooksPath='))).toBe(true);
-    expect(attributes).toBe('* -text -filter -ident -working-tree-encoding\n');
+    expect(attributes).toBe('* -text -filter -ident -working-tree-encoding diff\n');
   });
 
   it.each(['git', 'gitleaks'])('returns null when %s is absent (ENOENT)', async (missing) => {

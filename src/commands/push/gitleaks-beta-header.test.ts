@@ -212,6 +212,20 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(4)]);
     });
 
+    it.each([
+      ['-diff', 6],
+      ['binary', 7],
+    ])('scans the text despite a global %s attribute', (attr, i) => {
+      const attrs = join(testHome, 'global-attributes');
+      writeFileSync(attrs, `* ${attr}\n`);
+      writeFileSync(
+        join(testHome, '.gitconfig'),
+        `[core]\n\tattributesFile = ${attrs.replaceAll('\\', '/')}\n`,
+      );
+      const local = localSkill(`# token ${patFor(i)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(i)]);
+    });
+
     it('keeps the scratch objects out of an inherited GIT_OBJECT_DIRECTORY', () => {
       const foreign = join(testHome, 'foreign-objects');
       mkdirSync(foreign);

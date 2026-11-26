@@ -235,7 +235,8 @@ function stageScratchCopy(opts: ExecFileSyncOptions, rel: string): void {
   execFileSync('git', ['init', '-q'], opts);
   const info = join(String(opts.cwd), '.git', 'info');
   mkdirSync(info, { recursive: true });
-  writeFileSync(join(info, 'attributes'), '* -text -filter -ident -working-tree-encoding\n');
+  // `diff` beats an inherited `-diff`/`binary`, which would hide the content from gitleaks.
+  writeFileSync(join(info, 'attributes'), '* -text -filter -ident -working-tree-encoding diff\n');
   execFileSync('git', [...SCRATCH_GIT_CONFIG, 'add', '-f', '-A'], {
     ...opts,
     stdio: ['ignore', 'ignore', 'pipe'],
