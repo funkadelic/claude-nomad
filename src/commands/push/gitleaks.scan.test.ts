@@ -1120,6 +1120,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
  */
 describe('scanFile scratch-dir cleanup (real fs, real git)', () => {
   let originalHome: string | undefined;
+  let originalProfile: string | undefined;
   let originalNomadRepo: string | undefined;
   let testHome: string;
   let target: string;
@@ -1127,9 +1128,12 @@ describe('scanFile scratch-dir cleanup (real fs, real git)', () => {
 
   beforeEach(() => {
     originalHome = process.env.HOME;
+    originalProfile = process.env.USERPROFILE;
     originalNomadRepo = process.env.NOMAD_REPO;
     testHome = mkdtempSync(join(tmpdir(), 'nomad-scanfile-cleanup-'));
     process.env.HOME = testHome;
+    // os.homedir() reads USERPROFILE on Windows, not HOME.
+    process.env.USERPROFILE = testHome;
     process.env.NOMAD_REPO = join(testHome, 'repo');
     mkdirSync(process.env.NOMAD_REPO, { recursive: true });
     target = join(testHome, 'file.jsonl');
@@ -1143,6 +1147,8 @@ describe('scanFile scratch-dir cleanup (real fs, real git)', () => {
     vi.doUnmock('node:child_process');
     if (originalHome !== undefined) process.env.HOME = originalHome;
     else delete process.env.HOME;
+    if (originalProfile !== undefined) process.env.USERPROFILE = originalProfile;
+    else delete process.env.USERPROFILE;
     if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
     else delete process.env.NOMAD_REPO;
     rmSync(testHome, { recursive: true, force: true });
