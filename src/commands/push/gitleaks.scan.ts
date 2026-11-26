@@ -388,8 +388,9 @@ export type ScanFn = (filePath: string, opts?: ScanFileOptions) => Finding[] | n
 /**
  * Scan a single non-staged file by staging a copy into a private temp repo at
  * its push-layout path and running `gitleaks protect --staged` with the same
- * `resolveTomlConfig` config and the sync repo's `.gitleaksignore` as the push
- * gate, so the same allowlists and Allowed fingerprints apply (`detect --no-git`
+ * `resolveTomlConfig` config as the push gate, plus the sync repo's
+ * `.gitleaksignore` when `stagedRel` is given, so the same allowlists and
+ * Allowed fingerprints apply (`detect --no-git`
  * chunks large files and misses a keyword-gated match whose keyword is far
  * away). Omits `--config` when no base config exists.
  *
@@ -452,10 +453,13 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
       '--staged',
       '--report-format=json',
       `--report-path=${reportPath}`,
-      // The push gate's ignore file, so a finding the user Allowed is not redacted.
-      `--gitleaks-ignore-path=${join(repoHome(), '.gitleaksignore')}`,
     ];
     if (toml !== null) args.push('--config', toml);
+    // Push-layout files only: the push gate's ignore file, so Redact leaves Allowed values alone.
+    // Resolved because gitleaks runs inside the scratch repo, where a relative NOMAD_REPO breaks.
+    if (opts.stagedRel !== undefined) {
+      args.push(`--gitleaks-ignore-path=${resolve(repoHome(), '.gitleaksignore')}`);
+    }
     const env = gitleaksEnv(execOpts, join(reportDir, 'no-gitconfig'));
     execFileSync('gitleaks', args, { ...until(execOpts, deadline), env });
     return [];

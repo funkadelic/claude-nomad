@@ -249,14 +249,16 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(join(scanRoot, stagedRel), { stagedRel })).toEqual([]);
     });
 
-    it('skips a finding the sync repo .gitleaksignore already allows', () => {
+    it('skips a finding the push scan fingerprint already allows', () => {
       const local = join(testHome, '.claude', 'projects', '-enc', 's.jsonl');
       mkdirSync(dirname(local), { recursive: true });
-      writeFileSync(local, `a ${patFor(6)}\nb ${patFor(7)}\n`);
+      const body = `a ${patFor(6)}\nb ${patFor(7)}\n`;
+      writeFileSync(local, body);
       const stagedRel = join('shared', 'projects', 'myproj', 's.jsonl');
-      const first = scanFile(local, { stagedRel });
-      expect(first?.map((f) => f.Secret)).toEqual([patFor(6), patFor(7)]);
-      writeFileSync(join(repoUnderHome, '.gitleaksignore'), `${first?.[0]?.Fingerprint}\n`);
+      // Allow line 1 with the fingerprint the push gate reports for the same file.
+      write(stagedRel, body);
+      const pushed = scanStagedTree(scanRoot)?.find((f) => f.StartLine === 1);
+      writeFileSync(join(repoUnderHome, '.gitleaksignore'), `${pushed?.Fingerprint}\n`);
       expect(scanFile(local, { stagedRel })?.map((f) => f.Secret)).toEqual([patFor(7)]);
     });
 
