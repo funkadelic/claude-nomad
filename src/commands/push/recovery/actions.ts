@@ -18,7 +18,7 @@ import { applyRedact } from './redact.ts';
 import { dropSessionFromStaged } from './drop.ts';
 import { applyMemoryRedact, isMemoryFindingPath, memoryFileFromFinding } from './memory.ts';
 import { applySkillRedact, isSkillFindingPath, skillFileFromFinding } from './skills.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { Finding, ScanFn } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { log } from '../../../core/utils.ts';
 import { buildPromptHeader, groupFindingsForPrompt, sharedFingerprintPeers } from './display.ts';
@@ -167,7 +167,7 @@ type DispatchCtx = {
   map: PathMap;
   nowMs: () => number;
   repo: string;
-  scan: (p: string) => Finding[] | null;
+  scan: ScanFn;
   drop: (sid: string, map: PathMap) => boolean;
   redactedSids: Set<string>;
   droppedSids: Set<string>;
@@ -324,7 +324,7 @@ export function dispatchActions(
     map: PathMap;
     nowMs: () => number;
     repo: string;
-    scan?: (p: string) => Finding[] | null;
+    scan?: ScanFn;
     drop?: (sid: string, map: PathMap) => boolean;
   },
 ): void {

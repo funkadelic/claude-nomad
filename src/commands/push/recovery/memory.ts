@@ -39,7 +39,7 @@ import type { PathMap } from '../../../core/config.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
 import { assertSafeLogical } from '../../../core/config.sharedDirs.guard.ts';
 import { applyRedactions } from '../../redact/core.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { Finding, ScanFn } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { isSafeRelPath } from '../../../core/rel-path-guard.ts';
 import { backupBeforeWrite } from '../../../core/utils.fs.ts';
@@ -207,7 +207,7 @@ export function applyMemoryRedact(
   f: Finding,
   ts: string,
   map: PathMap,
-  scan: (p: string) => Finding[] | null = scanFile,
+  scan: ScanFn = scanFile,
 ): boolean {
   const refuse = (msg: string): false => {
     log(msg);
@@ -227,7 +227,8 @@ export function applyMemoryRedact(
     );
   }
 
-  const findings = scan(localPath);
+  const stagedRel = join('shared', 'projects', logical, 'memory', ...relPath.split('/'));
+  const findings = scan(localPath, { stagedRel });
   if (findings === null) {
     return refuse(`re-scan of ${logical}/memory/${relPath} failed; choose Skip.`);
   }
@@ -253,7 +254,7 @@ export function applyMemoryRedact(
   }
   writeFileSync(localPath, after, 'utf8');
 
-  const dest = join(repoHome(), 'shared', 'projects', logical, 'memory', ...relPath.split('/'));
+  const dest = join(repoHome(), stagedRel);
   mkdirSync(dirname(dest), { recursive: true });
   cpSync(localPath, dest, { force: true });
 

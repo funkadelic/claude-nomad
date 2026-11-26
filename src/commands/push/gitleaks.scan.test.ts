@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -129,7 +129,7 @@ describe('scanFile (mocked child_process)', () => {
   it.each([
     ['projects/-enc/s.jsonl', 'shared/projects/-enc/s.jsonl'],
     ['skills/demo/a.md', 'shared/skills/demo/a.md'],
-    ['../elsewhere/c.txt', 'c.txt'],
+    ['../elsewhere/.gitattributes', 'scan/file.txt'],
   ])('stages %s at %s and scans it with protect --staged', async (local, staged) => {
     const src = join(testHome, '.claude', local);
     mkdirSync(dirname(src), { recursive: true });
@@ -155,6 +155,112 @@ describe('scanFile (mocked child_process)', () => {
     expect(gitleaksArgs).toContain('protect');
     expect(gitleaksArgs).toContain('--staged');
     expect(gitleaksArgs).not.toContain('--redact');
+  });
+
+  it('stages at the caller-supplied stagedRel instead of deriving one', async () => {
+    const staged = join('shared', 'projects', 'myproj', 's.jsonl');
+    let stagedExists = false;
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args?: readonly string[], opts?: { cwd?: string }) => {
+          if (bin === 'git' && (args ?? []).includes('add')) {
+            stagedExists = existsSync(join(opts!.cwd!, staged));
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(target, { stagedRel: staged })).toEqual([]);
+    expect(stagedExists).toBe(true);
+  });
+
+  it('returns null without running anything when stagedRel escapes the scratch repo', async () => {
+    const exec = vi.fn(() => Buffer.from(''));
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return { ...actual, execFileSync: exec };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(target, { stagedRel: join('..', 'escape.txt') })).toBeNull();
+    expect(exec).not.toHaveBeenCalled();
+    expect(existsSync(join(testHome, '.cache', 'claude-nomad', 'escape.txt'))).toBe(false);
+  });
+
+  it('returns null and never runs gitleaks when git staged nothing', async () => {
+    const bins: string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          bins.push(bin);
+          if ((args ?? []).includes('ls-files')) {
+            throw Object.assign(new Error('did not match any file(s) known to git'), { status: 1 });
+          }
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(target)).toBeNull();
+    expect(bins).not.toContain('gitleaks');
+  });
+
+  it('isolates the scratch repo from inherited git env, hooks, fsmonitor and attributes', async () => {
+    const saved = {
+      obj: process.env.GIT_OBJECT_DIRECTORY,
+      alt: process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES,
+    };
+    process.env.GIT_OBJECT_DIRECTORY = join(testHome, 'foreign-objects');
+    process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = join(testHome, 'foreign-alt');
+    const calls: {
+      bin: string;
+      args: readonly string[];
+      opts: { env?: NodeJS.ProcessEnv; timeout?: number };
+    }[] = [];
+    let attributes = '';
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (
+            bin: string,
+            args: readonly string[],
+            opts: { cwd: string; env?: NodeJS.ProcessEnv; timeout?: number },
+          ) => {
+            calls.push({ bin, args, opts });
+            if (args.includes('add')) {
+              attributes = readFileSync(join(opts.cwd, '.git', 'info', 'attributes'), 'utf8');
+            }
+            return Buffer.from('');
+          },
+        ),
+      };
+    });
+    try {
+      const { scanFile } = await import('./gitleaks.scan.ts');
+      expect(scanFile(target, { timeoutMs: 4_000 })).toEqual([]);
+    } finally {
+      if (saved.obj === undefined) delete process.env.GIT_OBJECT_DIRECTORY;
+      else process.env.GIT_OBJECT_DIRECTORY = saved.obj;
+      if (saved.alt === undefined) delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+      else process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = saved.alt;
+    }
+    expect(calls.map((c) => c.bin)).toEqual(['git', 'git', 'git', 'gitleaks']);
+    for (const { opts } of calls) {
+      expect(Object.keys(opts.env ?? {}).filter((k) => k.toUpperCase().startsWith('GIT_'))).toEqual(
+        [],
+      );
+      expect(opts.timeout).toBe(4_000);
+    }
+    const add = calls.find((c) => c.args.includes('add'))!.args;
+    expect(add).toEqual(expect.arrayContaining(['core.autocrlf=false', 'core.fsmonitor=false']));
+    expect(add.some((a) => a.startsWith('core.hooksPath='))).toBe(true);
+    expect(attributes).toBe('* -text -filter -ident -working-tree-encoding\n');
   });
 
   it('returns null when gitleaks is absent (ENOENT)', async () => {
@@ -247,7 +353,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile(target, false)).toBeNull();
+    expect(scanFile(target)).toBeNull();
   });
 
   it('returns parsed findings on exit-1 and does NOT forward streams when the report parses', async () => {
@@ -289,7 +395,7 @@ describe('scanFile (mocked child_process)', () => {
     const { scanFile } = await import('./gitleaks.scan.ts');
     // forwardStreams=true but the report parses, so the `report === null`
     // guard is false and stderr must NOT be forwarded.
-    const findings = scanFile(target, true);
+    const findings = scanFile(target, { forwardStreams: true });
     expect(findings).not.toBeNull();
     expect(findings!).toHaveLength(1);
     const leaked = stderrSpy.mock.calls.some(
@@ -315,7 +421,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile(target, true)).toBeNull();
+    expect(scanFile(target, { forwardStreams: true })).toBeNull();
     const forwarded = stderrSpy.mock.calls.some(
       (c: unknown[]) =>
         Buffer.isBuffer(c[0]) && c[0].toString().includes('crash-stderr-diagnostic'),
@@ -338,7 +444,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile(target, true)).toBeNull();
+    expect(scanFile(target, { forwardStreams: true })).toBeNull();
     expect(stderrSpy).toHaveBeenCalledWith('scan aborted: spawnSync gitleaks ENOBUFS (SIGTERM)\n');
   });
 
@@ -377,7 +483,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    scanFile(target, false, 3_000);
+    scanFile(target, { timeoutMs: 3_000 });
     expect(capturedOpts?.timeout).toBe(3_000);
   });
 
@@ -399,7 +505,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile(target, true)).toBeNull();
+    expect(scanFile(target, { forwardStreams: true })).toBeNull();
     const forwarded = stdoutSpy.mock.calls.some(
       (c: unknown[]) =>
         Buffer.isBuffer(c[0]) && c[0].toString().includes('crash-stdout-diagnostic'),

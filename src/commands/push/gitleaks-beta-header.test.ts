@@ -1,6 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +63,7 @@ const ISOLATED = [
   'GIT_DIR',
   'GIT_INDEX_FILE',
   'GIT_WORK_TREE',
+  'GIT_OBJECT_DIRECTORY',
 ];
 
 describe.skipIf(!hasGitleaks)(
@@ -161,6 +170,53 @@ describe.skipIf(!hasGitleaks)(
     it('still fires in the redact re-scan outside ~/.claude/projects', () => {
       write('elsewhere/s.jsonl', betasLine(flag));
       expect(scanFile(join(scanRoot, 'elsewhere', 's.jsonl'))?.length).toBe(1);
+    });
+
+    /** Write `body` to a local skill file under the test `~/.claude` and return its path. */
+    function localSkill(body: string): string {
+      const local = join(testHome, '.claude', 'skills', 's', 'notes.md');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, body);
+      return local;
+    }
+
+    it('applies a logical-project overlay block when the caller passes the staged path', () => {
+      rmSync(join(repoUnderHome, '.gitleaks.toml'));
+      writeFileSync(
+        join(repoUnderHome, '.gitleaks.overlay.toml'),
+        `[[allowlists]]\nregexes = ['''${patFor(2)}''']\npaths = ['''^shared/projects/myproj/''']\ncondition = "AND"\n`,
+      );
+      const local = join(testHome, '.claude', 'projects', '-enc', 's.jsonl');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, `token ${patFor(2)}\n`);
+      expect(scanFile(local)?.length).toBe(1);
+      expect(scanFile(local, { stagedRel: 'shared/projects/myproj/s.jsonl' })).toEqual([]);
+    });
+
+    it('fails closed when git stages nothing for the file', () => {
+      const local = localSkill(`token ${patFor(3)}\n`);
+      expect(scanFile(local, { stagedRel: 'shared/skills/s/.git/notes.md' })).toBeNull();
+    });
+
+    it('stages the raw bytes despite a global attributes clean filter', () => {
+      const attrs = join(testHome, 'global-attributes');
+      writeFileSync(attrs, '* filter=wipe\n');
+      writeFileSync(
+        join(testHome, '.gitconfig'),
+        `[core]\n\tattributesFile = ${attrs.replaceAll('\\', '/')}\n` +
+          '[filter "wipe"]\n\tclean = git stripspace --strip-comments\n',
+      );
+      const local = localSkill(`# token ${patFor(4)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(4)]);
+    });
+
+    it('keeps the scratch objects out of an inherited GIT_OBJECT_DIRECTORY', () => {
+      const foreign = join(testHome, 'foreign-objects');
+      mkdirSync(foreign);
+      process.env.GIT_OBJECT_DIRECTORY = foreign;
+      const local = localSkill(`token ${patFor(5)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(5)]);
+      expect(readdirSync(foreign)).toEqual([]);
     });
 
     it('finds a keyword-gated secret whose keyword is far away in a large transcript', () => {

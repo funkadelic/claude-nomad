@@ -9,7 +9,7 @@ import type { PathMap } from '../../../core/config.ts';
 import { applyRedact, preflightRedactable } from './redact.ts';
 import { applyMemoryRedact, memoryFileFromFinding, preflightMemoryRedactable } from './memory.ts';
 import { applySkillRedact, preflightSkillRedactable, skillFileFromFinding } from './skills.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { Finding, ScanFn } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { NomadFatal } from '../../../core/utils.ts';
 import { findingKey, sessionIdFromFinding } from './seams.ts';
@@ -86,7 +86,7 @@ function redactAllOne(
   ts: string,
   map: PathMap,
   nowMs: () => number,
-  scan: (p: string) => Finding[] | null,
+  scan: ScanFn,
   dedupe: RedactAllDedupeState,
 ): void {
   const sid = sessionIdFromFinding(f);
@@ -144,7 +144,7 @@ export function redactAllFindings(
   ts: string,
   map: PathMap,
   nowMs: () => number,
-  scan: (p: string) => Finding[] | null = scanFile,
+  scan: ScanFn = scanFile,
 ): void {
   const refusals: string[] = [];
   const preflighted = new Set<string>();

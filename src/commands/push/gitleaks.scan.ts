@@ -13,9 +13,9 @@
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { claudeHome, GITLEAKS_SCAN_TIMEOUT_MS } from '../../core/config.ts';
 import { resolveTomlConfig } from './gitleaks.config.ts';
@@ -187,9 +187,11 @@ function initAndStage(opts: ExecFileSyncOptions, addArgs: string[]): void {
 }
 
 /**
- * Repo-relative path push stages a local file at, so the bundled `^shared/...`
- * path-scoped allowlists apply to a re-scan exactly as on the push gate.
- * Files outside projects/ and skills/ fall back to their basename.
+ * Fallback repo-relative staging path for a local file, used when the caller
+ * does not pass the real one. The projects segment stays the encoded dir (push
+ * uses the logical name), which the bundled `[^/]+` path patterns still match.
+ * Files outside projects/ and skills/ get a fixed neutral name, so a source
+ * named like `.gitattributes` is never interpreted by git or gitleaks.
  */
 function stagedRelPath(filePath: string): string {
   const abs = resolve(filePath);
@@ -197,7 +199,50 @@ function stagedRelPath(filePath: string): string {
     const root = join(claudeHome(), dir) + sep;
     if (abs.startsWith(root)) return join('shared', dir, abs.slice(root.length));
   }
-  return basename(abs);
+  return join('scan', 'file.txt');
+}
+
+/** Config overrides for the scratch repo: no CRLF rewrite, no fsmonitor daemon, no hooks. */
+const SCRATCH_GIT_CONFIG = [
+  '-c',
+  'core.autocrlf=false',
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  'core.hooksPath=.nomad-no-hooks',
+];
+
+/**
+ * Exec options for the scratch repo. Every inherited `GIT_*` var is dropped: an
+ * object-dir or alternates override would write the unredacted blob outside
+ * the private scratch dir. `timeout` bounds each git call and gitleaks.
+ */
+function scratchExecOpts(repoDir: string, timeoutMs: number): ExecFileSyncOptions {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => !k.toUpperCase().startsWith('GIT_')),
+  );
+  return { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs };
+}
+
+/**
+ * Init the scratch repo and stage its one file byte-for-byte. Repo-level
+ * attributes override any global `core.attributesFile` (EOL, LFS filter, ident,
+ * encoding), `-f` beats a global exclude, and the final `ls-files` throws when
+ * git staged nothing (a `.git` path segment, say), so a skipped file fails
+ * closed instead of scanning clean.
+ */
+function stageScratchCopy(opts: ExecFileSyncOptions, rel: string): void {
+  execFileSync('git', ['init', '-q'], opts);
+  const info = join(String(opts.cwd), '.git', 'info');
+  mkdirSync(info, { recursive: true });
+  writeFileSync(join(info, 'attributes'), '* -text -filter -ident -working-tree-encoding\n');
+  execFileSync('git', [...SCRATCH_GIT_CONFIG, 'add', '-f', '-A'], {
+    ...opts,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  const pathspec = rel.split(sep).join('/');
+  const ls = [...SCRATCH_GIT_CONFIG, '--literal-pathspecs', 'ls-files', '--error-unmatch'];
+  execFileSync('git', [...ls, '--', pathspec], opts);
 }
 
 /**
@@ -269,14 +314,29 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   }
 }
 
+/** Options for `scanFile`. */
+export type ScanFileOptions = {
+  /**
+   * Repo-relative path push stages the file at (`shared/projects/<logical>/...`),
+   * so path-scoped allowlists match exactly as on the push gate. Derived from
+   * the local path when absent.
+   */
+  stagedRel?: string;
+  /** Forward captured stderr/stdout on a scan crash (no parseable report). */
+  forwardStreams?: boolean;
+  /** Per-call ceiling (ms) for each git call and gitleaks. Default `GITLEAKS_SCAN_TIMEOUT_MS`. */
+  timeoutMs?: number;
+};
+
+/** Injectable single-file scan seam; `scanFile` is the default implementation. */
+export type ScanFn = (filePath: string, opts?: ScanFileOptions) => Finding[] | null;
+
 /**
  * Scan a single non-staged file by staging a copy into a private temp repo at
- * its push-layout path and running `gitleaks protect --staged` (the push gate's
- * mechanism; `detect --no-git` chunks large files and misses a keyword-gated
- * match whose keyword is far away). Returns a
- * `Finding[]` on success (empty when the file is clean, non-empty when secrets
- * are found), or `null` when the scan itself fails (gitleaks absent, gitleaks
- * crashed, or the report is missing or unparseable).
+ * its push-layout path and running `gitleaks protect --staged` with the same
+ * `resolveTomlConfig` config as the push gate, so the same allowlists apply
+ * (`detect --no-git` chunks large files and misses a keyword-gated match whose
+ * keyword is far away). Omits `--config` when no base config exists.
  *
  * Intentionally does NOT pass `--redact` so that `Finding.Match` and
  * `Finding.Secret` carry the real secret value. Callers that need to perform
@@ -293,38 +353,19 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
  *
  * Error model mirrors `scanStagedTree`: gitleaks exits non-zero when findings
  * exist (exit 1) or on an internal error (exit 2+). Exit 1 with a parseable
- * report is treated as success-with-findings. Exit 0 means clean. Any error
- * that produces no parseable report (including ENOENT for a missing binary)
+ * report is treated as success-with-findings. Exit 0 means clean. Any other
+ * failure (git or gitleaks missing, crashed or timed out, the file not staged,
+ * a `stagedRel` outside the scratch repo, or a missing/unparseable report)
  * returns `null` rather than throwing, so callers get a clear scan-failed
  * signal without a stack trace.
  *
- * `forwardStreams` (default `false`): when `true`, stderr/stdout captured on
- * the scan-crash path (report missing or unparseable) is written to the process
- * streams so the caller can surface it. On the findings path the streams are
- * suppressed; the structured `Finding[]` fully describes the result.
- *
- * Passes `--config <toml>` resolved via `resolveTomlConfig` (the
- * `.gitleaks.overlay.toml` merge over the two-tier `resolveTomlPath` base, with a
- * generated temp config cleaned up in the `finally`), mirroring the
- * `scanStagedTree` convention so allow-list entries apply consistently across
- * staged and non-staged scans. Omits the flag when no base config exists.
- *
- * @param filePath Absolute path to the file to scan.
- * @param forwardStreams Forward gitleaks stderr/stdout to process streams on
- *   scan-crash (report missing or unparseable). Default `false`.
- * @param timeoutMs Wall-clock ceiling (milliseconds) forwarded to the
- *   `execFileSync` options for the gitleaks invocation. Defaults to
- *   `GITLEAKS_SCAN_TIMEOUT_MS` (the pinned 900s push-scan ceiling), so every
- *   existing caller keeps its current behavior unchanged. A caller with a
- *   tighter latency budget (e.g. the crash-report redactor) can pass a
- *   shorter value.
+ * @param filePath Path to the file to scan (a relative path resolves against the CWD).
+ * @param opts Staged path, stream forwarding and timeout; see `ScanFileOptions`.
  * @returns `Finding[]` on success (possibly empty), `null` on scan error.
  */
-export function scanFile(
-  filePath: string,
-  forwardStreams = false,
-  timeoutMs = GITLEAKS_SCAN_TIMEOUT_MS,
-): Finding[] | null {
+export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[] | null {
+  const { forwardStreams = false, timeoutMs = GITLEAKS_SCAN_TIMEOUT_MS } = opts;
+  const rel = opts.stagedRel ?? stagedRelPath(filePath);
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
   // Resolve the config (which may generate its own temp file) BEFORE creating
@@ -339,21 +380,17 @@ export function scanFile(
   let reportDir: string | undefined;
   let reportPath: string | undefined;
   try {
-    // The unredacted report goes in an owner-only (0o700) scratch dir, not the
-    // shared cache dir; mkdtempSync creates the dir 0o700 so the transient
-    // report is never world-readable. The nowTimestamp/pid prefix keeps it
-    // recognizable.
+    // mkdtempSync creates the dir 0o700; the prefix keeps it recognizable.
     reportDir = mkdtempSync(join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}-`));
     reportPath = join(reportDir, 'report.json');
     // The report sits outside the repo so it is never staged.
     const repo = join(reportDir, 'repo');
-    const dest = join(repo, stagedRelPath(filePath));
+    const dest = resolve(repo, rel);
+    if (!dest.startsWith(repo + sep)) return null;
     mkdirSync(dirname(dest), { recursive: true });
     copyFileSync(filePath, dest);
-    const opts = repoExecOpts(repo);
-    // autocrlf off keeps staged bytes equal to the local file so `Match` stays
-    // locatable; -f stops a global exclude from dropping the file (a fake clean).
-    initAndStage(opts, ['-c', 'core.autocrlf=false', 'add', '-f', '-A']);
+    const execOpts = scratchExecOpts(repo, timeoutMs);
+    stageScratchCopy(execOpts, relative(repo, dest));
     const args: string[] = [
       'protect',
       '--staged',
@@ -361,7 +398,7 @@ export function scanFile(
       `--report-path=${reportPath}`,
     ];
     if (toml !== null) args.push('--config', toml);
-    execFileSync('gitleaks', args, { ...opts, timeout: timeoutMs });
+    execFileSync('gitleaks', args, execOpts);
     return [];
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };

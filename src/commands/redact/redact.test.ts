@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as fsModule from 'node:fs';
 import type * as utilsFsModule from '../../core/utils.fs.ts';
 import type * as lockfileModule from '../../core/utils.lockfile.ts';
-import type { Finding } from '../push/gitleaks.scan.ts';
+import type { Finding, ScanFileOptions } from '../push/gitleaks.scan.ts';
 
 /**
  * Unit tests for the pure TDD seams in `commands.redact.core.ts` and the
@@ -1331,8 +1331,10 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
     const { cmdRedact } = await import('./redact.ts');
     const farFuture = Date.now() + 10 * 60 * 1000;
 
-    // Main scan returns []; agent scan returns a finding.
-    const fakeScan = (p: string): Finding[] => {
+    // Main scan returns []; agent scan returns a finding. Both record their staged path.
+    const stagedRels = new Map<string, string | undefined>();
+    const fakeScan = (p: string, opts?: ScanFileOptions): Finding[] => {
+      stagedRels.set(p, opts?.stagedRel);
       if (p === agentPath) {
         return [
           {
@@ -1350,6 +1352,11 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
     };
 
     cmdRedact({ id: 'sess-agent' }, () => farFuture, fakeScan);
+    const stagedBase = join('shared', 'projects', 'myproject');
+    expect(stagedRels.get(transcriptPath)).toBe(join(stagedBase, 'sess-agent.jsonl'));
+    expect(stagedRels.get(agentPath)).toBe(
+      join(stagedBase, 'sess-agent', 'subagents', 'agent-1.jsonl'),
+    );
 
     // Agent file must have been redacted.
     const { readFileSync: realRead } = await import('node:fs');

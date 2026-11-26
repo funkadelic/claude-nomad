@@ -14,14 +14,14 @@
  */
 
 import { cpSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 
 import type { PathMap } from '../../../core/config.ts';
 import { claudeHome, HOST, repoHome } from '../../../core/config.ts';
 import { assertSafeLogical } from '../../../core/config.sharedDirs.guard.ts';
 import { resolveLiveTranscript } from '../../redact/redact.ts';
 import { applySubtreeRedactions, isSubtreeActive, listSubtreeFiles } from '../../redact/subtree.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { Finding, ScanFn } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { encodePath } from '../../../core/utils.json.ts';
 import { log } from '../../../core/utils.ts';
@@ -128,7 +128,7 @@ export function applyRedact(
   ts: string,
   map: PathMap,
   nowMs: () => number,
-  scan: (p: string) => Finding[] | null = scanFile,
+  scan: ScanFn = scanFile,
 ): boolean {
   /** Emit a refusal message and return false. */
   const refuse = (msg: string): false => {
@@ -180,8 +180,9 @@ export function applyRedact(
     );
   }
 
-  // Re-scan main file first; a null return means gitleaks itself failed.
-  const mainFindings = scan(localPath);
+  // Re-scan main file first at its staged path; a null return means the scan failed.
+  const stagedDir = relative(repo, stagedProjectDir);
+  const mainFindings = scan(localPath, { stagedRel: join(stagedDir, `${sid}.jsonl`) });
   if (mainFindings === null) {
     return refuse(`re-scan of the transcript failed; choose Skip or Drop session.`);
   }
@@ -197,6 +198,7 @@ export function applyRedact(
     ts,
     scan,
     false,
+    stagedDir,
   );
   if (anyTotal === 0) {
     return refuse(

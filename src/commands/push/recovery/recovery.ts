@@ -36,7 +36,7 @@ import {
 } from './actions.ts';
 import { redactAllFindings } from './redact-all.ts';
 import { EXIT } from '../../../core/exit-codes.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { ScanFn } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { buildSessionAwareFatal, partitionFindings } from '../gitleaks.ts';
 import type { LeakVerdict } from '../leak-verdict.ts';
@@ -66,7 +66,7 @@ export type RecoveryDeps = {
   /** Injectable prompt factory for tests (default: real readline). */
   makePrompt?: () => PromptFn;
   /** Injectable single-file scan for redaction (default: `scanFile`). */
-  scan?: (p: string) => Finding[] | null;
+  scan?: ScanFn;
   /** Injectable legend printer for tests (default: `printRecoveryLegend`). */
   printLegend?: () => void;
 };

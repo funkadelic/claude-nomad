@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as utilsFsModule from '../../../core/utils.fs.ts';
 import type * as utilsModule from '../../../core/utils.ts';
 import type { PathMap } from '../../../core/config.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { Finding, ScanFileOptions } from '../gitleaks.scan.ts';
 
 /**
  * Unit tests for `src/commands/push/recovery/memory.ts`: the project-level
@@ -381,8 +381,10 @@ describe('applyMemoryRedact', () => {
 
     const { applyMemoryRedact } = await import('./memory.ts');
     const trigger = makeFinding({ File: 'shared/projects/myproject/memory/notes.md' });
-    const fakeScan = (p: string): Finding[] =>
-      p === memoryPath
+    // Findings only when re-scanned at the staged path push uses.
+    const stagedRel = join('shared', 'projects', 'myproject', 'memory', 'notes.md');
+    const fakeScan = (p: string, opts?: ScanFileOptions): Finding[] =>
+      p === memoryPath && opts?.stagedRel === stagedRel
         ? [
             {
               RuleID: 'generic-api-key',

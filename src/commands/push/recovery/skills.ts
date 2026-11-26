@@ -40,7 +40,7 @@ import { dirname, join, sep } from 'node:path';
 import { claudeHome, repoHome } from '../../../core/config.ts';
 import { isGsdOwned } from '../../../sync/skills-sync.ts';
 import { applyRedactions } from '../../redact/core.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { Finding, ScanFn } from '../gitleaks.scan.ts';
 import { scanFile } from '../gitleaks.scan.ts';
 import { isSafeRelPath } from '../../../core/rel-path-guard.ts';
 import { backupBeforeWrite } from '../../../core/utils.fs.ts';
@@ -201,11 +201,7 @@ export function preflightSkillRedactable(f: Finding): string | null {
  * @param scan Injectable scan function for the local re-scan (default `scanFile`).
  * @returns True when the redaction was applied; false when refused or failed.
  */
-export function applySkillRedact(
-  f: Finding,
-  ts: string,
-  scan: (p: string) => Finding[] | null = scanFile,
-): boolean {
+export function applySkillRedact(f: Finding, ts: string, scan: ScanFn = scanFile): boolean {
   const refuse = (msg: string): false => {
     log(msg);
     return false;
@@ -222,7 +218,8 @@ export function applySkillRedact(
     return refuse(`could not locate the local skill file for ${name}/${relPath}; choose Skip.`);
   }
 
-  const findings = scan(localPath);
+  const stagedRel = join('shared', 'skills', name, ...relPath.split('/'));
+  const findings = scan(localPath, { stagedRel });
   if (findings === null) {
     return refuse(`re-scan of ${name}/${relPath} failed; choose Skip.`);
   }
@@ -248,7 +245,7 @@ export function applySkillRedact(
   }
   writeFileSync(localPath, after, 'utf8');
 
-  const dest = join(repoHome(), 'shared', 'skills', name, ...relPath.split('/'));
+  const dest = join(repoHome(), stagedRel);
   mkdirSync(dirname(dest), { recursive: true });
   cpSync(localPath, dest, { force: true });
 

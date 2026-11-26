@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as utilsModule from '../../../core/utils.ts';
 import type * as utilsFsModule from '../../../core/utils.fs.ts';
 import type { PathMap } from '../../../core/config.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { Finding, ScanFileOptions } from '../gitleaks.scan.ts';
 
 /**
  * Build a fixture: main transcript + optional subagents dir under a temp
@@ -122,7 +122,9 @@ describe('applyRedact: subagent-only secret is redacted and whole subtree is sta
     };
 
     // Scan returns the real secret only for agent-2.jsonl; [] for everything else.
-    const fakeScan = (p: string): Finding[] => {
+    const stagedRels = new Map<string, string | undefined>();
+    const fakeScan = (p: string, opts?: ScanFileOptions): Finding[] => {
+      stagedRels.set(p, opts?.stagedRel);
       if (p === agent2Path) {
         return [
           {
@@ -142,6 +144,12 @@ describe('applyRedact: subagent-only secret is redacted and whole subtree is sta
     const result = applyRedact(trigger, 'ts-x', map, () => farFuture, fakeScan);
 
     expect(result).toBe(true);
+    // Each file is re-scanned at the logical staged path push uses.
+    const stagedBase = join('shared', 'projects', 'myproject');
+    expect(stagedRels.get(transcriptPath)).toBe(join(stagedBase, 'sid123.jsonl'));
+    expect(stagedRels.get(agent2Path)).toBe(
+      join(stagedBase, 'sid123', 'subagents', 'agent-2.jsonl'),
+    );
     // agent-2 must have been redacted.
     const agent2Written = readFileSync(agent2Path, 'utf8');
     expect(agent2Written).toContain('[REDACTED:test-rule]');

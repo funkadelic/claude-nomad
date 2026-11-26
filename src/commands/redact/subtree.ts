@@ -11,10 +11,10 @@
  */
 
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 import { applyRedactions, isRecentlyModified } from './core.ts';
-import type { Finding } from '../push/gitleaks.scan.ts';
+import type { ScanFn } from '../push/gitleaks.scan.ts';
 import { backupBeforeWrite } from '../../core/utils.fs.ts';
 import { log } from '../../core/utils.ts';
 
@@ -124,6 +124,20 @@ export type DirtyFile = {
 };
 
 /**
+ * Staged path of a subtree file: its path relative to the main transcript's
+ * dir, under `stagedDir`. Undefined when the caller passed no staged dir.
+ */
+function subtreeStagedRel(
+  mainPath: string,
+  filePath: string,
+  stagedDir: string | undefined,
+): string | undefined {
+  return stagedDir === undefined
+    ? undefined
+    : join(stagedDir, relative(dirname(mainPath), filePath));
+}
+
+/**
  * Scan and redact a session subtree (main transcript plus every file under
  * the session directory). The main file's findings are supplied by the caller
  * (already scanned); all subtree files are scanned via `scan`. Skips files
@@ -143,6 +157,8 @@ export type DirtyFile = {
  * @param ts Backup timestamp for `backupBeforeWrite`.
  * @param scan Injectable scan function (without `--redact`).
  * @param dryRun When true, collect the dirty list but skip all writes.
+ * @param stagedDir Repo-relative dir push stages the main file's directory at
+ *   (`shared/projects/<logical>`), passed to `scan` per subtree file.
  * @returns `{ total, dirty }` where `total` is the finding count across all
  *   files and `dirty` lists every file that has (or would have) findings.
  */
@@ -152,13 +168,14 @@ export function applySubtreeRedactions(
   subtreeFiles: string[],
   rule: string | undefined,
   ts: string,
-  scan: (p: string) => Finding[] | null,
+  scan: ScanFn,
   dryRun: boolean,
+  stagedDir?: string,
 ): { total: number; dirty: DirtyFile[] } {
   const dirty: DirtyFile[] = [];
   if (mainFindings.length > 0) dirty.push({ path: mainPath, findings: mainFindings });
   for (const filePath of subtreeFiles) {
-    const raw = scan(filePath);
+    const raw = scan(filePath, { stagedRel: subtreeStagedRel(mainPath, filePath, stagedDir) });
     if (raw === null || raw.length === 0) continue;
     const filtered = rule === undefined ? raw : raw.filter((f) => f.RuleID === rule);
     if (filtered.length === 0) continue;

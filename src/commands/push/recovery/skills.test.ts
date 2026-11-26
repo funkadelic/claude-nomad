@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as utilsFsModule from '../../../core/utils.fs.ts';
 import type * as utilsModule from '../../../core/utils.ts';
-import type { Finding } from '../gitleaks.scan.ts';
+import type { Finding, ScanFileOptions } from '../gitleaks.scan.ts';
 
 /**
  * Unit tests for `src/commands/push/recovery/skills.ts`: the host-uniform
@@ -352,8 +352,10 @@ describe('applySkillRedact', () => {
 
     const { applySkillRedact } = await import('./skills.ts');
     const trigger = makeFinding({ File: 'shared/skills/foo/SKILL.md' });
-    const fakeScan = (p: string): Finding[] =>
-      p === skillPath
+    // Findings only when re-scanned at the staged path push uses.
+    const stagedRel = join('shared', 'skills', 'foo', 'SKILL.md');
+    const fakeScan = (p: string, opts?: ScanFileOptions): Finding[] =>
+      p === skillPath && opts?.stagedRel === stagedRel
         ? [
             {
               RuleID: 'generic-api-key',
