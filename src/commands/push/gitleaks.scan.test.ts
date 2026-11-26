@@ -477,6 +477,28 @@ describe('scanFile (mocked child_process)', () => {
     },
   );
 
+  it('warns instead of throwing when the scratch dir cannot be removed', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof fsModule>();
+      return {
+        ...actual,
+        rmSync: vi.fn((p: unknown, o?: object) => {
+          if (String(p).includes('gitleaks-file-')) throw new Error('EBUSY');
+          actual.rmSync(String(p), o);
+        }),
+      };
+    });
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(target)).toEqual([]);
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining('could not remove scan scratch'),
+    );
+  });
+
   it('fails closed when gitleaks exits 0 but logged an ERR line', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();

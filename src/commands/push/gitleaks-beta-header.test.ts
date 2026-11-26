@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -8,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -158,6 +160,21 @@ describe.skipIf(!hasGitleaks)(
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
       expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff');
     });
+
+    it.skipIf(process.platform === 'win32')(
+      'scans past a read-only local attributes file and restores it as it was',
+      () => {
+        execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+        const local = join(scanRoot, '.git', 'info', 'attributes');
+        mkdirSync(dirname(local), { recursive: true });
+        writeFileSync(local, '*.jsonl -diff\n');
+        chmodSync(local, 0o444);
+        write(transcript, betasLine(realToken));
+        expect(scanStagedTree(scanRoot)?.length).toBe(1);
+        expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n');
+        expect(statSync(local).mode & 0o777).toBe(0o444);
+      },
+    );
 
     it('removes the attributes file it created', () => {
       write(transcript, betasLine(realToken));
