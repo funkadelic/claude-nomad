@@ -70,10 +70,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (
-            ['init', 'rev-parse', 'ls-files', 'check-attr'].includes(list[0]) ||
-            list.includes('add')
-          )
+          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
             return Buffer.from('');
           throw Object.assign(new Error('gitleaks exited 1'), { status: 1 });
         }),
@@ -115,10 +112,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (
-            ['init', 'rev-parse', 'ls-files', 'check-attr'].includes(list[0]) ||
-            list.includes('add')
-          )
+          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
             return Buffer.from('');
           // gitleaks protect --staged exits non-zero but writes a parseable
           // empty array: both partition buckets are empty, so the reporter emits
@@ -194,10 +188,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (
-            ['init', 'rev-parse', 'ls-files', 'check-attr'].includes(list[0]) ||
-            list.includes('add')
-          )
+          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
             return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
@@ -273,10 +264,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (
-            ['init', 'rev-parse', 'ls-files', 'check-attr'].includes(list[0]) ||
-            list.includes('add')
-          )
+          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
             return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
@@ -354,10 +342,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (
-            ['init', 'rev-parse', 'ls-files', 'check-attr'].includes(list[0]) ||
-            list.includes('add')
-          )
+          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
             return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
@@ -429,10 +414,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (
-            ['init', 'rev-parse', 'ls-files', 'check-attr'].includes(list[0]) ||
-            list.includes('add')
-          )
+          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
             return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);
@@ -500,10 +482,7 @@ describe('reportCheckShared (mocked scan cleanup + partition)', () => {
         execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
           const list = args ?? [];
           if (list[0] === 'version') return Buffer.from('8.0.0');
-          if (
-            ['init', 'rev-parse', 'ls-files', 'check-attr'].includes(list[0]) ||
-            list.includes('add')
-          )
+          if (['init', 'rev-parse', 'diff-index'].includes(list[0]) || list.includes('add'))
             return Buffer.from('');
           const rp = list.find((a) => a.startsWith('--report-path='));
           if (rp) writeFileSync(rp.slice('--report-path='.length), report);

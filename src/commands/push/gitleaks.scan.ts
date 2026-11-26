@@ -270,9 +270,9 @@ function loggedErrorFailure(log: string, forwardStreams: boolean): Finding[] | n
  * files and misses a keyword-gated match whose keyword is far away), which is
  * why `scanFile` uses the same staged scan.
  *
- * Staged paths with a clean filter (git-lfs, say) hold only the filter output in
- * the index, so their working-tree files are re-scanned via `scanFile` and merged
- * in; any failure there also returns `null`.
+ * Changed files with a clean filter (git-lfs, say) or a `working-tree-encoding`
+ * hold only a transform in the index, so their working-tree files are re-scanned
+ * via `scanFile` and merged in; any failure there also returns `null`.
  */
 export function scanStagedTree(repoDir: string, forwardStreams = false): Finding[] | null {
   const staged = scanStagedIndex(repoDir, forwardStreams);

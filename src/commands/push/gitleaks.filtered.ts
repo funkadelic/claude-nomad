@@ -1,41 +1,105 @@
 /**
- * Re-scans the real content behind clean-filtered staged files (git-lfs, say),
- * which the staged scan sees only as filter output.
+ * Re-scans the real content behind staged files the index holds only as a
+ * transform of the working tree (a clean filter such as git-lfs, or a
+ * `working-tree-encoding`), which the staged scan never sees.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { join } from 'node:path';
 
 import type { Finding, ScanFn } from './gitleaks.scan.ts';
 import { repoExecOpts } from './gitleaks.stage.ts';
 
+/** Index modes git runs filters on; symlinks and gitlinks are never filtered. */
+const REGULAR_MODES = new Set(['100644', '100755']);
+
+/** Attribute values that leave a path untransformed. */
+const INACTIVE = new Set(['unspecified', 'unset']);
+
+/** stdin must be a pipe: execFileSync drops `input` when stdio[0] is 'ignore'. */
+const PIPED: ExecFileSyncOptions['stdio'] = ['pipe', 'pipe', 'pipe'];
+
+/** Split `buf` on NUL bytes, dropping the final terminator. */
+function splitNul(buf: Buffer): Buffer[] {
+  const out: Buffer[] = [];
+  let start = 0;
+  for (let i = buf.indexOf(0); i !== -1; i = buf.indexOf(0, start)) {
+    out.push(buf.subarray(start, i));
+    start = i + 1;
+  }
+  return out;
+}
+
+/** The tree the index is diffed against: HEAD, or the empty tree on an unborn branch. */
+function baseTree(opts: ExecFileSyncOptions): string {
+  try {
+    return String(execFileSync('git', ['rev-parse', '--verify', '-q', 'HEAD'], opts)).trim();
+  } catch {
+    const empty = execFileSync('git', ['hash-object', '-t', 'tree', '--stdin'], {
+      ...opts,
+      stdio: PIPED,
+      input: '',
+    });
+    return String(empty).trim();
+  }
+}
+
 /**
- * Staged paths (deletions excluded) whose `filter` attribute is set to a driver.
- * Throws on any git failure so the caller can fail closed.
+ * Raw path bytes of the regular files the index changes against the base tree,
+ * deletions excluded. Plumbing `diff-index` ignores `diff.*` porcelain config
+ * such as `diff.orderFile`, so a bad setting there cannot fail the listing.
  */
-function filteredPaths(repoDir: string): string[] {
-  const opts = { ...repoExecOpts(repoDir), maxBuffer: 64 * 1024 * 1024 };
-  // ls-files, not diff: a diff.* config error must not fail the listing, and staged deletions are already absent.
-  const listing = execFileSync('git', ['ls-files', '--cached', '-z'], opts);
-  // stdin must be a pipe: execFileSync drops `input` when stdio[0] is 'ignore'.
-  const attrs = execFileSync('git', ['check-attr', '--stdin', '-z', 'filter'], {
-    ...opts,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    input: listing,
-  }) as Buffer;
-  const parts = attrs.toString('utf8').split('\0');
-  const paths: string[] = [];
-  for (let i = 0; i + 2 < parts.length; i += 3) {
-    if (parts[i + 2] !== 'unspecified' && parts[i + 2] !== 'unset') paths.push(parts[i]);
+function changedRegularFiles(opts: ExecFileSyncOptions): Buffer[] {
+  const args = ['diff-index', '--cached', '--no-renames', '--diff-filter=d', '-z', baseTree(opts)];
+  // Records are `:srcmode dstmode srcsha dstsha status` NUL `path` NUL.
+  const parts = splitNul(execFileSync('git', args, opts) as Buffer);
+  const paths: Buffer[] = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    if (REGULAR_MODES.has(parts[i].toString('latin1').split(' ')[1])) paths.push(parts[i + 1]);
   }
   return paths;
 }
 
+/** `raw` as a string, throwing when it is not valid UTF-8 (fs would name another file). */
+function utf8Path(raw: Buffer): string {
+  const path = raw.toString('utf8');
+  if (!Buffer.from(path, 'utf8').equals(raw)) {
+    throw new Error(`cannot re-scan ${path}: the path is not valid UTF-8`);
+  }
+  return path;
+}
+
 /**
- * Re-scan every staged path with a clean filter from its working-tree file via
- * `scan` (which stages with the filter off) and merge the results into `staged`,
- * deduped by `Fingerprint`. Returns `null` when the listing or any per-file scan
- * fails, so the push gate fails closed.
+ * Changed regular files whose `filter` or `working-tree-encoding` attribute is
+ * active. Throws on any git failure so the caller can fail closed.
+ */
+function filteredPaths(repoDir: string): string[] {
+  const opts = { ...repoExecOpts(repoDir), maxBuffer: 64 * 1024 * 1024 };
+  const changed = changedRegularFiles(opts);
+  if (changed.length === 0) return [];
+  const attrs = execFileSync(
+    'git',
+    ['check-attr', '--stdin', '-z', 'filter', 'working-tree-encoding'],
+    { ...opts, stdio: PIPED, input: Buffer.concat(changed.flatMap((p) => [p, Buffer.from([0])])) },
+  ) as Buffer;
+  // Output is `path NUL attr NUL value NUL`, once per path and attribute.
+  const parts = splitNul(attrs);
+  const paths = new Set<string>();
+  for (let i = 0; i + 2 < parts.length; i += 3) {
+    if (!INACTIVE.has(parts[i + 2].toString('utf8'))) paths.add(utf8Path(parts[i]));
+  }
+  return [...paths];
+}
+
+/** Dedupe key: gitleaks fingerprints carry no column, so two secrets on one line share one. */
+const findingKey = (f: Finding): string => `${f.Fingerprint}:${f.StartColumn}:${f.EndColumn}`;
+
+/**
+ * Re-scan each changed regular file whose index content is a transform of its
+ * working-tree file via `scan` (which stages with every transform off) and
+ * merge the results into `staged`, dropping only findings the staged scan
+ * already reported at the same position. Returns `null` when the listing or any
+ * per-file scan fails, so the push gate fails closed.
  */
 export function withFilteredFindings(
   repoDir: string,
@@ -43,17 +107,18 @@ export function withFilteredFindings(
   scan: ScanFn,
   forwardStreams: boolean,
 ): Finding[] | null {
+  const abort = (why: string): null => {
+    if (forwardStreams) process.stderr.write(`scan aborted: ${why}\n`);
+    return null;
+  };
   let paths: string[];
   try {
     paths = filteredPaths(repoDir);
   } catch (err) {
-    if (forwardStreams) {
-      process.stderr.write(`scan aborted: ${String((err as Error).message).split('\n')[0]}\n`);
-    }
-    return null;
+    return abort(String((err as Error).message).split('\n')[0]);
   }
+  const stagedKeys = new Set(staged.map(findingKey));
   const merged = [...staged];
-  const seen = new Set(merged.map((f) => f.Fingerprint));
   for (const rel of paths) {
     const found = scan(join(repoDir, rel), {
       stagedRel: rel,
@@ -61,13 +126,8 @@ export function withFilteredFindings(
       repoDir,
       forwardStreams,
     });
-    if (found === null) return null;
-    for (const f of found) {
-      if (!seen.has(f.Fingerprint)) {
-        seen.add(f.Fingerprint);
-        merged.push(f);
-      }
-    }
+    if (found === null) return abort(`could not re-scan ${rel}`);
+    merged.push(...found.filter((f) => !stagedKeys.has(findingKey(f))));
   }
   return merged;
 }
