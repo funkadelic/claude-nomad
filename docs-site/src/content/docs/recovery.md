@@ -355,8 +355,7 @@ finding inside an allowed path, never a bare token in a source file or anywhere 
 The blocks fall into two scopes:
 
 Transcript-only suppressions, scoped to synced session transcripts
-(`shared/projects/<project>/.../*.jsonl`; the beta-flag entry also covers your local
-`~/.claude/projects/` transcripts) and NOT to skill content:
+(`shared/projects/<project>/.../*.jsonl`) and NOT to skill content:
 
 - Sonar issue keys (`AY` prefix + 17-22 url-safe chars). This shape is context-free, so it is kept
   out of skill scope on purpose: a real `AY`-prefixed credential pasted into an executable skill
@@ -365,8 +364,7 @@ Transcript-only suppressions, scoped to synced session transcripts
   transcripts whenever a conversation touches the docs that quote them.
 - Claude Code's beta-flag list (`oauth-<date>` followed by another dated flag such as
   `interleaved-thinking-2025-05-14`), recorded on every turn, which `generic-api-key` reads as a key
-  name and a secret. A second copy covers local transcripts so Redact leaves those lines alone too,
-  including when you use a `.gitleaks.overlay.toml`.
+  name and a secret.
 
 Structurally anchored suppressions, scoped to both synced transcripts and committed skill content
 (`shared/skills/<name>/...`, any nesting depth). Each carries surrounding structure a bare
@@ -442,14 +440,13 @@ How it works, briefly: on `nomad push`, when the overlay is present, nomad gener
 config that extends the bundled `.gitleaks.toml` (which itself extends the gitleaks default),
 appends your overlay body, scans with that combined config, then deletes the throwaway file. The
 merge is gitleaks' own `[extend]` append, so your allowlist entries add to the shipped and default
-ones rather than replacing them. One difference: the Redact re-scan checks one local file at a
-time (a session transcript, memory file, or skill file under `~/.claude/`) by its full path, and
-skips a legacy `[allowlist]` table and every `[[allowlists]]` block without a `targetRules` line.
-So Redact may replace a value such a block allows at push. To keep an allow in effect for Redact
-too, add a second copy of the block with `targetRules = ["<rule-id>"]` (the rule named in the
-finding) and `paths` that match that local file, the way the bundled beta-flag entry does. If the
-allow is a legacy `[allowlist]` table, first rewrite it as an `[[allowlists]]` block: gitleaks
-cannot load an overlay that mixes the two.
+ones rather than replacing them. Redact uses the same combined config. Its re-scan checks one
+local file at a time (a session transcript, memory file, or skill file under `~/.claude/`), but it
+places that file at the same repo path push uses, such as
+`shared/projects/<project>/<session>.jsonl` or `shared/skills/<name>/<file>`. So the re-scan sees
+the same paths and the same allowlists as the push scan, and Redact leaves alone any value your
+overlay allows at push. You do not need a second copy of a block for Redact. If you added one with
+an absolute local path for an older version, it no longer matches anything and you can delete it.
 
 Five rules:
 
@@ -461,8 +458,8 @@ Five rules:
   Pick one approach: the overlay for additive tweaks, or a full `.gitleaks.toml` for total control.
 - Each top-level `[[allowlists]]` block must list the files it applies to in `paths`, and must not
   use a pattern that matches anything (such as `.*`) or every file of a common synced type (such as
-  `\.md$` or `\.jsonl$`), or, for an absolute path written for Redact, every file under your home
-  folder or `~/.claude/projects/`. The overlay syncs to every host, so an allowlist without that
+  `\.md$` or `\.jsonl$`), or, for an absolute path, every file under your home folder or
+  `~/.claude/projects/`. The overlay syncs to every host, so an allowlist without that
   limit would hide real secrets on all of them; `nomad push` stops with an error instead, and so
   does `nomad doctor --check-shared`. A block that also has `regexes` must set `condition = "AND"`,
   as in the example below: without it gitleaks ignores every finding in the listed files, not just
