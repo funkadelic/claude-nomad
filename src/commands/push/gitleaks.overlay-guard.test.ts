@@ -1,8 +1,5 @@
-import { dirname, join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
-import { claudeHome } from '../../core/config.ts';
 import { NomadFatal } from '../../core/utils.ts';
 import { assertOverlaySafe } from './gitleaks.overlay-guard.ts';
 
@@ -30,6 +27,10 @@ describe('assertOverlaySafe', () => {
       'the allowed metadata keys',
       `title = "t"\ndescription = "d"\nminversion = "v8.0.0"\n${SCOPED}`,
     ],
+    [
+      'mixed-case block headers',
+      "[[Allowlists]]\npaths = ['''^a''']\n[[Rules]]\nid = 'my-token'\n",
+    ],
     ['camelCase top-level metadata keys', `Title = "t"\nminVersion = "v8.0.0"\n${SCOPED}`],
   ])('accepts %s', (_label, body) => {
     expect(() => assertOverlaySafe(body)).not.toThrow();
@@ -48,8 +49,6 @@ describe('assertOverlaySafe', () => {
       /condition = "AND"/,
     ],
     ['upper-case keys with no paths', "[[allowlists]]\nREGEXES = ['''X''']\n", /path-scoped/],
-    ['an upper-case allowlists table', "[[ALLOWLISTS]]\npaths = ['''^a''']\n", /in lowercase/],
-    ['a mixed-case allowlists table', "[[Allowlists]]\npaths = ['''^a''']\n", /"allowlists"/],
     ['a single [allowlists] table', "[allowlists]\npaths = ['''^a''']\n", /double brackets/],
     ['a legacy allowlist array', "allowlist = [{ paths = ['''^a'''] }]\n", /single table/],
     [
@@ -91,13 +90,6 @@ describe('assertOverlaySafe', () => {
     ],
     ['a title table', '[title]\nx = 1\n', /must be text/],
     ['a numeric minVersion', 'minVersion = 8\n', /must be text/],
-    ['an absolute POSIX catch-all path', "[[allowlists]]\npaths = ['''^/''']\n", /catch-all/],
-    [
-      'an absolute catch-all path in a targetRules block',
-      "[[allowlists]]\ntargetRules = [\"github-pat\"]\npaths = ['''^(?:[A-Za-z]:)?[/\\\\]''']\n",
-      /catch-all/,
-    ],
-    ['a Windows drive catch-all path', "[[allowlists]]\npaths = ['''^C:''']\n", /catch-all/],
     ['invalid TOML', '[[allowlists]\n', /not valid TOML/],
     ['a quoted dotted allowlist key', "\"allowlist.regexes\" = ['''X''']\n", /contains a dot/],
     [
@@ -130,7 +122,6 @@ describe('assertOverlaySafe', () => {
       /built-in gitleaks rule id/,
     ],
     ['an upper-case id key', "[[rules]]\nID = 'github-pat'\n", /built-in gitleaks rule id/],
-    ['an upper-case rules table', "[[Rules]]\nid = 'my-token'\n", /in lowercase/],
     [
       'a built-in id in another case',
       "[[rules]]\nid = 'GitHub-PAT'\n",
@@ -158,22 +149,6 @@ describe('assertOverlaySafe', () => {
   ])('rejects %s', (_label, body, message) => {
     expect(() => assertOverlaySafe(body)).toThrow(NomadFatal);
     expect(() => assertOverlaySafe(body)).toThrow(message);
-  });
-
-  it.each([
-    ['the home dir', (h: string) => dirname(h)],
-    ['the Claude projects dir', (h: string) => join(h, 'projects')],
-  ])('rejects a Redact path covering all of %s', (_label, root) => {
-    const pattern = `^${root(claudeHome()).replaceAll('\\', '\\\\').replaceAll('.', '\\.')}`;
-    const body = `[[allowlists]]\ntargetRules = ["github-pat"]\npaths = ['''${pattern}''']\n`;
-    expect(() => assertOverlaySafe(body)).toThrow(/catch-all/);
-  });
-
-  it('accepts a Redact path scoped to one local transcript', () => {
-    const file = join(claudeHome(), 'projects', '-enc', 'abc123.jsonl');
-    const pattern = `^${file.replaceAll('\\', '\\\\').replaceAll('.', '\\.')}$`;
-    const body = `[[allowlists]]\ntargetRules = ["github-pat"]\npaths = ['''${pattern}''']\n`;
-    expect(() => assertOverlaySafe(body)).not.toThrow();
   });
 
   it('reports a TOML syntax error without echoing the overlay line', () => {

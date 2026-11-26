@@ -480,9 +480,8 @@ Five rules:
   error instead, and so does `nomad doctor --check-shared`.
 - Outside its blocks, the overlay may only set `title`, `description`, and `minVersion`, each as
   text. Any other top-level setting (such as `disabledRules`) stops `nomad push` and
-  `nomad doctor --check-shared` with an error. Write block names in lowercase (`[[allowlists]]`, not
-  `[[Allowlists]]`). A legacy `[allowlist]` table is accepted on its own, but not mixed with
-  `[[allowlists]]` blocks: gitleaks cannot load that overlay.
+  `nomad doctor --check-shared` with an error. A legacy `[allowlist]` table is accepted on its own,
+  but not mixed with `[[allowlists]]` blocks: gitleaks cannot load that overlay.
 
 Example `<REPO_HOME>/.gitleaks.overlay.toml` (note: no `[extend]` block, and `paths` limits it to
 synced session transcripts):
