@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.69.11](https://github.com/funkadelic/claude-nomad/compare/v0.69.10...v0.69.11) (2026-11-24)
+
+
+### What's new
+
+* If you kept working in a session after your last push, the next `nomad pull` (or `nomad sync`) used to replace it with the shorter copy from the repo, losing everything since. Pull now keeps your longer copy and the next push sends it. The pull summary, `pull --dry-run` and `nomad diff` say how many sessions were kept. A session that changed on another machine still updates from the repo.
+* `pull`, `push` and `sync` stop with an error when the connection to your sync repo drops or stalls, instead of waiting forever. A dead connection ends within about two minutes, and stall settings you already set in git config are left alone. If a push saved its commit but never sent it, the next `nomad push` says so and shows the `git push` command that sends it.
+* Pull no longer deletes Claude Code worktrees under a project's `.claude/worktrees/`, which can hold uncommitted work, and push no longer copies them into the sync repo. Claude Code's `scheduled_tasks.lock` file no longer syncs.
+* The pull warning for a project's `.claude` folder used to promise to keep your unpushed edits. It now says the synced copy replaces them. Run `nomad push` before pulling to keep them. `nomad sync` no longer lists those replaced files as pushed.
+* Push can now remove files from the sync repo that nomad no longer syncs, such as files left behind after you remove a project from `path-map.json`. Before, those files blocked every push. Push also refuses unsafe project names in `path-map.json`.
+* A lock left by a crashed run no longer blocks every pull and push when another program gets its process ID (Linux and WSL). Two runs starting at the same moment can no longer both take the lock.
+* `pull`, `push` and `diff` now tell you to run `nomad doctor -v` to list unmapped projects, since plain `nomad doctor` doesn't show them.
+* The docs now say that each machine has to install synced plugins itself, and explain how to set up per-project plugins on each machine.
+
+
+### Fixed
+
+* **extras:** correct the .claude pull warning and stop syncing the scheduled tasks lock ([#726](https://github.com/funkadelic/claude-nomad/issues/726)) ([ae9ffd8](https://github.com/funkadelic/claude-nomad/commit/ae9ffd834348b4c13e98f8fd9a8fd30fb5412a51))
+* **git:** stop a dropped connection from hanging pull and push ([#729](https://github.com/funkadelic/claude-nomad/issues/729)) ([c43b737](https://github.com/funkadelic/claude-nomad/commit/c43b73769d6432b68757b8d1027a8f2fbc70994d))
+* **lock:** narrow two races that let two nomad runs hold the lock at once ([#730](https://github.com/funkadelic/claude-nomad/issues/730)) ([ba03b7f](https://github.com/funkadelic/claude-nomad/commit/ba03b7f19b1865334f48a5d637e74d1f851f6d88))
+* **lock:** stop a reused process ID from blocking every sync ([#731](https://github.com/funkadelic/claude-nomad/issues/731)) ([2de506b](https://github.com/funkadelic/claude-nomad/commit/2de506b40fa947d63bb69f883b5e2c545679657e))
+* point the unmapped-projects hint at nomad doctor -v ([#721](https://github.com/funkadelic/claude-nomad/issues/721)) ([9004898](https://github.com/funkadelic/claude-nomad/commit/90048986f14f943df1f266e9f9701d2f8b0fd256))
+* **pull:** keep sessions that grew since the last push ([#736](https://github.com/funkadelic/claude-nomad/issues/736)) ([2aa55a1](https://github.com/funkadelic/claude-nomad/commit/2aa55a1438c68bffd14730a1710f2d9b42e4b965))
+* **push:** guard path-map keys and let a push delete files no longer synced ([#727](https://github.com/funkadelic/claude-nomad/issues/727)) ([92e1547](https://github.com/funkadelic/claude-nomad/commit/92e1547a0652bc548edf1f3cd45f1905a0804617))
+* stop syncing Claude Code worktrees and let push remove newly blocked files ([#723](https://github.com/funkadelic/claude-nomad/issues/723)) ([14ada90](https://github.com/funkadelic/claude-nomad/commit/14ada90386f1b9f2b75bfef8fc9863341df071de))
+
+
+### Changed
+
+* remove redundant re2js override ([#735](https://github.com/funkadelic/claude-nomad/issues/735)) ([c08f658](https://github.com/funkadelic/claude-nomad/commit/c08f658f8387e46649e55411c80a480c479cf8ba))
+* use named exit codes and fix stale source comments ([#728](https://github.com/funkadelic/claude-nomad/issues/728)) ([757b81f](https://github.com/funkadelic/claude-nomad/commit/757b81fc79095b089fbee88bd86be2491e7e461d))
+
+
+### Documentation
+
+* explain how to set up per-project plugins on each machine ([#724](https://github.com/funkadelic/claude-nomad/issues/724)) ([0bbe536](https://github.com/funkadelic/claude-nomad/commit/0bbe53623137be03b846bd9b08da31e5b545841d))
+* say that each machine has to install synced plugins ([#725](https://github.com/funkadelic/claude-nomad/issues/725)) ([1a5b821](https://github.com/funkadelic/claude-nomad/commit/1a5b821d981c6f1339033c887950e3f4007b036c))
+
+
+### Dependencies
+
+* bump i18next from 26.3.3 to 26.7.2 in /docs-site ([#734](https://github.com/funkadelic/claude-nomad/issues/734)) ([c896469](https://github.com/funkadelic/claude-nomad/commit/c8964690dd67328ac4e6d465a064bfc3ab15a056))
+* bump SonarSource/sonarqube-scan-action ([0b720d6](https://github.com/funkadelic/claude-nomad/commit/0b720d620c6a92a420b02e3cc480e837ec2c6d7c))
+* bump the dev-dependencies group with 5 updates ([#732](https://github.com/funkadelic/claude-nomad/issues/732)) ([7720f67](https://github.com/funkadelic/claude-nomad/commit/7720f67b351ce0eceb563f79a8cda1928a3c9c4d))
+
 ## [0.69.10](https://github.com/funkadelic/claude-nomad/compare/v0.69.9...v0.69.10) (2026-11-20)
 
 
