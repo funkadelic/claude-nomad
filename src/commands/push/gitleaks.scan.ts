@@ -175,41 +175,52 @@ function repoExecOpts(repoDir: string): ExecFileSyncOptions {
 const FORCE_DIFF = '* diff';
 
 /**
- * Append `* diff` to the repo's local (uncommitted) `info/attributes` unless it
- * is already the last line. A global or committed `-diff`/`binary` would make
+ * Append `* diff` to the repo's local `info/attributes` and return a function
+ * that puts the file back. A global or committed `-diff`/`binary` would make
  * `git diff` hide the content, so gitleaks would scan nothing; the last
  * matching line wins, and `diff` changes only diff output, never what is staged.
  */
-function forceTextDiff(opts: ExecFileSyncOptions): void {
+function forceTextDiff(opts: ExecFileSyncOptions): () => void {
   const rel = String(execFileSync('git', ['rev-parse', '--git-path', 'info/attributes'], opts));
   const path = resolve(String(opts.cwd), rel.trim() || join('.git', 'info', 'attributes'));
-  let body = '';
+  let body: string | null = null;
   try {
     body = readFileSync(path, 'utf8');
   } catch {
-    // Absent: written fresh below.
+    // Absent: written fresh below and removed on restore.
   }
-  const lines = body.split(/\r?\n/).filter((l) => l.trim() !== '');
-  if (lines.at(-1)?.trim() === FORCE_DIFF) return;
   mkdirSync(dirname(path), { recursive: true });
-  const glue = body === '' || body.endsWith('\n') ? '' : '\n';
-  writeFileSync(path, `${body}${glue}${FORCE_DIFF}\n`);
+  const prior = body ?? '';
+  const glue = prior === '' || prior.endsWith('\n') ? '' : '\n';
+  writeFileSync(path, `${prior}${glue}${FORCE_DIFF}\n`);
+  return () => (body === null ? rmSync(path, { force: true }) : writeFileSync(path, body));
 }
 
 /**
- * Run `git init` then `git <addArgs>` in the repo `opts` point at. The add
- * call drops stdout and raises the stderr buffer: a per-file CRLF warning
- * (Git for Windows default) across thousands of files would overflow the 1 MB
- * default.
+ * `git add -A` in the repo `opts` point at. Drops stdout and raises the stderr
+ * buffer: a per-file CRLF warning (Git for Windows default) across thousands
+ * of files would overflow the 1 MB default.
  */
-function initAndStage(opts: ExecFileSyncOptions, addArgs: string[]): void {
-  execFileSync('git', ['init', '-q'], opts);
-  forceTextDiff(opts);
-  execFileSync('git', addArgs, {
+function stageAll(opts: ExecFileSyncOptions): void {
+  execFileSync('git', ['add', '-A'], {
     ...opts,
     stdio: ['ignore', 'ignore', 'pipe'],
     maxBuffer: 64 * 1024 * 1024,
   });
+}
+
+/**
+ * Env for the gitleaks process. gitleaks runs its own `git diff`, which reads
+ * the user's git config, and a `color.ui = always` would put escape codes in
+ * the patch so gitleaks finds nothing. Command-line config beats every file.
+ */
+function gitleaksEnv(opts: ExecFileSyncOptions): NodeJS.ProcessEnv {
+  return {
+    ...opts.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'color.diff',
+    GIT_CONFIG_VALUE_0: 'never',
+  };
 }
 
 /**
@@ -241,13 +252,18 @@ const SCRATCH_GIT_CONFIG = [
 /**
  * Exec options for the scratch repo. Every inherited `GIT_*` var is dropped: an
  * object-dir or alternates override would write the unredacted blob outside
- * the private scratch dir. `timeout` bounds each git call and gitleaks.
+ * the private scratch dir.
  */
-function scratchExecOpts(repoDir: string, timeoutMs: number): ExecFileSyncOptions {
+function scratchExecOpts(repoDir: string): ExecFileSyncOptions {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([k]) => !k.toUpperCase().startsWith('GIT_')),
   );
-  return { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs };
+  return { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'] };
+}
+
+/** `opts` with the time left until `deadline` (epoch ms) as its timeout, at least 1 ms. */
+function until(opts: ExecFileSyncOptions, deadline: number): ExecFileSyncOptions {
+  return { ...opts, timeout: Math.max(1, deadline - Date.now()) };
 }
 
 /**
@@ -257,19 +273,19 @@ function scratchExecOpts(repoDir: string, timeoutMs: number): ExecFileSyncOption
  * git staged nothing (a `.git` path segment, say), so a skipped file fails
  * closed instead of scanning clean.
  */
-function stageScratchCopy(opts: ExecFileSyncOptions, rel: string): void {
-  execFileSync('git', ['init', '-q'], opts);
+function stageScratchCopy(opts: ExecFileSyncOptions, rel: string, deadline: number): void {
+  execFileSync('git', ['init', '-q'], until(opts, deadline));
   const info = join(String(opts.cwd), '.git', 'info');
   mkdirSync(info, { recursive: true });
   // `diff` beats an inherited `-diff`/`binary`, which would hide the content from gitleaks.
   writeFileSync(join(info, 'attributes'), '* -text -filter -ident -working-tree-encoding diff\n');
   execFileSync('git', [...SCRATCH_GIT_CONFIG, 'add', '-f', '-A'], {
-    ...opts,
+    ...until(opts, deadline),
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   const pathspec = rel.split(sep).join('/');
   const ls = [...SCRATCH_GIT_CONFIG, '--literal-pathspecs', 'ls-files', '--error-unmatch'];
-  execFileSync('git', [...ls, '--', pathspec], opts);
+  execFileSync('git', [...ls, '--', pathspec], until(opts, deadline));
 }
 
 /**
@@ -326,9 +342,16 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   ];
   if (toml !== null) args.push('--config', toml);
   const opts = repoExecOpts(repoDir);
-  const gitleaksOpts: ExecFileSyncOptions = { ...opts, timeout: GITLEAKS_SCAN_TIMEOUT_MS };
+  const gitleaksOpts: ExecFileSyncOptions = {
+    ...opts,
+    env: gitleaksEnv(opts),
+    timeout: GITLEAKS_SCAN_TIMEOUT_MS,
+  };
+  let restore = (): void => undefined;
   try {
-    initAndStage(opts, ['add', '-A']);
+    execFileSync('git', ['init', '-q'], opts);
+    restore = forceTextDiff(opts);
+    stageAll(opts);
     execFileSync('gitleaks', args, gitleaksOpts);
     return [];
   } catch (err) {
@@ -336,6 +359,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     if (e.code === 'ENOENT') throw err;
     return resolveScanFailure(reportPath, e, forwardStreams);
   } finally {
+    restore();
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
     rmSync(reportPath, { force: true });
   }
@@ -351,7 +375,7 @@ export type ScanFileOptions = {
   stagedRel?: string;
   /** Forward captured stderr/stdout on a scan crash (no parseable report). */
   forwardStreams?: boolean;
-  /** Per-call ceiling (ms) for each git call and gitleaks. Default `GITLEAKS_SCAN_TIMEOUT_MS`. */
+  /** Ceiling (ms) for the whole scan, shared by the git calls and gitleaks. Default `GITLEAKS_SCAN_TIMEOUT_MS`. */
   timeoutMs?: number;
 };
 
@@ -392,6 +416,7 @@ export type ScanFn = (filePath: string, opts?: ScanFileOptions) => Finding[] | n
  */
 export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[] | null {
   const { forwardStreams = false, timeoutMs = GITLEAKS_SCAN_TIMEOUT_MS } = opts;
+  const deadline = Date.now() + timeoutMs;
   const rel = opts.stagedRel ?? stagedRelPath(filePath);
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
   mkdirSync(cacheDir, { recursive: true });
@@ -416,8 +441,8 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
     if (!dest.startsWith(repo + sep)) return null;
     mkdirSync(dirname(dest), { recursive: true });
     copyFileSync(filePath, dest);
-    const execOpts = scratchExecOpts(repo, timeoutMs);
-    stageScratchCopy(execOpts, relative(repo, dest));
+    const execOpts = scratchExecOpts(repo);
+    stageScratchCopy(execOpts, relative(repo, dest), deadline);
     const args: string[] = [
       'protect',
       '--staged',
@@ -425,7 +450,7 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
       `--report-path=${reportPath}`,
     ];
     if (toml !== null) args.push('--config', toml);
-    execFileSync('gitleaks', args, execOpts);
+    execFileSync('gitleaks', args, { ...until(execOpts, deadline), env: gitleaksEnv(execOpts) });
     return [];
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };

@@ -259,12 +259,16 @@ describe('scanFile (mocked child_process)', () => {
       else process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = saved.alt;
     }
     expect(calls.map((c) => c.bin)).toEqual(['git', 'git', 'git', 'gitleaks']);
-    for (const { opts } of calls) {
-      expect(Object.keys(opts.env ?? {}).filter((k) => k.toUpperCase().startsWith('GIT_'))).toEqual(
-        [],
-      );
-      expect(opts.timeout).toBe(4_000);
+    for (const { bin, opts } of calls) {
+      const gitVars = Object.keys(opts.env ?? {}).filter((k) => k.toUpperCase().startsWith('GIT_'));
+      // gitleaks gets only the color override; nothing inherited survives.
+      const allowed =
+        bin === 'gitleaks' ? ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'] : [];
+      expect(gitVars).toEqual(allowed);
+      expect(opts.timeout).toBeGreaterThan(0);
+      expect(opts.timeout).toBeLessThanOrEqual(4_000);
     }
+    expect(calls.at(-1)!.opts.env?.GIT_CONFIG_VALUE_0).toBe('never');
     const add = calls.find((c) => c.args.includes('add'))!.args;
     expect(add).toEqual(expect.arrayContaining(['core.autocrlf=false', 'core.fsmonitor=false']));
     expect(add.some((a) => a.startsWith('core.hooksPath='))).toBe(true);
@@ -510,7 +514,29 @@ describe('scanFile (mocked child_process)', () => {
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
     scanFile(target, { timeoutMs: 3_000 });
-    expect(capturedOpts?.timeout).toBe(3_000);
+    expect(capturedOpts?.timeout).toBeGreaterThan(0);
+    expect(capturedOpts?.timeout).toBeLessThanOrEqual(3_000);
+  });
+
+  it('shares one deadline across the git calls and gitleaks', async () => {
+    const timeouts: (number | undefined)[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn(
+          (_bin: string, _args?: readonly string[], opts?: { timeout?: number }) => {
+            timeouts.push(opts?.timeout);
+            return Buffer.from('');
+          },
+        ),
+      };
+    });
+    let now = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => (now += 1_000));
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    scanFile(target, { timeoutMs: 4_000 });
+    expect(timeouts).toEqual([3_000, 2_000, 1_000, 1]);
   });
 
   it('forwards stdout on the crash path when only stdout is set', async () => {

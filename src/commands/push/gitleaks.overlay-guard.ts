@@ -291,14 +291,6 @@ function assertRootKeys(raw: Table, doc: Table): void {
  * @param overlayBody The already-read overlay file contents.
  */
 export function assertOverlaySafe(overlayBody: string): void {
-  // Parsing cannot tell `allowlists = [...]` from `[[allowlists]]`; only the latter
-  // can take the blocks nomad appends. Keys before the first header are top-level.
-  const preamble = overlayBody.split(/^[ \t]*\[/m, 1).join('');
-  if (/^[ \t]*(["']?)allowlists\1[ \t]*=/im.test(preamble)) {
-    throw new NomadFatal(
-      '.gitleaks.overlay.toml writes allowlists as an inline list, which gitleaks cannot load next to the blocks nomad adds; use [[allowlists]] blocks.',
-    );
-  }
   const raw = parseOverlay(overlayBody);
   const doc = lowerKeys(raw);
   assertRootKeys(raw, doc);

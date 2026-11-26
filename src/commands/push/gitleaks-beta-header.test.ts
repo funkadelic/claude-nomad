@@ -149,15 +149,31 @@ describe.skipIf(!hasGitleaks)(
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
     });
 
-    it('keeps local attributes, overrides their -diff, and appends the diff line once', () => {
+    it('overrides a local -diff, then restores the local attributes file', () => {
       execFileSync('git', ['init', '-q'], { cwd: scanRoot });
       const local = join(scanRoot, '.git', 'info', 'attributes');
       mkdirSync(dirname(local), { recursive: true });
       writeFileSync(local, '*.jsonl -diff');
       write(transcript, betasLine(realToken));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
+      expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff');
+    });
+
+    it('removes the attributes file it created', () => {
+      write(transcript, betasLine(realToken));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
-      expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n* diff\n');
+      expect(existsSync(join(scanRoot, '.git', 'info', 'attributes'))).toBe(false);
+    });
+
+    it('scans despite a global color.ui = always', () => {
+      writeFileSync(join(testHome, '.gitconfig'), '[color]\n\tui = always\n');
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+    });
+
+    it('scans a text file that holds a NUL byte', () => {
+      write(transcript, `\0${betasLine(realToken)}`);
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
     });
 
     it('suppresses the beta-flag list in the redact re-scan of a local transcript', () => {
@@ -247,6 +263,17 @@ describe.skipIf(!hasGitleaks)(
       );
       const local = localSkill(`# token ${patFor(i)}\n`);
       expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(i)]);
+    });
+
+    it('scans despite a global color.ui = always', () => {
+      writeFileSync(join(testHome, '.gitconfig'), '[color]\n\tui = always\n');
+      const local = localSkill(`# token ${patFor(8)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(8)]);
+    });
+
+    it('scans a text file that holds a NUL byte', () => {
+      const local = localSkill(`\0\n# token ${patFor(9)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(9)]);
     });
 
     it('keeps the scratch objects out of an inherited GIT_OBJECT_DIRECTORY', () => {

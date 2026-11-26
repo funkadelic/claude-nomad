@@ -17,6 +17,7 @@ describe('assertOverlaySafe', () => {
     ['upper-case keys', SCOPED.replace('paths', 'PATHS').replace('condition', 'Condition')],
     ['a legacy [allowlist] table', SCOPED.replace('[[allowlists]]', '[allowlist]')],
     ['no allowlists at all', '# nothing yet\n'],
+    ['an inline allowlists list of tables', "\"allowlists\" = [{ paths = ['''^a'''] }]\n"],
     ['a path with leading Go flags', "[[allowlists]]\npaths = ['''(?iU)^a\\.txt$''']\n"],
     ['a Go named group', "[[allowlists]]\npaths = ['''^(?P<d>shared)/a\\.txt$''']\n"],
     ['a key named like an Object method', "[[allowlists]]\npaths = ['''^a''']\nconstructor = 1\n"],
@@ -72,12 +73,7 @@ describe('assertOverlaySafe', () => {
       /letter cases/,
     ],
     ['top-level keys repeated in another case', 'title = "a"\nTitle = "b"\n', /letter cases/],
-    ['an inline allowlists list', 'allowlists = ["X"]\n', /inline list/],
-    [
-      'an inline allowlists list of tables',
-      "\"allowlists\" = [{ paths = ['''^a'''] }]\n",
-      /inline list/,
-    ],
+    ['an inline allowlists list of strings', 'allowlists = ["X"]\n', /must be tables/],
     [
       'an inline allowlists list after a bracket line in a string',
       "description = '''\n[x\n'''\nallowlists = [\"X\"]\n",

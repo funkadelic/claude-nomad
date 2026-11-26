@@ -170,7 +170,7 @@ export function cmdRedact(
       fail(
         `gitleaks scan failed for ${failed.length} file(s) in session ${id}; nothing was rewritten`,
       );
-      process.exitCode = 1;
+      process.exitCode = EXIT.GENERIC_FAILURE;
       return;
     }
 
