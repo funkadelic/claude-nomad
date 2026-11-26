@@ -5,12 +5,9 @@
  * `commands/doctor/checks/shared.ts`): the `Finding` shape, the JSON-report
  * parser `readGitleaksReport`, `scanStagedTree`, and `scanFile`.
  *
- * Split into its own module so adding the git-stage step keeps both
- * `commands/push/gitleaks.ts` and `commands/doctor/checks/shared.ts` under the 200-line
- * cap. `commands/push/gitleaks.ts` re-exports these so existing import sites are
- * unaffected. Dependency flows one way (`commands/push/gitleaks.ts` -> this module, and
- * this module -> `gitleaks.config.ts` for `resolveTomlConfig` and `gitleaks.stage.ts` for
- * the git staging steps); no cycle.
+ * `commands/push/gitleaks.ts` re-exports these so existing import sites are unaffected.
+ * Dependency flows one way (`commands/push/gitleaks.ts` -> this module -> `gitleaks.config.ts`
+ * for `resolveTomlConfig` and `gitleaks.stage.ts` for the git staging steps); no cycle.
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
