@@ -190,16 +190,12 @@ export function applyRedact(
   // Redact main + the whole subtree via the shared helper. mainFindings is
   // passed explicitly (already scanned above); subtree files are scanned
   // inside the helper. No rule filter in the recovery path.
-  const { total: anyTotal } = applySubtreeRedactions(
-    localPath,
-    mainFindings,
-    subtreeFiles,
-    undefined,
+  const { total: anyTotal } = applySubtreeRedactions(localPath, mainFindings, subtreeFiles, {
     ts,
     scan,
-    false,
+    dryRun: false,
     stagedDir,
-  );
+  });
   if (anyTotal === 0) {
     return refuse(
       `nothing to redact in the local transcript for session ${sid}; choose Skip or Drop session.`,

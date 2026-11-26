@@ -123,6 +123,20 @@ export type DirtyFile = {
   findings: readonly { StartLine: number; Match: string; RuleID: string }[];
 };
 
+/** Options for `applySubtreeRedactions`. */
+export type SubtreeRedactOptions = {
+  /** Optional rule-id filter applied when scanning subtree files. */
+  rule?: string;
+  /** Backup timestamp for `backupBeforeWrite`. */
+  ts: string;
+  /** Injectable scan function (without `--redact`). */
+  scan: ScanFn;
+  /** When true, collect the dirty list but skip all writes. */
+  dryRun: boolean;
+  /** Repo-relative dir push stages the main file's dir at (`shared/projects/<logical>`). */
+  stagedDir?: string;
+};
+
 /**
  * Staged path of a subtree file: its path relative to the main transcript's
  * dir, under `stagedDir`. Undefined when the caller passed no staged dir.
@@ -153,12 +167,7 @@ function subtreeStagedRel(
  * @param subtreeFiles Absolute paths to every file in the session subtree
  *   (from `listSubtreeFiles`). These are scanned individually; the main file
  *   must NOT be included here.
- * @param rule Optional rule-id filter applied when scanning subtree files.
- * @param ts Backup timestamp for `backupBeforeWrite`.
- * @param scan Injectable scan function (without `--redact`).
- * @param dryRun When true, collect the dirty list but skip all writes.
- * @param stagedDir Repo-relative dir push stages the main file's directory at
- *   (`shared/projects/<logical>`), passed to `scan` per subtree file.
+ * @param opts Rule filter, backup timestamp, scan seam, dry-run flag and staged dir.
  * @returns `{ total, dirty }` where `total` is the finding count across all
  *   files and `dirty` lists every file that has (or would have) findings.
  */
@@ -166,12 +175,9 @@ export function applySubtreeRedactions(
   mainPath: string,
   mainFindings: readonly { StartLine: number; Match: string; RuleID: string }[],
   subtreeFiles: string[],
-  rule: string | undefined,
-  ts: string,
-  scan: ScanFn,
-  dryRun: boolean,
-  stagedDir?: string,
+  opts: SubtreeRedactOptions,
 ): { total: number; dirty: DirtyFile[] } {
+  const { rule, ts, scan, dryRun, stagedDir } = opts;
   const dirty: DirtyFile[] = [];
   if (mainFindings.length > 0) dirty.push({ path: mainPath, findings: mainFindings });
   for (const filePath of subtreeFiles) {

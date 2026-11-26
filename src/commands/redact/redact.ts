@@ -156,11 +156,7 @@ export function cmdRedact(
       localPath,
       mainFindings,
       subtreeFiles,
-      rule,
-      ts,
-      scan,
-      dryRun,
-      stagedDir,
+      { rule, ts, scan, dryRun, stagedDir },
     );
 
     if (totalCount === 0) {

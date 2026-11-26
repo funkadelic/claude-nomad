@@ -234,10 +234,7 @@ describe('applySubtreeRedactions', () => {
       mainPath,
       [{ StartLine: 1, Match: 'real-secret', RuleID: 'r1' }],
       [],
-      undefined,
-      'ts-x',
-      () => [],
-      false,
+      { ts: 'ts-x', scan: () => [], dryRun: false },
     );
 
     expect(total).toBe(1);
@@ -263,10 +260,7 @@ describe('applySubtreeRedactions', () => {
       mainPath,
       [{ StartLine: 1, Match: 'not-in-the-file', RuleID: 'r1' }],
       [],
-      undefined,
-      'ts-x',
-      () => [],
-      false,
+      { ts: 'ts-x', scan: () => [], dryRun: false },
     );
     spy.mockRestore();
 
@@ -298,15 +292,11 @@ describe('applySubtreeRedactions', () => {
           ]
         : [];
 
-    const { total, dirty } = applySubtreeRedactions(
-      mainPath,
-      [],
-      [txtPath],
-      undefined,
-      'ts-x',
-      fakeScan,
-      false,
-    );
+    const { total, dirty } = applySubtreeRedactions(mainPath, [], [txtPath], {
+      ts: 'ts-x',
+      scan: fakeScan,
+      dryRun: false,
+    });
 
     expect(total).toBe(1);
     expect(dirty).toHaveLength(1);
@@ -325,10 +315,7 @@ describe('applySubtreeRedactions', () => {
       mainPath,
       [{ StartLine: 1, Match: 'real-secret', RuleID: 'r1' }],
       [],
-      undefined,
-      'ts-x',
-      () => [],
-      true,
+      { ts: 'ts-x', scan: () => [], dryRun: true },
     );
 
     expect(total).toBe(1);
@@ -369,15 +356,12 @@ describe('applySubtreeRedactions', () => {
           ]
         : [];
 
-    const { total } = applySubtreeRedactions(
-      mainPath,
-      [],
-      [agentPath],
-      'rule-a',
-      'ts-x',
-      fakeScan,
-      false,
-    );
+    const { total } = applySubtreeRedactions(mainPath, [], [agentPath], {
+      rule: 'rule-a',
+      ts: 'ts-x',
+      scan: fakeScan,
+      dryRun: false,
+    });
 
     expect(total).toBe(1);
     const { readFileSync } = await import('node:fs');
@@ -398,10 +382,7 @@ describe('applySubtreeRedactions', () => {
       mainPath,
       [{ StartLine: 1, Match: 'secret', RuleID: 'r1' }],
       [agentPath],
-      undefined,
-      'ts-x',
-      (_p) => null,
-      false,
+      { ts: 'ts-x', scan: (_p) => null, dryRun: false },
     );
 
     // Only main (1 finding); agent scan returned null, so it's skipped.
@@ -432,15 +413,12 @@ describe('applySubtreeRedactions', () => {
           ]
         : [];
 
-    const { total, dirty } = applySubtreeRedactions(
-      mainPath,
-      [],
-      [agentPath],
-      'rule-a',
-      'ts-x',
-      fakeScan,
-      false,
-    );
+    const { total, dirty } = applySubtreeRedactions(mainPath, [], [agentPath], {
+      rule: 'rule-a',
+      ts: 'ts-x',
+      scan: fakeScan,
+      dryRun: false,
+    });
 
     expect(total).toBe(0);
     expect(dirty).toEqual([]);
@@ -454,15 +432,11 @@ describe('applySubtreeRedactions', () => {
     const mainPath = join(tmpDir, 'sid.jsonl');
     writeFileSync(mainPath, '{"text":"clean"}\n');
 
-    const { total, dirty } = applySubtreeRedactions(
-      mainPath,
-      [],
-      [],
-      undefined,
-      'ts-x',
-      () => [],
-      false,
-    );
+    const { total, dirty } = applySubtreeRedactions(mainPath, [], [], {
+      ts: 'ts-x',
+      scan: () => [],
+      dryRun: false,
+    });
 
     expect(total).toBe(0);
     expect(dirty).toEqual([]);
