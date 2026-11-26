@@ -174,6 +174,16 @@ describe.skipIf(!hasGitleaks)(
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
     });
 
+    it.each([
+      ['diff.orderFile naming a missing file', ['diff.orderFile', '.no-such-order']],
+      ['an unknown diff.algorithm', ['diff.algorithm', 'bogus']],
+    ])('fails closed on a repo %s that breaks the gitleaks diff', (_label, kv) => {
+      execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+      execFileSync('git', ['config', ...kv], { cwd: scanRoot });
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)).toBeNull();
+    });
+
     it('scans a text file that holds a NUL byte', () => {
       write(transcript, `\0${betasLine(realToken)}`);
       expect(scanStagedTree(scanRoot)?.length).toBe(1);

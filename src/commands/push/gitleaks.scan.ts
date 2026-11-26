@@ -13,7 +13,16 @@
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
@@ -226,6 +235,36 @@ function gitleaksEnv(opts: ExecFileSyncOptions, noGlobal: string): NodeJS.Proces
   };
 }
 
+/** A `--no-color` gitleaks log line at ERR level, e.g. `11:47AM ERR [git] fatal: ...`. */
+const ERR_LOG_LINE = /^\S+ ERR /m;
+
+/**
+ * Run gitleaks with its log written to `logPath`, returning the log when it holds an
+ * ERR line and null otherwise. gitleaks logs ERR and still exits 0 when its own
+ * `git diff` fails (a bad `diff.orderFile` in the repo config, say), having scanned
+ * nothing, so a clean exit with an ERR line must not count as clean.
+ */
+function runGitleaks(args: string[], opts: ExecFileSyncOptions, logPath: string): string | null {
+  const fd = openSync(logPath, 'w', 0o600);
+  try {
+    execFileSync('gitleaks', [...args, '--no-color'], { ...opts, stdio: ['ignore', 'pipe', fd] });
+  } catch (err) {
+    // stderr goes to the log, so restore it for the crash diagnostic.
+    (err as { stderr?: Buffer | null }).stderr ??= readFileSync(logPath);
+    throw err;
+  } finally {
+    closeSync(fd);
+  }
+  const log = readFileSync(logPath, 'utf8');
+  return ERR_LOG_LINE.test(log) ? log : null;
+}
+
+/** Scan-failed result for a clean gitleaks exit that logged an error (see `runGitleaks`). */
+function loggedErrorFailure(log: string, forwardStreams: boolean): Finding[] | null {
+  const e = { message: 'gitleaks logged an error, so a clean result cannot be trusted' };
+  return resolveScanFailure(undefined, { ...e, stderr: Buffer.from(log) }, forwardStreams);
+}
+
 /**
  * Fallback repo-relative staging path for a local file, used when the caller
  * does not pass the real one. The projects segment stays the encoded dir (push
@@ -355,8 +394,8 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     execFileSync('git', ['init', '-q'], opts);
     restore = forceTextDiff(opts);
     stageAll(opts);
-    execFileSync('gitleaks', args, gitleaksOpts);
-    return [];
+    const errLog = runGitleaks(args, gitleaksOpts, `${reportPath}.log`);
+    return errLog === null ? [] : loggedErrorFailure(errLog, forwardStreams);
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') throw err;
@@ -365,6 +404,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     restore();
     if (tempPath !== null) rmSync(tempPath, { recursive: true, force: true });
     rmSync(reportPath, { force: true });
+    rmSync(`${reportPath}.log`, { force: true });
   }
 }
 
@@ -461,8 +501,8 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
       args.push(`--gitleaks-ignore-path=${resolve(repoHome(), '.gitleaksignore')}`);
     }
     const env = gitleaksEnv(execOpts, join(reportDir, 'no-gitconfig'));
-    execFileSync('gitleaks', args, { ...until(execOpts, deadline), env });
-    return [];
+    const errLog = runGitleaks(args, { ...until(execOpts, deadline), env }, `${reportPath}.log`);
+    return errLog === null ? [] : loggedErrorFailure(errLog, forwardStreams);
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
     if (e.code === 'ENOENT') return null;
