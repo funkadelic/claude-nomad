@@ -5,6 +5,7 @@ import { backupBase, claudeHome, HOST, repoHome, type PathMap } from '../../core
 import { applySubtreeRedactions, isSubtreeActive, listSubtreeFiles } from './subtree.ts';
 import { warnIfSessionPushed } from '../pushed-history.ts';
 import { type ScanFn, scanFile } from '../push/gitleaks.scan.ts';
+import { assertSafeLogical } from '../../core/config.sharedDirs.guard.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 import { freshBackupTs } from '../../core/utils.fs.ts';
 import { encodePath, readJson } from '../../core/utils.json.ts';
@@ -38,6 +39,7 @@ function resolveLiveSession(id: string): { path: string; logical: string } | nul
     const projects = readJson<PathMap>(mapPath).projects;
     const claude = claudeHome();
     for (const [logical, hostMap] of Object.entries(projects)) {
+      assertSafeLogical(logical);
       const abs = hostMap[HOST];
       if (abs === undefined) continue;
       const live = join(claude, 'projects', encodePath(abs), `${id}.jsonl`);
@@ -152,12 +154,25 @@ export function cmdRedact(
     }
 
     const ts = freshBackupTs(backup);
-    const { total: totalCount, dirty } = applySubtreeRedactions(
-      localPath,
-      mainFindings,
-      subtreeFiles,
-      { rule, ts, scan, dryRun, stagedDir },
-    );
+    const {
+      total: totalCount,
+      dirty,
+      failed,
+    } = applySubtreeRedactions(localPath, mainFindings, subtreeFiles, {
+      rule,
+      ts,
+      scan,
+      dryRun,
+      stagedDir,
+    });
+
+    if (failed.length > 0) {
+      fail(
+        `gitleaks scan failed for ${failed.length} file(s) in session ${id}; nothing was rewritten`,
+      );
+      process.exitCode = 1;
+      return;
+    }
 
     if (totalCount === 0) {
       const ruleClause = rule === undefined ? '' : ` for rule ${rule}`;

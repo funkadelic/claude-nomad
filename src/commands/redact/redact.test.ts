@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1366,6 +1366,66 @@ describe('cmdRedact: subagent-only secret is redacted', () => {
     // Backup must have been called for the agent file.
     expect(backupSpy).toHaveBeenCalledOnce();
     expect(backupSpy.mock.calls[0][0]).toBe(agentPath);
+  });
+
+  it('fails and rewrites nothing when a subtree file scan fails', async () => {
+    const projectsDir = join(testHome, '.claude', 'projects', '-home-norm-git-myproject');
+    const agentPath = join(projectsDir, 'sess-fail', 'subagents', 'agent-1.jsonl');
+    mkdirSync(dirname(agentPath), { recursive: true });
+    const transcriptPath = join(projectsDir, 'sess-fail.jsonl');
+    writeFileSync(transcriptPath, '{"text":"main-secret"}\n');
+    writeFileSync(agentPath, '{"text":"agent"}\n');
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { myproject: { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+    const { cmdRedact } = await import('./redact.ts');
+    const mainFinding: Finding = {
+      RuleID: 'r1',
+      StartLine: 1,
+      Match: 'main-secret',
+      StartColumn: 10,
+      EndColumn: 20,
+      File: transcriptPath,
+      Fingerprint: 'fp-main',
+    };
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const prevExit = process.exitCode;
+    try {
+      cmdRedact(
+        { id: 'sess-fail' },
+        () => Date.now() + 10 * 60 * 1000,
+        (p) => (p === agentPath ? null : [mainFinding]),
+      );
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExit;
+    }
+    const { readFileSync: realRead } = await import('node:fs');
+    expect(realRead(transcriptPath, 'utf8')).toContain('main-secret');
+    expect(errSpy.mock.calls.flat().join('\n')).toMatch(/scan failed for 1 file/);
+  });
+
+  it('refuses a path-map logical key that could escape the staged tree', async () => {
+    const projectsDir = join(testHome, '.claude', 'projects', '-home-norm-git-myproject');
+    mkdirSync(projectsDir, { recursive: true });
+    writeFileSync(join(projectsDir, 'sess-bad.jsonl'), '{"text":"x"}\n');
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({ projects: { '../evil': { 'test-host': '/home/norm/git/myproject' } } }),
+    );
+    const { cmdRedact } = await import('./redact.ts');
+    const scan = vi.fn(() => []);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const prevExit = process.exitCode;
+    try {
+      cmdRedact({ id: 'sess-bad' }, () => Date.now() + 10 * 60 * 1000, scan);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prevExit;
+    }
+    expect(scan).not.toHaveBeenCalled();
+    expect(errSpy.mock.calls.flat().join('\n')).toMatch(/could not resolve local transcript/);
   });
 
   it('live-session guard fires when newest subtree file is within 5 minutes', async () => {

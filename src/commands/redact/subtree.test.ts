@@ -371,22 +371,26 @@ describe('applySubtreeRedactions', () => {
     expect(content).toContain('BBB');
   });
 
-  it('scan null for a subtree file is silently skipped', async () => {
+  it('reports a subtree scan failure and rewrites nothing', async () => {
     const { applySubtreeRedactions } = await import('./subtree.ts');
     const mainPath = join(tmpDir, 'sid.jsonl');
     const agentPath = join(tmpDir, 'agent-1.jsonl');
     writeFileSync(mainPath, '{"text":"secret"}\n');
     writeFileSync(agentPath, '{"text":"content"}\n');
 
-    const { total } = applySubtreeRedactions(
+    const { total, failed } = applySubtreeRedactions(
       mainPath,
       [{ StartLine: 1, Match: 'secret', RuleID: 'r1' }],
       [agentPath],
       { ts: 'ts-x', scan: (_p) => null, dryRun: false },
     );
 
-    // Only main (1 finding); agent scan returned null, so it's skipped.
     expect(total).toBe(1);
+    expect(failed).toEqual([agentPath]);
+    const { readFileSync } = await import('node:fs');
+    // The main file keeps its secret: a failed scan aborts every write.
+    expect(readFileSync(mainPath, 'utf8')).toContain('secret');
+    expect(readFileSync(mainPath, 'utf8')).not.toContain('[REDACTED');
   });
 
   it('rule filter skips a file whose raw findings are all filtered out', async () => {

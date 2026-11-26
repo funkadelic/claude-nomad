@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -968,6 +968,36 @@ describe('applyRedact: branch coverage', () => {
       () => [],
     );
     expect(result).toBe(false);
+  });
+
+  it('returns false and rewrites nothing when a subtree file scan fails', async () => {
+    const { transcriptPath, sessionDir, farFuture, map } = makeSubtreeFixture(testHome);
+    writeFileSync(transcriptPath, '{"text":"main-secret"}\n');
+    const agentPath = join(sessionDir, 'subagents', 'agent-1.jsonl');
+    mkdirSync(dirname(agentPath), { recursive: true });
+    writeFileSync(agentPath, '{"text":"agent"}\n');
+    mkdirSync(join(testHome, 'shared', 'projects', 'myproject'), { recursive: true });
+
+    const { applyRedact } = await import('./redact.ts');
+    const trigger: Finding = {
+      RuleID: 'r',
+      File: 'shared/projects/myproject/sid123.jsonl',
+      StartLine: 1,
+      StartColumn: 1,
+      EndColumn: 5,
+      Match: 'REDACTED',
+      Fingerprint: 'fp',
+    };
+    const mainFinding: Finding = { ...trigger, Match: 'main-secret', File: transcriptPath };
+    const result = applyRedact(
+      trigger,
+      'ts-x',
+      map,
+      () => farFuture,
+      (p) => (p === agentPath ? null : [mainFinding]),
+    );
+    expect(result).toBe(false);
+    expect(readFileSync(transcriptPath, 'utf8')).toContain('main-secret');
   });
 
   it('skips a project that has no entry for the current host', async () => {
