@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -263,12 +271,15 @@ describe('scanFile (mocked child_process)', () => {
     expect(attributes).toBe('* -text -filter -ident -working-tree-encoding\n');
   });
 
-  it('returns null when gitleaks is absent (ENOENT)', async () => {
+  it.each(['git', 'gitleaks'])('returns null when %s is absent (ENOENT)', async (missing) => {
+    const bins: string[] = [];
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((bin: string) => {
+          bins.push(bin);
+          if (bin !== missing) return Buffer.from('');
           const err = new Error('not found') as NodeJS.ErrnoException;
           err.code = 'ENOENT';
           throw err;
@@ -277,6 +288,9 @@ describe('scanFile (mocked child_process)', () => {
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
     expect(scanFile(target)).toBeNull();
+    // The missing binary was actually reached, after every git step when it is gitleaks.
+    expect(bins.at(-1)).toBe(missing);
+    if (missing === 'gitleaks') expect(bins).toEqual(['git', 'git', 'git', 'gitleaks']);
   });
 
   it('does NOT forward streams when crashing with default forwardStreams (omitted arg)', async () => {
@@ -286,7 +300,8 @@ describe('scanFile (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((bin: string) => {
+          if (bin !== 'gitleaks') return Buffer.from('');
           const err = new Error('crash') as NodeJS.ErrnoException & {
             status?: number;
             stderr?: Buffer;
@@ -404,38 +419,49 @@ describe('scanFile (mocked child_process)', () => {
     expect(leaked).toBe(false);
   });
 
-  it('forwards stderr on the crash path (no parseable report) when forwardStreams=true', async () => {
-    vi.doMock('node:child_process', async (importOriginal) => {
-      const actual = await importOriginal<typeof cpModule>();
-      return {
-        ...actual,
-        execFileSync: vi.fn(() => {
-          const err = new Error('crash') as NodeJS.ErrnoException & {
-            status?: number;
-            stderr?: Buffer;
-          };
-          err.status = 2;
-          err.stderr = Buffer.from('crash-stderr-diagnostic');
-          throw err;
-        }),
-      };
-    });
-    const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile(target, { forwardStreams: true })).toBeNull();
-    const forwarded = stderrSpy.mock.calls.some(
-      (c: unknown[]) =>
-        Buffer.isBuffer(c[0]) && c[0].toString().includes('crash-stderr-diagnostic'),
-    );
-    expect(forwarded).toBe(true);
-    expect(stderrSpy).toHaveBeenCalledWith('scan aborted: crash\n');
-  });
+  it.each([
+    ['gitleaks', 'gitleaks'],
+    ['git add', 'add'],
+  ])(
+    'forwards stderr when %s crashes (no parseable report) with forwardStreams',
+    async (_l, failing) => {
+      const bins: string[] = [];
+      vi.doMock('node:child_process', async (importOriginal) => {
+        const actual = await importOriginal<typeof cpModule>();
+        return {
+          ...actual,
+          execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+            bins.push(bin);
+            if (bin !== failing && !(args ?? []).includes(failing)) return Buffer.from('');
+            const err = new Error('crash') as NodeJS.ErrnoException & {
+              status?: number;
+              stderr?: Buffer;
+            };
+            err.status = 2;
+            err.stderr = Buffer.from('crash-stderr-diagnostic');
+            throw err;
+          }),
+        };
+      });
+      const { scanFile } = await import('./gitleaks.scan.ts');
+      expect(scanFile(target, { forwardStreams: true })).toBeNull();
+      const forwarded = stderrSpy.mock.calls.some(
+        (c: unknown[]) =>
+          Buffer.isBuffer(c[0]) && c[0].toString().includes('crash-stderr-diagnostic'),
+      );
+      expect(forwarded).toBe(true);
+      expect(stderrSpy).toHaveBeenCalledWith('scan aborted: crash\n');
+      expect(bins.includes('gitleaks')).toBe(failing === 'gitleaks');
+    },
+  );
 
   it('names the killing signal in the cause line on the crash path', async () => {
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((bin: string) => {
+          if (bin !== 'gitleaks') return Buffer.from('');
           throw Object.assign(new Error('spawnSync gitleaks ENOBUFS\nextra'), {
             code: 'ENOBUFS',
             signal: 'SIGTERM',
@@ -492,7 +518,8 @@ describe('scanFile (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn(() => {
+        execFileSync: vi.fn((bin: string) => {
+          if (bin !== 'gitleaks') return Buffer.from('');
           const err = new Error('crash') as NodeJS.ErrnoException & {
             status?: number;
             stdout?: Buffer;
@@ -1083,5 +1110,103 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('nomad-gitleaks-cfg'),
     );
     expect(cleanedTemp).toBe(false);
+  });
+});
+
+/**
+ * Real-fs cleanup for `scanFile`: the scratch dir holds the unredacted report,
+ * the file copy and the git objects, so nothing may survive any exit path.
+ * Real git runs; only the failing step and gitleaks are faked.
+ */
+describe('scanFile scratch-dir cleanup (real fs, real git)', () => {
+  let originalHome: string | undefined;
+  let originalNomadRepo: string | undefined;
+  let testHome: string;
+  let target: string;
+  let cwds: string[];
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+    originalNomadRepo = process.env.NOMAD_REPO;
+    testHome = mkdtempSync(join(tmpdir(), 'nomad-scanfile-cleanup-'));
+    process.env.HOME = testHome;
+    process.env.NOMAD_REPO = join(testHome, 'repo');
+    mkdirSync(process.env.NOMAD_REPO, { recursive: true });
+    target = join(testHome, 'file.jsonl');
+    writeFileSync(target, '{"text":"hello"}\n');
+    cwds = [];
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock('node:child_process');
+    if (originalHome !== undefined) process.env.HOME = originalHome;
+    else delete process.env.HOME;
+    if (originalNomadRepo !== undefined) process.env.NOMAD_REPO = originalNomadRepo;
+    else delete process.env.NOMAD_REPO;
+    rmSync(testHome, { recursive: true, force: true });
+  });
+
+  /**
+   * Run real git, but throw on `failOn` (a git subcommand). gitleaks exits 0, or
+   * writes a one-finding report and exits 1 when `findings` is set.
+   */
+  function mockExec(failOn: string | undefined, findings: boolean): void {
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args: string[], opts: cpModule.ExecFileSyncOptions) => {
+          cwds.push(String(opts.cwd));
+          if (failOn !== undefined && args.includes(failOn)) {
+            throw Object.assign(new Error('boom'), { status: 128 });
+          }
+          if (bin === 'git') return actual.execFileSync(bin, args, opts);
+          if (!findings) return Buffer.from('');
+          const flag = args.find((a) => a.startsWith('--report-path='))!;
+          const report = [
+            {
+              RuleID: 'r',
+              File: 'f',
+              StartLine: 1,
+              StartColumn: 1,
+              EndColumn: 2,
+              Match: 'm',
+              Fingerprint: 'fp',
+            },
+          ];
+          writeFileSync(flag.slice('--report-path='.length), JSON.stringify(report));
+          throw Object.assign(new Error('leaks'), { status: 1 });
+        }),
+      };
+    });
+  }
+
+  /** Assert the cache dir is empty and every dir git or gitleaks ran in is gone. */
+  function expectNoScratchLeft(): void {
+    expect(readdirSync(join(testHome, '.cache', 'claude-nomad'))).toEqual([]);
+    for (const cwd of cwds) expect(existsSync(cwd)).toBe(false);
+  }
+
+  it.each([
+    ['a clean scan', undefined, false, 0],
+    ['findings', undefined, true, 1],
+    ['a git init throw', 'init', false, null],
+    ['a git add throw', 'add', false, null],
+  ])('removes the scratch dir after %s', async (_l, failOn, findings, expected) => {
+    mockExec(failOn, findings);
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(target)?.length ?? null).toBe(expected);
+    expect(cwds.length).toBeGreaterThan(0);
+    expectNoScratchLeft();
+  });
+
+  it('removes the scratch dir when the file copy throws', async () => {
+    mockExec(undefined, false);
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(join(testHome, 'missing.jsonl'))).toBeNull();
+    expect(cwds).toEqual([]);
+    expectNoScratchLeft();
   });
 });
