@@ -1168,6 +1168,20 @@ describe('resolveLiveTranscript: branch and error coverage', () => {
     // 'no-such-session' does not exist in the temp fs, so existsSync returns false.
     expect(resolveLiveTranscript('no-such-session')).toBeNull();
   });
+
+  it('skips an unsafe project key without hiding a valid one after it', async () => {
+    writeFileSync(
+      join(testHome, 'path-map.json'),
+      JSON.stringify({
+        projects: { '../evil': { 'test-host': '/srv/evil' }, good: { 'test-host': '/srv/good' } },
+      }),
+    );
+    const live = join(testHome, '.claude', 'projects', '-srv-good', 'abc123.jsonl');
+    mkdirSync(dirname(live), { recursive: true });
+    writeFileSync(live, '{}\n');
+    const { resolveLiveTranscript } = await import('./redact.ts');
+    expect(resolveLiveTranscript('abc123')).toBe(live);
+  });
 });
 
 // ---------------------------------------------------------------------------

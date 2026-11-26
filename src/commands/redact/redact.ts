@@ -26,6 +26,16 @@ export function resolveLiveTranscript(id: string): string | null {
   return resolveLiveSession(id)?.path ?? null;
 }
 
+/** True when `logical` passes `assertSafeLogical`. */
+function isSafeLogical(logical: string): boolean {
+  try {
+    assertSafeLogical(logical);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * `resolveLiveTranscript` plus the logical project name the transcript is
  * staged under, so a re-scan can stage at the same path as push.
@@ -39,9 +49,9 @@ function resolveLiveSession(id: string): { path: string; logical: string } | nul
     const projects = readJson<PathMap>(mapPath).projects;
     const claude = claudeHome();
     for (const [logical, hostMap] of Object.entries(projects)) {
-      assertSafeLogical(logical);
       const abs = hostMap[HOST];
-      if (abs === undefined) continue;
+      // A bad key skips only its own entry, so key order cannot hide a valid session.
+      if (abs === undefined || !isSafeLogical(logical)) continue;
       const live = join(claude, 'projects', encodePath(abs), `${id}.jsonl`);
       if (existsSync(live)) return { path: live, logical };
     }
