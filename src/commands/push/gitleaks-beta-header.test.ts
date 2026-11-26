@@ -4,12 +4,14 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -190,6 +192,35 @@ describe.skipIf(!hasGitleaks)(
         expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n');
       },
     );
+
+    it.skipIf(process.platform === 'win32')(
+      'keeps a symlinked local attributes file a symlink and restores its target',
+      () => {
+        execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+        const local = join(scanRoot, '.git', 'info', 'attributes');
+        mkdirSync(dirname(local), { recursive: true });
+        const real = join(testHome, 'real-attributes');
+        writeFileSync(real, '*.jsonl -diff\n');
+        symlinkSync(real, local);
+        write(transcript, betasLine(realToken));
+        expect(scanStagedTree(scanRoot)?.length).toBe(1);
+        expect(lstatSync(local).isSymbolicLink()).toBe(true);
+        expect(readFileSync(real, 'utf8')).toBe('*.jsonl -diff\n');
+      },
+    );
+
+    it.skipIf(process.platform === 'win32').each([
+      ['a dangling', (_local: string) => join(testHome, 'missing-attributes')],
+      ['a looping', (local: string) => local],
+    ])('fails the scan without touching %s attributes symlink', (_label, targetOf) => {
+      execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+      const local = join(scanRoot, '.git', 'info', 'attributes');
+      mkdirSync(dirname(local), { recursive: true });
+      symlinkSync(targetOf(local), local);
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)).toBeNull();
+      expect(lstatSync(local).isSymbolicLink()).toBe(true);
+    });
 
     it('removes the attributes file it created', () => {
       write(transcript, betasLine(realToken));

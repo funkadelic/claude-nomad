@@ -492,11 +492,10 @@ describe('scanFile (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return { ...actual, execFileSync: vi.fn(() => Buffer.from('')) };
     });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { scanFile } = await import('./gitleaks.scan.ts');
     expect(scanFile(target)).toEqual([]);
-    expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining('could not remove scan scratch'),
-    );
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('could not remove scan scratch'));
   });
 
   it('fails closed when gitleaks exits 0 but logged an ERR line', async () => {

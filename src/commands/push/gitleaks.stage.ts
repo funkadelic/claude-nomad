@@ -5,10 +5,20 @@
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
-import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 
 import { claudeHome } from '../../core/config.ts';
+import { warn } from '../../core/utils.ts';
 
 /**
  * Scan exec options for a repo dir. An inherited GIT_DIR/GIT_INDEX_FILE/
@@ -37,23 +47,34 @@ function replaceFile(path: string, body: string, mode?: number): void {
 }
 
 /**
+ * The real file behind `path` (following a symlink), or null when nothing is there.
+ * A dangling symlink throws: writing over it would replace, then delete, the link.
+ */
+function existingTarget(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    if (lstatSync(path, { throwIfNoEntry: false }) === undefined) return null;
+    // Not ENOENT: callers read that code as git or gitleaks missing.
+    throw new Error(`${path} is a symlink to a missing file`, { cause: err });
+  }
+}
+
+/**
  * Append `* diff` to the repo's local `info/attributes` and return a function
  * that puts the file back. A global or committed `-diff`/`binary` would make
  * `git diff` hide the content, so gitleaks would scan nothing; the last
  * matching line wins, and `diff` changes only diff output, never what is staged.
+ * An existing file that cannot be read throws instead of being replaced.
  */
 export function forceTextDiff(opts: ExecFileSyncOptions): () => void {
   const rel = String(execFileSync('git', ['rev-parse', '--git-path', 'info/attributes'], opts));
-  const path = resolve(String(opts.cwd), rel.trim() || join('.git', 'info', 'attributes'));
-  let body: string | null = null;
-  let mode: number | undefined;
-  try {
-    body = readFileSync(path, 'utf8');
-    mode = statSync(path).mode & 0o777;
-  } catch (err) {
-    // Only absent is safe to write fresh (and remove on restore); an unreadable file would be lost.
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-  }
+  const link = resolve(String(opts.cwd), rel.trim() || join('.git', 'info', 'attributes'));
+  const target = existingTarget(link);
+  const path = target ?? link;
+  const body = target === null ? null : readFileSync(target, 'utf8');
+  const mode = target === null ? undefined : statSync(target).mode & 0o777;
   mkdirSync(dirname(path), { recursive: true });
   const prior = body ?? '';
   const glue = prior === '' || prior.endsWith('\n') ? '' : '\n';
@@ -147,6 +168,6 @@ export function removeScratch(dir: string): void {
   try {
     rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
   } catch {
-    process.stderr.write(`nomad: could not remove scan scratch dir ${dir}; delete it by hand.\n`);
+    warn(`could not remove scan scratch dir ${dir}; delete it by hand.`);
   }
 }
