@@ -45,27 +45,27 @@ describe('per-file size cap', () => {
   describe('skipOversize', () => {
     it('keeps a file of exactly the cap, silently', () => {
       const p = put(src, 'a.jsonl', CAP);
-      expect(skipOversize(p, 'foo/a.jsonl', CAP)).toBe(false);
+      expect(skipOversize(p, CAP)).toBe(false);
       expect(errSpy).not.toHaveBeenCalled();
     });
 
     it('skips a file one byte over the cap with one warning', () => {
       const p = put(src, 'a.jsonl', CAP + 1);
-      expect(skipOversize(p, 'foo/a.jsonl', CAP)).toBe(true);
+      expect(skipOversize(p, CAP)).toBe(true);
       expect(errSpy).toHaveBeenCalledTimes(1);
       expect(warned()).toContain(
-        'skip foo/a.jsonl: 2 MiB is over the 1 MiB per-file limit GitHub accepts; it stays on this machine only',
+        `not syncing ${p} (2 MiB): GitHub rejects files over 1 MiB, so it stays on this machine`,
       );
     });
 
     it('never skips a directory', () => {
       mkdirSync(join(src, 'sub'));
-      expect(skipOversize(join(src, 'sub'), 'foo/sub', 0)).toBe(false);
+      expect(skipOversize(join(src, 'sub'), 0)).toBe(false);
     });
 
     it('uses the 100 MiB default cap', () => {
       const p = put(src, 'a.jsonl', 8);
-      expect(skipOversize(p, 'foo/a.jsonl')).toBe(false);
+      expect(skipOversize(p)).toBe(false);
     });
   });
 
@@ -77,7 +77,7 @@ describe('per-file size cap', () => {
       expect(existsSync(join(dst, 'big.jsonl'))).toBe(false);
       expect(readFileSync(join(dst, 'small.jsonl'))).toHaveLength(8);
       expect(errSpy).toHaveBeenCalledTimes(1);
-      expect(warned()).toContain(`skip ${join('foo', 'big.jsonl')}: 2 MiB`);
+      expect(warned()).toContain(`not syncing ${join(src, 'big.jsonl')} (2 MiB)`);
     });
 
     it('leaves out over-cap nested files and copies small siblings', () => {
@@ -89,8 +89,8 @@ describe('per-file size cap', () => {
       expect(existsSync(join(dst, 'sid-1', 'tool-results', 'out.txt'))).toBe(false);
       expect(existsSync(join(dst, 'sid-1', 'subagents', 'agent-y.jsonl'))).toBe(true);
       expect(errSpy).toHaveBeenCalledTimes(2);
-      expect(warned()).toContain(join('foo', 'sid-1', 'subagents', 'agent-x.jsonl'));
-      expect(warned()).toContain(join('foo', 'sid-1', 'tool-results', 'out.txt'));
+      expect(warned()).toContain(join(src, 'sid-1', 'subagents', 'agent-x.jsonl'));
+      expect(warned()).toContain(join(src, 'sid-1', 'tool-results', 'out.txt'));
     });
 
     it('copies files at and under the cap with no warning', () => {
@@ -121,7 +121,7 @@ describe('per-file size cap', () => {
       expect(existsSync(join(dst, 'big.jsonl'))).toBe(false);
       expect(existsSync(join(dst, 'small.jsonl'))).toBe(true);
       expect(errSpy).toHaveBeenCalledTimes(1);
-      expect(warned()).toContain(`skip ${join('foo', 'big.jsonl')}: 2 MiB`);
+      expect(warned()).toContain(`not syncing ${join(src, 'big.jsonl')} (2 MiB)`);
     });
 
     it('leaves an existing repo copy of a skipped file untouched', () => {

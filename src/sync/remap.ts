@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { basename, dirname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from '../core/config.sharedDirs.guard.ts';
 import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras/core.ts';
@@ -155,7 +155,7 @@ export function applySelective(
   for (const src of sel.changed) {
     if (!src.startsWith(prefix)) continue;
     const rel = relative(localDir, src);
-    if (skipOversize(src, join(basename(repoDst), rel), cap)) continue;
+    if (skipOversize(src, cap)) continue;
     copyFileAtomic(src, join(repoDst, rel));
   }
   for (const src of sel.deleted) {
@@ -187,7 +187,7 @@ export function copyDirJsonlOnly(src: string, dst: string, cap?: number): void {
     filter: (srcPath) => {
       const rel = relative(src, srcPath);
       if (rel === '') return true;
-      if (skipOversize(srcPath, join(basename(dst), rel), cap)) return false;
+      if (skipOversize(srcPath, cap)) return false;
       if (rel.split(sep).length > 1) return true;
       if (statSync(srcPath).isDirectory()) return true;
       if (srcPath.endsWith('.jsonl')) return true;
