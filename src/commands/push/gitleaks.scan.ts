@@ -210,13 +210,16 @@ function stageAll(opts: ExecFileSyncOptions): void {
 }
 
 /**
- * Env for the gitleaks process. gitleaks runs its own `git diff`, which reads
- * the user's git config, and a `color.ui = always` would put escape codes in
- * the patch so gitleaks finds nothing. Command-line config beats every file.
+ * Env for the gitleaks process. gitleaks runs its own `git diff` and reports
+ * "no leaks" when that diff fails or is colored, so it skips the global and
+ * system git config (`noGlobal` is a path that never exists) and forces color
+ * off over the repo's own config.
  */
-function gitleaksEnv(opts: ExecFileSyncOptions): NodeJS.ProcessEnv {
+function gitleaksEnv(opts: ExecFileSyncOptions, noGlobal: string): NodeJS.ProcessEnv {
   return {
     ...opts.env,
+    GIT_CONFIG_GLOBAL: noGlobal,
+    GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: 'color.diff',
     GIT_CONFIG_VALUE_0: 'never',
@@ -344,7 +347,7 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
   const opts = repoExecOpts(repoDir);
   const gitleaksOpts: ExecFileSyncOptions = {
     ...opts,
-    env: gitleaksEnv(opts),
+    env: gitleaksEnv(opts, `${reportPath}.no-gitconfig`),
     timeout: GITLEAKS_SCAN_TIMEOUT_MS,
   };
   let restore = (): void => undefined;
@@ -450,7 +453,8 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
       `--report-path=${reportPath}`,
     ];
     if (toml !== null) args.push('--config', toml);
-    execFileSync('gitleaks', args, { ...until(execOpts, deadline), env: gitleaksEnv(execOpts) });
+    const env = gitleaksEnv(execOpts, join(reportDir, 'no-gitconfig'));
+    execFileSync('gitleaks', args, { ...until(execOpts, deadline), env });
     return [];
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };

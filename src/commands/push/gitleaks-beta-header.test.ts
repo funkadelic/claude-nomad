@@ -165,8 +165,11 @@ describe.skipIf(!hasGitleaks)(
       expect(existsSync(join(scanRoot, '.git', 'info', 'attributes'))).toBe(false);
     });
 
-    it('scans despite a global color.ui = always', () => {
-      writeFileSync(join(testHome, '.gitconfig'), '[color]\n\tui = always\n');
+    it.each([
+      ['color.ui = always', '[color]\n\tui = always\n'],
+      ['diff.orderFile naming a missing file', '[diff]\n\torderFile = .no-such-order\n'],
+    ])('scans despite a global %s', (_label, gitconfig) => {
+      writeFileSync(join(testHome, '.gitconfig'), gitconfig);
       write(transcript, betasLine(realToken));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
     });
@@ -265,10 +268,13 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(i)]);
     });
 
-    it('scans despite a global color.ui = always', () => {
-      writeFileSync(join(testHome, '.gitconfig'), '[color]\n\tui = always\n');
-      const local = localSkill(`# token ${patFor(8)}\n`);
-      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(8)]);
+    it.each([
+      ['color.ui = always', '[color]\n\tui = always\n', 8],
+      ['diff.orderFile naming a missing file', '[diff]\n\torderFile = .no-such-order\n', 10],
+    ])('scans despite a global %s', (_label, gitconfig, i) => {
+      writeFileSync(join(testHome, '.gitconfig'), gitconfig);
+      const local = localSkill(`# token ${patFor(i)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(i)]);
     });
 
     it('scans a text file that holds a NUL byte', () => {

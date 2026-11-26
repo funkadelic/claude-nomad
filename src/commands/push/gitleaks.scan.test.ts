@@ -263,7 +263,15 @@ describe('scanFile (mocked child_process)', () => {
       const gitVars = Object.keys(opts.env ?? {}).filter((k) => k.toUpperCase().startsWith('GIT_'));
       // gitleaks gets only the color override; nothing inherited survives.
       const allowed =
-        bin === 'gitleaks' ? ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'] : [];
+        bin === 'gitleaks'
+          ? [
+              'GIT_CONFIG_GLOBAL',
+              'GIT_CONFIG_NOSYSTEM',
+              'GIT_CONFIG_COUNT',
+              'GIT_CONFIG_KEY_0',
+              'GIT_CONFIG_VALUE_0',
+            ]
+          : [];
       expect(gitVars).toEqual(allowed);
       expect(opts.timeout).toBeGreaterThan(0);
       expect(opts.timeout).toBeLessThanOrEqual(4_000);
