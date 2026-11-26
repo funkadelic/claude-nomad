@@ -140,6 +140,9 @@ Safety checks:
   warning is printed instead of a silent success. This differs from a missing secret value, which
   falls back to replacing the whole flagged text as described above. Inspect it by hand; the push re-scan still blocks
   a real leak.
+- If any file in the session cannot be scanned (git or gitleaks is missing, or the scan errors),
+  nothing is rewritten and `nomad redact` exits with an error, since an unscanned file may still
+  hold a secret.
 - `--dry-run` prints the planned redactions and writes nothing.
 
 This command is safe to re-run: if the span was already redacted (the replacement token is already
@@ -246,8 +249,8 @@ What the actions do:
 
 - **Redact** rewrites the secret span in the LOCAL source transcript in place (same flow as
   `nomad redact`), backs up first, then re-copies the file to the staged tree. Refuses if the
-  session was modified in the last 5 minutes (potential active session): choose Drop or Skip
-  instead and wait for the session to end. Redact also handles a non-session finding, a
+  session was modified in the last 5 minutes (potential active session), or if any file in the
+  session cannot be scanned: choose Drop or Skip instead. Redact also handles a non-session finding, a
   project-level `memory/*.md` note or a user skill file under `shared/skills/<name>/`, rewriting
   that local file in place the same way (the 5-minute active-session guard does not apply to those).
 - **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root, but only once
