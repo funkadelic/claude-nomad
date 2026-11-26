@@ -17,7 +17,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
-import { claudeHome, GITLEAKS_SCAN_TIMEOUT_MS } from '../../core/config.ts';
+import { claudeHome, GITLEAKS_SCAN_TIMEOUT_MS, repoHome } from '../../core/config.ts';
 import { resolveTomlConfig } from './gitleaks.config.ts';
 import { nowTimestamp } from '../../core/utils.fs.ts';
 
@@ -388,9 +388,10 @@ export type ScanFn = (filePath: string, opts?: ScanFileOptions) => Finding[] | n
 /**
  * Scan a single non-staged file by staging a copy into a private temp repo at
  * its push-layout path and running `gitleaks protect --staged` with the same
- * `resolveTomlConfig` config as the push gate, so the same allowlists apply
- * (`detect --no-git` chunks large files and misses a keyword-gated match whose
- * keyword is far away). Omits `--config` when no base config exists.
+ * `resolveTomlConfig` config and the sync repo's `.gitleaksignore` as the push
+ * gate, so the same allowlists and Allowed fingerprints apply (`detect --no-git`
+ * chunks large files and misses a keyword-gated match whose keyword is far
+ * away). Omits `--config` when no base config exists.
  *
  * Intentionally does NOT pass `--redact` so that `Finding.Match` and
  * `Finding.Secret` carry the real secret value. Callers that need to perform
@@ -451,6 +452,8 @@ export function scanFile(filePath: string, opts: ScanFileOptions = {}): Finding[
       '--staged',
       '--report-format=json',
       `--report-path=${reportPath}`,
+      // The push gate's ignore file, so a finding the user Allowed is not redacted.
+      `--gitleaks-ignore-path=${join(repoHome(), '.gitleaksignore')}`,
     ];
     if (toml !== null) args.push('--config', toml);
     const env = gitleaksEnv(execOpts, join(reportDir, 'no-gitconfig'));

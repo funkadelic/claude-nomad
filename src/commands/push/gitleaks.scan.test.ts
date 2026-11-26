@@ -163,6 +163,9 @@ describe('scanFile (mocked child_process)', () => {
     expect(gitleaksArgs).toContain('protect');
     expect(gitleaksArgs).toContain('--staged');
     expect(gitleaksArgs).not.toContain('--redact');
+    expect(gitleaksArgs).toContain(
+      `--gitleaks-ignore-path=${join(testHome, 'repo', '.gitleaksignore')}`,
+    );
   });
 
   it('stages at the caller-supplied stagedRel instead of deriving one', async () => {
