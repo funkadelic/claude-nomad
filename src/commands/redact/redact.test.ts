@@ -1176,9 +1176,12 @@ describe('resolveLiveTranscript: branch and error coverage', () => {
         projects: { '../evil': { 'test-host': '/srv/evil' }, good: { 'test-host': '/srv/good' } },
       }),
     );
+    // Both transcripts exist, so resolving the unsafe entry would return its path.
+    for (const dir of ['-srv-evil', '-srv-good']) {
+      mkdirSync(join(testHome, '.claude', 'projects', dir), { recursive: true });
+      writeFileSync(join(testHome, '.claude', 'projects', dir, 'abc123.jsonl'), '{}\n');
+    }
     const live = join(testHome, '.claude', 'projects', '-srv-good', 'abc123.jsonl');
-    mkdirSync(dirname(live), { recursive: true });
-    writeFileSync(live, '{}\n');
     const { resolveLiveTranscript } = await import('./redact.ts');
     expect(resolveLiveTranscript('abc123')).toBe(live);
   });

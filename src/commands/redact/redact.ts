@@ -49,9 +49,10 @@ function resolveLiveSession(id: string): { path: string; logical: string } | nul
     const projects = readJson<PathMap>(mapPath).projects;
     const claude = claudeHome();
     for (const [logical, hostMap] of Object.entries(projects)) {
-      const abs = hostMap[HOST];
       // A bad key skips only its own entry, so key order cannot hide a valid session.
-      if (abs === undefined || !isSafeLogical(logical)) continue;
+      if (!isSafeLogical(logical)) continue;
+      const abs = hostMap[HOST];
+      if (abs === undefined) continue;
       const live = join(claude, 'projects', encodePath(abs), `${id}.jsonl`);
       if (existsSync(live)) return { path: live, logical };
     }
