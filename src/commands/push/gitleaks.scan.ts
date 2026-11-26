@@ -171,13 +171,13 @@ function repoExecOpts(repoDir: string): ExecFileSyncOptions {
   return { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'] };
 }
 
-/** Local attributes line that makes git show every file to gitleaks as text. */
-const FORCE_DIFF = '* diff';
+/** Local attributes line that resets `diff`, so git's own binary check decides. */
+const FORCE_DIFF = '* !diff';
 
 /**
- * Append `* diff` to the repo's local (uncommitted) `info/attributes` unless it
+ * Append `* !diff` to the repo's local (uncommitted) `info/attributes` unless it
  * is already the last line. A global or committed `-diff`/`binary` would make
- * `git diff` hide the content, so gitleaks would scan nothing; the last
+ * `git diff` hide text content, so gitleaks would scan nothing; the last
  * matching line wins, and `diff` changes only diff output, never what is staged.
  */
 function forceTextDiff(opts: ExecFileSyncOptions): void {
@@ -261,8 +261,8 @@ function stageScratchCopy(opts: ExecFileSyncOptions, rel: string): void {
   execFileSync('git', ['init', '-q'], opts);
   const info = join(String(opts.cwd), '.git', 'info');
   mkdirSync(info, { recursive: true });
-  // `diff` beats an inherited `-diff`/`binary`, which would hide the content from gitleaks.
-  writeFileSync(join(info, 'attributes'), '* -text -filter -ident -working-tree-encoding diff\n');
+  // `!diff` resets an inherited `-diff`/`binary`, which would hide the content from gitleaks.
+  writeFileSync(join(info, 'attributes'), '* -text -filter -ident -working-tree-encoding !diff\n');
   execFileSync('git', [...SCRATCH_GIT_CONFIG, 'add', '-f', '-A'], {
     ...opts,
     stdio: ['ignore', 'ignore', 'pipe'],

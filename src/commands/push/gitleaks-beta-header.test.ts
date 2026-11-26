@@ -149,7 +149,7 @@ describe.skipIf(!hasGitleaks)(
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
     });
 
-    it('keeps local attributes, overrides their -diff, and appends the diff line once', () => {
+    it('keeps local attributes, overrides their -diff, and appends the !diff line once', () => {
       execFileSync('git', ['init', '-q'], { cwd: scanRoot });
       const local = join(scanRoot, '.git', 'info', 'attributes');
       mkdirSync(dirname(local), { recursive: true });
@@ -157,7 +157,7 @@ describe.skipIf(!hasGitleaks)(
       write(transcript, betasLine(realToken));
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
-      expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n* diff\n');
+      expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff\n* !diff\n');
     });
 
     it('suppresses the beta-flag list in the redact re-scan of a local transcript', () => {

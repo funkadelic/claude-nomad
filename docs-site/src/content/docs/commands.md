@@ -161,7 +161,7 @@ Export local sessions and opted-in per-project extras to logical names, commit
 (`chore: sync from <NOMAD_HOST>`), push. Steady-state pushes scan only the
 transcripts that changed since the last successful push (incremental); a cold
 start, a gitleaks version change, a gitleaks config change, or `--full-scan`
-forces a full rescan of all transcripts. Before scanning, push adds a `* diff` line to the sync
+forces a full rescan of all transcripts. Before scanning, push adds a `* !diff` line to the sync
 repo's local `.git/info/attributes` (never committed), so a `-diff` or `binary` setting in your git
 config cannot hide a file's text from gitleaks.
 
