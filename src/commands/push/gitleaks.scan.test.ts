@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
@@ -163,11 +163,14 @@ describe('scanFile (mocked child_process)', () => {
     expect(gitleaksArgs).toContain('protect');
     expect(gitleaksArgs).toContain('--staged');
     expect(gitleaksArgs).not.toContain('--redact');
+    // No stagedRel: not a push-layout file, so the sync repo's ignore file does not apply.
+    expect(gitleaksArgs.some((a) => a.startsWith('--gitleaks-ignore-path'))).toBe(false);
   });
 
   it('stages at the caller-supplied stagedRel instead of deriving one', async () => {
     const staged = join('shared', 'projects', 'myproj', 's.jsonl');
     let stagedExists = false;
+    let gitleaksArgs: readonly string[] = [];
     vi.doMock('node:child_process', async (importOriginal) => {
       const actual = await importOriginal<typeof cpModule>();
       return {
@@ -176,13 +179,19 @@ describe('scanFile (mocked child_process)', () => {
           if (bin === 'git' && (args ?? []).includes('add')) {
             stagedExists = existsSync(join(opts!.cwd!, staged));
           }
+          if (bin === 'gitleaks') gitleaksArgs = args ?? [];
           return Buffer.from('');
         }),
       };
     });
+    // Relative, so the ignore path must be resolved before gitleaks runs inside the scratch repo.
+    process.env.NOMAD_REPO = 'rel-repo';
     const { scanFile } = await import('./gitleaks.scan.ts');
     expect(scanFile(target, { stagedRel: staged })).toEqual([]);
     expect(stagedExists).toBe(true);
+    expect(gitleaksArgs).toContain(
+      `--gitleaks-ignore-path=${resolve('rel-repo', '.gitleaksignore')}`,
+    );
   });
 
   it('returns null without running anything when stagedRel escapes the scratch repo', async () => {

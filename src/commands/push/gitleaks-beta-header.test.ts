@@ -237,6 +237,31 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(local, { stagedRel })).toEqual([]);
     });
 
+    it('applies a user overlay path-only block the same as the push scan', () => {
+      rmSync(join(repoUnderHome, '.gitleaks.toml'));
+      writeFileSync(
+        join(repoUnderHome, '.gitleaks.overlay.toml'),
+        "[[allowlists]]\npaths = ['''^shared/projects/myproj/notes/''']\n",
+      );
+      const stagedRel = join('shared', 'projects', 'myproj', 'notes', 's.jsonl');
+      write(stagedRel, `token ${patFor(5)}\n`);
+      expect(scanStagedTree(scanRoot)).toEqual([]);
+      expect(scanFile(join(scanRoot, stagedRel), { stagedRel })).toEqual([]);
+    });
+
+    it('skips a finding the push scan fingerprint already allows', () => {
+      const local = join(testHome, '.claude', 'projects', '-enc', 's.jsonl');
+      mkdirSync(dirname(local), { recursive: true });
+      const body = `a ${patFor(6)}\nb ${patFor(7)}\n`;
+      writeFileSync(local, body);
+      const stagedRel = join('shared', 'projects', 'myproj', 's.jsonl');
+      // Allow line 1 with the fingerprint the push gate reports for the same file.
+      write(stagedRel, body);
+      const pushed = scanStagedTree(scanRoot)?.find((f) => f.StartLine === 1);
+      writeFileSync(join(repoUnderHome, '.gitleaksignore'), `${pushed?.Fingerprint}\n`);
+      expect(scanFile(local, { stagedRel })?.map((f) => f.Secret)).toEqual([patFor(7)]);
+    });
+
     it('fails closed when git stages nothing for the file', () => {
       const local = localSkill(`token ${patFor(3)}\n`);
       expect(scanFile(local, { stagedRel: 'shared/skills/s/.git/notes.md' })).toBeNull();

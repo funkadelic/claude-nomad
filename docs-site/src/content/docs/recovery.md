@@ -143,6 +143,8 @@ Safety checks:
 - If any file in the session cannot be scanned (git or gitleaks is missing, or the scan errors),
   nothing is rewritten and `nomad redact` exits with an error, since an unscanned file may still
   hold a secret.
+- Values you already allowed in `.gitleaksignore` are left alone, since the push scan skips them
+  too. To scrub one after all, delete its line from `.gitleaksignore` and run `nomad redact` again.
 - `--dry-run` prints the planned redactions and writes nothing.
 
 This command is safe to re-run: if the span was already redacted (the replacement token is already
