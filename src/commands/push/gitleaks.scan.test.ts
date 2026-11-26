@@ -494,6 +494,7 @@ describe('scanFile (mocked child_process)', () => {
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
     const { GITLEAKS_SCAN_TIMEOUT_MS } = await import('../../core/config.ts');
+    vi.spyOn(Date, 'now').mockReturnValue(0);
     scanFile(target);
     expect(capturedOpts?.timeout).toBe(GITLEAKS_SCAN_TIMEOUT_MS);
   });
