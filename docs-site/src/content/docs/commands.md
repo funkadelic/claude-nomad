@@ -163,7 +163,10 @@ successful push (incremental); a cold start, a gitleaks version change, a gitlea
 `--full-scan` forces a full rescan of all transcripts. While scanning, push adds a `* diff` line to
 the sync repo's local `.git/info/attributes`, and the scan ignores your global and system git
 config, so settings like `-diff`, `binary`, `color.ui = always` or `diff.orderFile` cannot hide a
-file's text from gitleaks. The attributes file is put back as it was once the scan ends.
+file's text from gitleaks. The attributes file is put back as it was once the scan ends. If a
+setting in the sync repo's own git config still stops gitleaks from reading your changes (a
+`diff.orderFile` naming a missing file, say), push stops with a scan error rather than pushing
+unscanned.
 
 On native Windows, before any of that, push also carries your local edits back into the sync repo
 for names the repo already shares, the same as `nomad pull` does before it fetches. A directory the

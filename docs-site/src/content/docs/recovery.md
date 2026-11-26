@@ -463,8 +463,7 @@ Five rules:
   Pick one approach: the overlay for additive tweaks, or a full `.gitleaks.toml` for total control.
 - Each top-level `[[allowlists]]` block must list the files it applies to in `paths`, and must not
   use a pattern that matches anything (such as `.*`) or every file of a common synced type (such as
-  `\.md$` or `\.jsonl$`), or, for an absolute path, every file under your home folder or
-  `~/.claude/projects/`. The overlay syncs to every host, so an allowlist without that
+  `\.md$` or `\.jsonl$`). The overlay syncs to every host, so an allowlist without that
   limit would hide real secrets on all of them; `nomad push` stops with an error instead, and so
   does `nomad doctor --check-shared`. A block that also has `regexes` must set `condition = "AND"`,
   as in the example below: without it gitleaks ignores every finding in the listed files, not just
