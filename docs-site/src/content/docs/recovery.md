@@ -140,6 +140,9 @@ Safety checks:
   warning is printed instead of a silent success. This differs from a missing secret value, which
   falls back to replacing the whole flagged text as described above. Inspect it by hand; the push re-scan still blocks
   a real leak.
+- If any file in the session cannot be scanned (git or gitleaks is missing, or the scan errors),
+  nothing is rewritten and `nomad redact` exits with an error, since an unscanned file may still
+  hold a secret.
 - `--dry-run` prints the planned redactions and writes nothing.
 
 This command is safe to re-run: if the span was already redacted (the replacement token is already
@@ -246,8 +249,8 @@ What the actions do:
 
 - **Redact** rewrites the secret span in the LOCAL source transcript in place (same flow as
   `nomad redact`), backs up first, then re-copies the file to the staged tree. Refuses if the
-  session was modified in the last 5 minutes (potential active session): choose Drop or Skip
-  instead and wait for the session to end. Redact also handles a non-session finding, a
+  session was modified in the last 5 minutes (potential active session), or if any file in the
+  session cannot be scanned: choose Drop or Skip instead. Redact also handles a non-session finding, a
   project-level `memory/*.md` note or a user skill file under `shared/skills/<name>/`, rewriting
   that local file in place the same way (the 5-minute active-session guard does not apply to those).
 - **Allow** appends the finding's fingerprint to `.gitleaksignore` at the repo root, but only once
@@ -355,8 +358,7 @@ finding inside an allowed path, never a bare token in a source file or anywhere 
 The blocks fall into two scopes:
 
 Transcript-only suppressions, scoped to synced session transcripts
-(`shared/projects/<project>/.../*.jsonl`; the beta-flag entry also covers your local
-`~/.claude/projects/` transcripts) and NOT to skill content:
+(`shared/projects/<project>/.../*.jsonl`) and NOT to skill content:
 
 - Sonar issue keys (`AY` prefix + 17-22 url-safe chars). This shape is context-free, so it is kept
   out of skill scope on purpose: a real `AY`-prefixed credential pasted into an executable skill
@@ -365,8 +367,7 @@ Transcript-only suppressions, scoped to synced session transcripts
   transcripts whenever a conversation touches the docs that quote them.
 - Claude Code's beta-flag list (`oauth-<date>` followed by another dated flag such as
   `interleaved-thinking-2025-05-14`), recorded on every turn, which `generic-api-key` reads as a key
-  name and a secret. A second copy covers local transcripts so Redact leaves those lines alone too,
-  including when you use a `.gitleaks.overlay.toml`.
+  name and a secret.
 
 Structurally anchored suppressions, scoped to both synced transcripts and committed skill content
 (`shared/skills/<name>/...`, any nesting depth). Each carries surrounding structure a bare
@@ -442,14 +443,13 @@ How it works, briefly: on `nomad push`, when the overlay is present, nomad gener
 config that extends the bundled `.gitleaks.toml` (which itself extends the gitleaks default),
 appends your overlay body, scans with that combined config, then deletes the throwaway file. The
 merge is gitleaks' own `[extend]` append, so your allowlist entries add to the shipped and default
-ones rather than replacing them. One difference: the Redact re-scan checks one local file at a
-time (a session transcript, memory file, or skill file under `~/.claude/`) by its full path, and
-skips a legacy `[allowlist]` table and every `[[allowlists]]` block without a `targetRules` line.
-So Redact may replace a value such a block allows at push. To keep an allow in effect for Redact
-too, add a second copy of the block with `targetRules = ["<rule-id>"]` (the rule named in the
-finding) and `paths` that match that local file, the way the bundled beta-flag entry does. If the
-allow is a legacy `[allowlist]` table, first rewrite it as an `[[allowlists]]` block: gitleaks
-cannot load an overlay that mixes the two.
+ones rather than replacing them. Redact uses the same combined config. Its re-scan checks one
+local file at a time (a session transcript, memory file, or skill file under `~/.claude/`), but it
+places that file at the same repo path push uses, such as
+`shared/projects/<project>/<session>.jsonl` or `shared/skills/<name>/<file>`. So the re-scan sees
+the same paths and the same allowlists as the push scan, and Redact leaves alone any value your
+overlay allows at push. You do not need a second copy of a block for Redact. If you added one with
+an absolute local path for an older version, it no longer matches anything and you can delete it.
 
 Five rules:
 
@@ -461,8 +461,8 @@ Five rules:
   Pick one approach: the overlay for additive tweaks, or a full `.gitleaks.toml` for total control.
 - Each top-level `[[allowlists]]` block must list the files it applies to in `paths`, and must not
   use a pattern that matches anything (such as `.*`) or every file of a common synced type (such as
-  `\.md$` or `\.jsonl$`), or, for an absolute path written for Redact, every file under your home
-  folder or `~/.claude/projects/`. The overlay syncs to every host, so an allowlist without that
+  `\.md$` or `\.jsonl$`), or, for an absolute path, every file under your home folder or
+  `~/.claude/projects/`. The overlay syncs to every host, so an allowlist without that
   limit would hide real secrets on all of them; `nomad push` stops with an error instead, and so
   does `nomad doctor --check-shared`. A block that also has `regexes` must set `condition = "AND"`,
   as in the example below: without it gitleaks ignores every finding in the listed files, not just
@@ -479,8 +479,7 @@ Five rules:
 - Outside its blocks, the overlay may only set `title`, `description`, and `minVersion`, each as
   text. Any other top-level setting (such as `disabledRules`) stops `nomad push` and
   `nomad doctor --check-shared` with an error. Write block names in lowercase (`[[allowlists]]`, not
-  `[[Allowlists]]`) and write `[[allowlists]]` blocks with double brackets, not as an inline
-  `allowlists = [...]` list. A legacy `[allowlist]` table is accepted on its own, but not mixed with
+  `[[Allowlists]]`). A legacy `[allowlist]` table is accepted on its own, but not mixed with
   `[[allowlists]]` blocks: gitleaks cannot load that overlay.
 
 Example `<REPO_HOME>/.gitleaks.overlay.toml` (note: no `[extend]` block, and `paths` limits it to

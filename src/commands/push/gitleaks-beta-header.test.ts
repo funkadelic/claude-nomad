@@ -1,6 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +64,7 @@ const ISOLATED = [
   'GIT_DIR',
   'GIT_INDEX_FILE',
   'GIT_WORK_TREE',
+  'GIT_OBJECT_DIRECTORY',
 ];
 
 describe.skipIf(!hasGitleaks)(
@@ -128,6 +138,47 @@ describe.skipIf(!hasGitleaks)(
       expect(scanStagedTree(scanRoot)?.length).toBe(1);
     });
 
+    it.each(['-diff', 'binary'])('scans the text despite a global %s attribute', (attr) => {
+      const attrs = join(testHome, 'global-attributes');
+      writeFileSync(attrs, `* ${attr}\n`);
+      writeFileSync(
+        join(testHome, '.gitconfig'),
+        `[core]\n\tattributesFile = ${attrs.replaceAll('\\', '/')}\n`,
+      );
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+    });
+
+    it('overrides a local -diff, then restores the local attributes file', () => {
+      execFileSync('git', ['init', '-q'], { cwd: scanRoot });
+      const local = join(scanRoot, '.git', 'info', 'attributes');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, '*.jsonl -diff');
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+      expect(readFileSync(local, 'utf8')).toBe('*.jsonl -diff');
+    });
+
+    it('removes the attributes file it created', () => {
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+      expect(existsSync(join(scanRoot, '.git', 'info', 'attributes'))).toBe(false);
+    });
+
+    it.each([
+      ['color.ui = always', '[color]\n\tui = always\n'],
+      ['diff.orderFile naming a missing file', '[diff]\n\torderFile = .no-such-order\n'],
+    ])('scans despite a global %s', (_label, gitconfig) => {
+      writeFileSync(join(testHome, '.gitconfig'), gitconfig);
+      write(transcript, betasLine(realToken));
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+    });
+
+    it('scans a text file that holds a NUL byte', () => {
+      write(transcript, `\0${betasLine(realToken)}`);
+      expect(scanStagedTree(scanRoot)?.length).toBe(1);
+    });
+
     it('suppresses the beta-flag list in the redact re-scan of a local transcript', () => {
       const local = join(testHome, '.claude', 'projects', '-enc', 's.jsonl');
       mkdirSync(dirname(local), { recursive: true });
@@ -144,7 +195,7 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(local)?.map((f) => f.Secret)).toEqual([realToken]);
     });
 
-    it('applies only rule-scoped overlay blocks in the redact re-scan', () => {
+    it('applies global and rule-scoped overlay blocks in the redact re-scan, as push does', () => {
       rmSync(join(repoUnderHome, '.gitleaks.toml'));
       const paths = String.raw`paths = ['''abc123\.jsonl$''']`;
       writeFileSync(
@@ -155,13 +206,107 @@ describe.skipIf(!hasGitleaks)(
       const local = join(testHome, '.claude', 'projects', '-enc', 'abc123.jsonl');
       mkdirSync(dirname(local), { recursive: true });
       writeFileSync(local, `token ${patFor(0)}\ntoken ${patFor(1)}\n`);
-      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(1)]);
+      expect(scanFile(local)).toEqual([]);
     });
 
     it('still fires in the redact re-scan outside ~/.claude/projects', () => {
       write('elsewhere/s.jsonl', betasLine(flag));
       expect(scanFile(join(scanRoot, 'elsewhere', 's.jsonl'))?.length).toBe(1);
     });
+
+    /** Write `body` to a local skill file under the test `~/.claude` and return its path. */
+    function localSkill(body: string): string {
+      const local = join(testHome, '.claude', 'skills', 's', 'notes.md');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, body);
+      return local;
+    }
+
+    it('applies a logical-project overlay block when the caller passes the staged path', () => {
+      rmSync(join(repoUnderHome, '.gitleaks.toml'));
+      writeFileSync(
+        join(repoUnderHome, '.gitleaks.overlay.toml'),
+        `[[allowlists]]\nregexes = ['''${patFor(2)}''']\npaths = ['''^shared/projects/myproj/''']\ncondition = "AND"\n`,
+      );
+      const local = join(testHome, '.claude', 'projects', '-enc', 's.jsonl');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, `token ${patFor(2)}\n`);
+      expect(scanFile(local)?.length).toBe(1);
+      // Built with join, as callers do: native separators must still match the `/` allowlist.
+      const stagedRel = join('shared', 'projects', 'myproj', 's.jsonl');
+      expect(scanFile(local, { stagedRel })).toEqual([]);
+    });
+
+    it('fails closed when git stages nothing for the file', () => {
+      const local = localSkill(`token ${patFor(3)}\n`);
+      expect(scanFile(local, { stagedRel: 'shared/skills/s/.git/notes.md' })).toBeNull();
+    });
+
+    it('stages the raw bytes despite a global attributes clean filter', () => {
+      const attrs = join(testHome, 'global-attributes');
+      writeFileSync(attrs, '* filter=wipe\n');
+      writeFileSync(
+        join(testHome, '.gitconfig'),
+        `[core]\n\tattributesFile = ${attrs.replaceAll('\\', '/')}\n` +
+          '[filter "wipe"]\n\tclean = git stripspace --strip-comments\n',
+      );
+      const local = localSkill(`# token ${patFor(4)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(4)]);
+    });
+
+    it.each([
+      ['-diff', 6],
+      ['binary', 7],
+    ])('scans the text despite a global %s attribute', (attr, i) => {
+      const attrs = join(testHome, 'global-attributes');
+      writeFileSync(attrs, `* ${attr}\n`);
+      writeFileSync(
+        join(testHome, '.gitconfig'),
+        `[core]\n\tattributesFile = ${attrs.replaceAll('\\', '/')}\n`,
+      );
+      const local = localSkill(`# token ${patFor(i)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(i)]);
+    });
+
+    it.each([
+      ['color.ui = always', '[color]\n\tui = always\n', 8],
+      ['diff.orderFile naming a missing file', '[diff]\n\torderFile = .no-such-order\n', 10],
+    ])('scans despite a global %s', (_label, gitconfig, i) => {
+      writeFileSync(join(testHome, '.gitconfig'), gitconfig);
+      const local = localSkill(`# token ${patFor(i)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(i)]);
+    });
+
+    it('scans a text file that holds a NUL byte', () => {
+      const local = localSkill(`\0\n# token ${patFor(9)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(9)]);
+    });
+
+    it('keeps the scratch objects out of an inherited GIT_OBJECT_DIRECTORY', () => {
+      const foreign = join(testHome, 'foreign-objects');
+      mkdirSync(foreign);
+      process.env.GIT_OBJECT_DIRECTORY = foreign;
+      const local = localSkill(`token ${patFor(5)}\n`);
+      expect(scanFile(local)?.map((f) => f.Secret)).toEqual([patFor(5)]);
+      expect(readdirSync(foreign)).toEqual([]);
+    });
+
+    it('finds a keyword-gated secret whose keyword is far away in a large transcript', () => {
+      const hex = createHash('sha256').update('nomad-chunk-regression').digest('hex').slice(0, 40);
+      const filler = '{"type":"text","text":"' + 'lorem ipsum dolor sit amet '.repeat(30) + '"}';
+      const lines = Array.from({ length: 45 }, () => filler);
+      lines.push('{"text":"commit `' + hex + '` landed"}');
+      while (lines.join('\n').length < 400_000) lines.push(filler);
+      lines.push('{"text":"see the sourcegraph docs"}');
+      for (let i = 0; i < 200; i++) lines.push(filler);
+      const local = join(testHome, '.claude', 'projects', '-enc', 'big.jsonl');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, lines.join('\n') + '\n');
+      const found = scanFile(local)
+        ?.filter((f) => f.RuleID === 'sourcegraph-access-token')
+        .map((f) => ({ StartLine: f.StartLine, Secret: f.Secret }));
+      expect(found).toEqual([{ StartLine: 46, Secret: hex }]);
+    }, 60_000);
 
     it('stages into the scan dir even when the caller exports GIT_INDEX_FILE', () => {
       const foreign = join(testHome, 'foreign-index');

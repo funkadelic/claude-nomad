@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path';
 import { backupBase, claudeHome, HOST, repoHome, type PathMap } from '../../core/config.ts';
 import { applySubtreeRedactions, isSubtreeActive, listSubtreeFiles } from './subtree.ts';
 import { warnIfSessionPushed } from '../pushed-history.ts';
-import { type Finding, scanFile } from '../push/gitleaks.scan.ts';
+import { type ScanFn, scanFile } from '../push/gitleaks.scan.ts';
+import { assertSafeLogical } from '../../core/config.sharedDirs.guard.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 import { freshBackupTs } from '../../core/utils.fs.ts';
 import { encodePath, readJson } from '../../core/utils.json.ts';
@@ -22,16 +23,27 @@ import { acquireLock, releaseLock } from '../../core/utils.lockfile.ts';
  * @returns Absolute live transcript path, or null when unresolvable.
  */
 export function resolveLiveTranscript(id: string): string | null {
+  return resolveLiveSession(id)?.path ?? null;
+}
+
+/**
+ * `resolveLiveTranscript` plus the logical project name the transcript is
+ * staged under, so a re-scan can stage at the same path as push.
+ *
+ * @param id Already-validated session id.
+ */
+function resolveLiveSession(id: string): { path: string; logical: string } | null {
   try {
     const mapPath = join(repoHome(), 'path-map.json');
     if (!existsSync(mapPath)) return null;
     const projects = readJson<PathMap>(mapPath).projects;
     const claude = claudeHome();
-    for (const hostMap of Object.values(projects)) {
+    for (const [logical, hostMap] of Object.entries(projects)) {
+      assertSafeLogical(logical);
       const abs = hostMap[HOST];
       if (abs === undefined) continue;
       const live = join(claude, 'projects', encodePath(abs), `${id}.jsonl`);
-      if (existsSync(live)) return live;
+      if (existsSync(live)) return { path: live, logical };
     }
     return null;
   } catch {
@@ -50,9 +62,9 @@ export type RedactOpts = {
   /**
    * Findings to redact. When provided (push-time recovery flow), used directly
    * after applying the optional `rule` filter. When omitted (standalone
-   * `nomad redact`), `cmdRedact` scans the local transcript with `gitleaks
-   * detect --no-git` and uses the resulting findings. A scan error (gitleaks
-   * absent or crashed) is reported as a distinct failure, not silently treated
+   * `nomad redact`), `cmdRedact` scans the local transcript with `scanFile`
+   * (the staged-scan mechanism) and uses the resulting findings. A scan error (git or
+   * gitleaks absent or crashed) is reported as a distinct failure, not silently treated
    * as "no findings".
    */
   findings?: readonly {
@@ -70,9 +82,10 @@ function resolveRedactFindings(
   localPath: string,
   rawFindings: RedactOpts['findings'],
   rule: string | undefined,
-  scan: (p: string) => Finding[] | null,
+  scan: ScanFn,
+  stagedRel: string,
 ): readonly { StartLine: number; Match: string; RuleID: string }[] | null {
-  const source = rawFindings ?? scan(localPath);
+  const source = rawFindings ?? scan(localPath, { stagedRel });
   if (source === null) return null;
   return source.filter((f) => rule === undefined || f.RuleID === rule);
 }
@@ -91,7 +104,7 @@ function resolveRedactFindings(
 export function cmdRedact(
   opts: RedactOpts,
   nowMs: () => number = Date.now,
-  scan: (p: string) => Finding[] | null = scanFile,
+  scan: ScanFn = scanFile,
 ): void {
   const { id, rule, dryRun = false, findings: rawFindings } = opts;
 
@@ -109,12 +122,14 @@ export function cmdRedact(
   const handle = acquireLock('redact');
   if (handle === null) process.exit(EXIT.SUCCESS);
   try {
-    const localPath = resolveLiveTranscript(id);
-    if (localPath === null || !existsSync(localPath)) {
+    const live = resolveLiveSession(id);
+    if (live === null || !existsSync(live.path)) {
       fail(`could not resolve local transcript for session ${id} on this host`);
       process.exitCode = 1;
       return;
     }
+    const localPath = live.path;
+    const stagedDir = join('shared', 'projects', live.logical);
 
     // Live-session guard: evaluate across the whole subtree (main + all files under <id>/).
     const sessionDir = join(dirname(localPath), id);
@@ -130,23 +145,34 @@ export function cmdRedact(
       return;
     }
 
-    const mainFindings = resolveRedactFindings(localPath, rawFindings, rule, scan);
+    const mainRel = join(stagedDir, `${id}.jsonl`);
+    const mainFindings = resolveRedactFindings(localPath, rawFindings, rule, scan, mainRel);
     if (mainFindings === null) {
-      fail(`gitleaks scan failed for session ${id} (is gitleaks installed?)`);
+      fail(`gitleaks scan failed for session ${id} (are git and gitleaks installed?)`);
       process.exitCode = 1;
       return;
     }
 
     const ts = freshBackupTs(backup);
-    const { total: totalCount, dirty } = applySubtreeRedactions(
-      localPath,
-      mainFindings,
-      subtreeFiles,
+    const {
+      total: totalCount,
+      dirty,
+      failed,
+    } = applySubtreeRedactions(localPath, mainFindings, subtreeFiles, {
       rule,
       ts,
       scan,
       dryRun,
-    );
+      stagedDir,
+    });
+
+    if (failed.length > 0) {
+      fail(
+        `gitleaks scan failed for ${failed.length} file(s) in session ${id}; nothing was rewritten`,
+      );
+      process.exitCode = EXIT.GENERIC_FAILURE;
+      return;
+    }
 
     if (totalCount === 0) {
       const ruleClause = rule === undefined ? '' : ` for rule ${rule}`;

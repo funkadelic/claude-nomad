@@ -12,7 +12,7 @@ vi.mock('node:fs', async (importActual) => {
 });
 
 import { CRASH_SCAN_TIMEOUT_MS, redactWithGitleaks } from './crash-report.redact.ts';
-import type { Finding } from '../commands/push/gitleaks.scan.ts';
+import type { Finding, ScanFileOptions } from '../commands/push/gitleaks.scan.ts';
 
 /** A real-shaped mkdtempSync-created directory captured by the fake scan, so tests can assert cleanup. */
 let capturedScratchDir: string | undefined;
@@ -20,8 +20,8 @@ let capturedScratchDir: string | undefined;
 /** Build a fake `scanFile`-shaped function that records the temp path it was called with. */
 function fakeScan(
   result: Finding[] | null,
-): (path: string, forward?: boolean, timeout?: number) => Finding[] | null {
-  return (path, _forward, _timeout) => {
+): (path: string, opts?: ScanFileOptions) => Finding[] | null {
+  return (path) => {
     capturedScratchDir = path;
     return result;
   };
@@ -85,8 +85,8 @@ describe('redactWithGitleaks', () => {
 
   it('passes CRASH_SCAN_TIMEOUT_MS to the scan function', () => {
     let seenTimeout: number | undefined;
-    const scan = (_path: string, _forward?: boolean, timeout?: number): Finding[] | null => {
-      seenTimeout = timeout;
+    const scan = (_path: string, opts?: ScanFileOptions): Finding[] | null => {
+      seenTimeout = opts?.timeoutMs;
       return [];
     };
     redactWithGitleaks('anything', scan);

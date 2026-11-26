@@ -63,7 +63,7 @@ export function redactWithGitleaks(text: string, scan: typeof scanFile = scanFil
     dir = mkdtempSync(join(tmpdir(), 'nomad-crash-scan-'));
     const tmp = join(dir, 'crash.txt');
     writeFileSync(tmp, text, { mode: 0o600 });
-    const findings = scan(tmp, false, CRASH_SCAN_TIMEOUT_MS);
+    const findings = scan(tmp, { timeoutMs: CRASH_SCAN_TIMEOUT_MS });
     if (findings === null) return text + SCAN_UNAVAILABLE_ADVISORY;
     return applyRedactions(text, findings);
   } catch {

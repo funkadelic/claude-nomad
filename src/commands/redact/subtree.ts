@@ -11,10 +11,10 @@
  */
 
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 import { applyRedactions, isRecentlyModified } from './core.ts';
-import type { Finding } from '../push/gitleaks.scan.ts';
+import type { ScanFn } from '../push/gitleaks.scan.ts';
 import { backupBeforeWrite } from '../../core/utils.fs.ts';
 import { log } from '../../core/utils.ts';
 
@@ -123,12 +123,63 @@ export type DirtyFile = {
   findings: readonly { StartLine: number; Match: string; RuleID: string }[];
 };
 
+/** Options for `applySubtreeRedactions`. */
+export type SubtreeRedactOptions = {
+  /** Optional rule-id filter applied when scanning subtree files. */
+  rule?: string;
+  /** Backup timestamp for `backupBeforeWrite`. */
+  ts: string;
+  /** Injectable scan function (without `--redact`). */
+  scan: ScanFn;
+  /** When true, collect the dirty list but skip all writes. */
+  dryRun: boolean;
+  /** Repo-relative dir push stages the main file's dir at (`shared/projects/<logical>`). */
+  stagedDir?: string;
+};
+
+/**
+ * Staged path of a subtree file: its path relative to the main transcript's
+ * dir, under `stagedDir`. Undefined when the caller passed no staged dir.
+ */
+function subtreeStagedRel(
+  mainPath: string,
+  filePath: string,
+  stagedDir: string | undefined,
+): string | undefined {
+  return stagedDir === undefined
+    ? undefined
+    : join(stagedDir, relative(dirname(mainPath), filePath));
+}
+
+/**
+ * Scan each subtree file, appending files with (rule-filtered) findings to
+ * `dirty`. Returns the files whose scan failed.
+ */
+function scanSubtreeFiles(
+  mainPath: string,
+  subtreeFiles: string[],
+  opts: SubtreeRedactOptions,
+  dirty: DirtyFile[],
+): string[] {
+  const { rule, scan, stagedDir } = opts;
+  const failed: string[] = [];
+  for (const filePath of subtreeFiles) {
+    const raw = scan(filePath, { stagedRel: subtreeStagedRel(mainPath, filePath, stagedDir) });
+    if (raw === null) {
+      failed.push(filePath);
+      continue;
+    }
+    const filtered = rule === undefined ? raw : raw.filter((f) => f.RuleID === rule);
+    if (filtered.length > 0) dirty.push({ path: filePath, findings: filtered });
+  }
+  return failed;
+}
+
 /**
  * Scan and redact a session subtree (main transcript plus every file under
  * the session directory). The main file's findings are supplied by the caller
- * (already scanned); all subtree files are scanned via `scan`. Skips files
- * whose scan returns `null` or `[]` without aborting. Backs up and rewrites
- * each dirty file unless `dryRun` is true.
+ * (already scanned); all subtree files are scanned via `scan`. Backs up and
+ * rewrites each dirty file unless `dryRun` is true or any subtree scan failed.
  *
  * This shared helper is the single implementation used by both `applyRedact`
  * (push-time recovery) and `cmdRedact` (standalone `nomad redact`), so any
@@ -139,33 +190,23 @@ export type DirtyFile = {
  * @param subtreeFiles Absolute paths to every file in the session subtree
  *   (from `listSubtreeFiles`). These are scanned individually; the main file
  *   must NOT be included here.
- * @param rule Optional rule-id filter applied when scanning subtree files.
- * @param ts Backup timestamp for `backupBeforeWrite`.
- * @param scan Injectable scan function (without `--redact`).
- * @param dryRun When true, collect the dirty list but skip all writes.
- * @returns `{ total, dirty }` where `total` is the finding count across all
- *   files and `dirty` lists every file that has (or would have) findings.
+ * @param opts Rule filter, backup timestamp, scan seam, dry-run flag and staged dir.
+ * @returns `{ total, dirty, failed }`: the finding count across all files, every
+ *   file that has (or would have) findings, and every file whose scan failed.
  */
 export function applySubtreeRedactions(
   mainPath: string,
   mainFindings: readonly { StartLine: number; Match: string; RuleID: string }[],
   subtreeFiles: string[],
-  rule: string | undefined,
-  ts: string,
-  scan: (p: string) => Finding[] | null,
-  dryRun: boolean,
-): { total: number; dirty: DirtyFile[] } {
+  opts: SubtreeRedactOptions,
+): { total: number; dirty: DirtyFile[]; failed: string[] } {
+  const { ts, dryRun } = opts;
   const dirty: DirtyFile[] = [];
   if (mainFindings.length > 0) dirty.push({ path: mainPath, findings: mainFindings });
-  for (const filePath of subtreeFiles) {
-    const raw = scan(filePath);
-    if (raw === null || raw.length === 0) continue;
-    const filtered = rule === undefined ? raw : raw.filter((f) => f.RuleID === rule);
-    if (filtered.length === 0) continue;
-    dirty.push({ path: filePath, findings: filtered });
-  }
+  const failed = scanSubtreeFiles(mainPath, subtreeFiles, opts, dirty);
   const total = dirty.reduce((n, e) => n + e.findings.length, 0);
-  if (!dryRun && total > 0) {
+  // A failed scan may hide a secret, so rewrite nothing and let the caller abort.
+  if (!dryRun && total > 0 && failed.length === 0) {
     for (const { path: filePath, findings } of dirty) {
       backupBeforeWrite(filePath, ts);
       const before = readFileSync(filePath, 'utf8');
@@ -184,5 +225,5 @@ export function applySubtreeRedactions(
       writeFileSync(filePath, after, 'utf8');
     }
   }
-  return { total, dirty };
+  return { total, dirty, failed };
 }

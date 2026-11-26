@@ -234,10 +234,7 @@ describe('applySubtreeRedactions', () => {
       mainPath,
       [{ StartLine: 1, Match: 'real-secret', RuleID: 'r1' }],
       [],
-      undefined,
-      'ts-x',
-      () => [],
-      false,
+      { ts: 'ts-x', scan: () => [], dryRun: false },
     );
 
     expect(total).toBe(1);
@@ -263,10 +260,7 @@ describe('applySubtreeRedactions', () => {
       mainPath,
       [{ StartLine: 1, Match: 'not-in-the-file', RuleID: 'r1' }],
       [],
-      undefined,
-      'ts-x',
-      () => [],
-      false,
+      { ts: 'ts-x', scan: () => [], dryRun: false },
     );
     spy.mockRestore();
 
@@ -298,15 +292,11 @@ describe('applySubtreeRedactions', () => {
           ]
         : [];
 
-    const { total, dirty } = applySubtreeRedactions(
-      mainPath,
-      [],
-      [txtPath],
-      undefined,
-      'ts-x',
-      fakeScan,
-      false,
-    );
+    const { total, dirty } = applySubtreeRedactions(mainPath, [], [txtPath], {
+      ts: 'ts-x',
+      scan: fakeScan,
+      dryRun: false,
+    });
 
     expect(total).toBe(1);
     expect(dirty).toHaveLength(1);
@@ -325,10 +315,7 @@ describe('applySubtreeRedactions', () => {
       mainPath,
       [{ StartLine: 1, Match: 'real-secret', RuleID: 'r1' }],
       [],
-      undefined,
-      'ts-x',
-      () => [],
-      true,
+      { ts: 'ts-x', scan: () => [], dryRun: true },
     );
 
     expect(total).toBe(1);
@@ -369,15 +356,12 @@ describe('applySubtreeRedactions', () => {
           ]
         : [];
 
-    const { total } = applySubtreeRedactions(
-      mainPath,
-      [],
-      [agentPath],
-      'rule-a',
-      'ts-x',
-      fakeScan,
-      false,
-    );
+    const { total } = applySubtreeRedactions(mainPath, [], [agentPath], {
+      rule: 'rule-a',
+      ts: 'ts-x',
+      scan: fakeScan,
+      dryRun: false,
+    });
 
     expect(total).toBe(1);
     const { readFileSync } = await import('node:fs');
@@ -387,25 +371,26 @@ describe('applySubtreeRedactions', () => {
     expect(content).toContain('BBB');
   });
 
-  it('scan null for a subtree file is silently skipped', async () => {
+  it('reports a subtree scan failure and rewrites nothing', async () => {
     const { applySubtreeRedactions } = await import('./subtree.ts');
     const mainPath = join(tmpDir, 'sid.jsonl');
     const agentPath = join(tmpDir, 'agent-1.jsonl');
     writeFileSync(mainPath, '{"text":"secret"}\n');
     writeFileSync(agentPath, '{"text":"content"}\n');
 
-    const { total } = applySubtreeRedactions(
+    const { total, failed } = applySubtreeRedactions(
       mainPath,
       [{ StartLine: 1, Match: 'secret', RuleID: 'r1' }],
       [agentPath],
-      undefined,
-      'ts-x',
-      (_p) => null,
-      false,
+      { ts: 'ts-x', scan: (_p) => null, dryRun: false },
     );
 
-    // Only main (1 finding); agent scan returned null, so it's skipped.
     expect(total).toBe(1);
+    expect(failed).toEqual([agentPath]);
+    const { readFileSync } = await import('node:fs');
+    // The main file keeps its secret: a failed scan aborts every write.
+    expect(readFileSync(mainPath, 'utf8')).toContain('secret');
+    expect(readFileSync(mainPath, 'utf8')).not.toContain('[REDACTED');
   });
 
   it('rule filter skips a file whose raw findings are all filtered out', async () => {
@@ -432,15 +417,12 @@ describe('applySubtreeRedactions', () => {
           ]
         : [];
 
-    const { total, dirty } = applySubtreeRedactions(
-      mainPath,
-      [],
-      [agentPath],
-      'rule-a',
-      'ts-x',
-      fakeScan,
-      false,
-    );
+    const { total, dirty } = applySubtreeRedactions(mainPath, [], [agentPath], {
+      rule: 'rule-a',
+      ts: 'ts-x',
+      scan: fakeScan,
+      dryRun: false,
+    });
 
     expect(total).toBe(0);
     expect(dirty).toEqual([]);
@@ -454,15 +436,11 @@ describe('applySubtreeRedactions', () => {
     const mainPath = join(tmpDir, 'sid.jsonl');
     writeFileSync(mainPath, '{"text":"clean"}\n');
 
-    const { total, dirty } = applySubtreeRedactions(
-      mainPath,
-      [],
-      [],
-      undefined,
-      'ts-x',
-      () => [],
-      false,
-    );
+    const { total, dirty } = applySubtreeRedactions(mainPath, [], [], {
+      ts: 'ts-x',
+      scan: () => [],
+      dryRun: false,
+    });
 
     expect(total).toBe(0);
     expect(dirty).toEqual([]);
