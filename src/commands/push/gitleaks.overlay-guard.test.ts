@@ -11,33 +11,27 @@ const SCOPED =
 
 describe('assertOverlaySafe', () => {
   it.each([
-    ['a scoped AND block', SCOPED, false],
-    ['a paths-only block', "[[allowlists]]\npaths = ['''^a\\.txt$''']\n", false],
-    ['a lowercase "and" condition', SCOPED.replace('"AND"', '"and"'), false],
-    ['upper-case keys', SCOPED.replace('paths', 'PATHS').replace('condition', 'Condition'), false],
-    ['a legacy [allowlist] table', SCOPED.replace('[[allowlists]]', '[allowlist]'), true],
-    ['no allowlists at all', '# nothing yet\n', false],
-    ['a path with leading Go flags', "[[allowlists]]\npaths = ['''(?iU)^a\\.txt$''']\n", false],
-    ['a Go named group', "[[allowlists]]\npaths = ['''^(?P<d>shared)/a\\.txt$''']\n", false],
-    [
-      'a key named like an Object method',
-      "[[allowlists]]\npaths = ['''^a''']\nconstructor = 1\n",
-      false,
-    ],
-    ['a rule with a new id', "[[rules]]\nid = 'my-token'\nregex = '''abc'''\n", false],
+    ['a scoped AND block', SCOPED],
+    ['a paths-only block', "[[allowlists]]\npaths = ['''^a\\.txt$''']\n"],
+    ['a lowercase "and" condition', SCOPED.replace('"AND"', '"and"')],
+    ['upper-case keys', SCOPED.replace('paths', 'PATHS').replace('condition', 'Condition')],
+    ['a legacy [allowlist] table', SCOPED.replace('[[allowlists]]', '[allowlist]')],
+    ['no allowlists at all', '# nothing yet\n'],
+    ['a path with leading Go flags', "[[allowlists]]\npaths = ['''(?iU)^a\\.txt$''']\n"],
+    ['a Go named group', "[[allowlists]]\npaths = ['''^(?P<d>shared)/a\\.txt$''']\n"],
+    ['a key named like an Object method', "[[allowlists]]\npaths = ['''^a''']\nconstructor = 1\n"],
+    ['a rule with a new id', "[[rules]]\nid = 'my-token'\nregex = '''abc'''\n"],
     [
       'a new-id rule with an unscoped rule allowlist',
       "[[rules]]\nid = 'my-token'\nregex = '''abc'''\n[[rules.allowlists]]\nregexes = ['''.*''']\n",
-      false,
     ],
     [
       'the allowed metadata keys',
       `title = "t"\ndescription = "d"\nminversion = "v8.0.0"\n${SCOPED}`,
-      false,
     ],
-    ['camelCase top-level metadata keys', `Title = "t"\nminVersion = "v8.0.0"\n${SCOPED}`, false],
-  ])('accepts %s', (_label, body, legacy) => {
-    expect(assertOverlaySafe(body)).toEqual({ legacy });
+    ['camelCase top-level metadata keys', `Title = "t"\nminVersion = "v8.0.0"\n${SCOPED}`],
+  ])('accepts %s', (_label, body) => {
+    expect(() => assertOverlaySafe(body)).not.toThrow();
   });
 
   it.each([

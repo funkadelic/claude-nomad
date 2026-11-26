@@ -287,11 +287,10 @@ function assertRootKeys(raw: Table, doc: Table): void {
 
 /**
  * Throw `NomadFatal` unless the overlay is valid TOML with only known lowercase
- * top-level keys (no `extend`), path-scoped allowlists, and new rule ids. Returns whether it uses a
- * legacy `[allowlist]` table, which gitleaks refuses to mix with `[[allowlists]]`.
+ * top-level keys (no `extend`), path-scoped allowlists, and new rule ids.
  * @param overlayBody The already-read overlay file contents.
  */
-export function assertOverlaySafe(overlayBody: string): { legacy: boolean } {
+export function assertOverlaySafe(overlayBody: string): void {
   // Parsing cannot tell `allowlists = [...]` from `[[allowlists]]`; only the latter
   // can take the blocks nomad appends. Keys before the first header are top-level.
   const preamble = overlayBody.split(/^[ \t]*\[/m, 1).join('');
@@ -305,5 +304,4 @@ export function assertOverlaySafe(overlayBody: string): { legacy: boolean } {
   assertRootKeys(raw, doc);
   for (const allowlist of allowlistTables(doc)) assertAllowlistScoped(allowlist);
   for (const rule of ruleTables(doc)) assertRuleIdNew(rule);
-  return { legacy: doc.allowlist !== undefined };
 }
