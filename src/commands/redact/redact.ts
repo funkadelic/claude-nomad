@@ -50,8 +50,8 @@ export type RedactOpts = {
   /**
    * Findings to redact. When provided (push-time recovery flow), used directly
    * after applying the optional `rule` filter. When omitted (standalone
-   * `nomad redact`), `cmdRedact` scans the local transcript with `gitleaks
-   * detect --no-git` and uses the resulting findings. A scan error (gitleaks
+   * `nomad redact`), `cmdRedact` scans the local transcript with `scanFile`
+   * (the staged-scan mechanism) and uses the resulting findings. A scan error (gitleaks
    * absent or crashed) is reported as a distinct failure, not silently treated
    * as "no findings".
    */

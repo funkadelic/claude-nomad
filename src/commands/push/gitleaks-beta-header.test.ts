@@ -163,6 +163,23 @@ describe.skipIf(!hasGitleaks)(
       expect(scanFile(join(scanRoot, 'elsewhere', 's.jsonl'))?.length).toBe(1);
     });
 
+    it('finds a keyword-gated secret whose keyword is far away in a large transcript', () => {
+      const hex = createHash('sha256').update('nomad-chunk-regression').digest('hex').slice(0, 40);
+      const filler = '{"type":"text","text":"' + 'lorem ipsum dolor sit amet '.repeat(30) + '"}';
+      const lines = Array.from({ length: 45 }, () => filler);
+      lines.push('{"text":"commit `' + hex + '` landed"}');
+      while (lines.join('\n').length < 400_000) lines.push(filler);
+      lines.push('{"text":"see the sourcegraph docs"}');
+      for (let i = 0; i < 200; i++) lines.push(filler);
+      const local = join(testHome, '.claude', 'projects', '-enc', 'big.jsonl');
+      mkdirSync(dirname(local), { recursive: true });
+      writeFileSync(local, lines.join('\n') + '\n');
+      const found = scanFile(local)
+        ?.filter((f) => f.RuleID === 'sourcegraph-access-token')
+        .map((f) => ({ StartLine: f.StartLine, Secret: f.Secret }));
+      expect(found).toEqual([{ StartLine: 46, Secret: hex }]);
+    }, 60_000);
+
     it('stages into the scan dir even when the caller exports GIT_INDEX_FILE', () => {
       const foreign = join(testHome, 'foreign-index');
       process.env.GIT_INDEX_FILE = foreign;

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -17,6 +17,7 @@ describe('scanFile (mocked child_process)', () => {
   let originalHome: string | undefined;
   let originalNomadRepo: string | undefined;
   let testHome: string;
+  let target: string;
   let stderrSpy: MockInstance<(...args: unknown[]) => boolean>;
   let stdoutSpy: MockInstance<(...args: unknown[]) => boolean>;
 
@@ -27,6 +28,8 @@ describe('scanFile (mocked child_process)', () => {
     process.env.HOME = testHome;
     process.env.NOMAD_REPO = join(testHome, 'repo');
     mkdirSync(process.env.NOMAD_REPO, { recursive: true });
+    target = join(testHome, 'file.jsonl');
+    writeFileSync(target, '{"text":"hello"}\n');
     vi.resetModules();
     stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -62,7 +65,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl')).toEqual([]);
+    expect(scanFile(target)).toEqual([]);
     expect(seenArgs).not.toContain('--config');
   });
 
@@ -80,7 +83,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl')).toEqual([]);
+    expect(scanFile(target)).toEqual([]);
     expect(seenArgs).toContain('--config');
     expect(seenArgs).toContain(join(process.env.NOMAD_REPO!, '.gitleaks.toml'));
   });
@@ -115,12 +118,43 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl')).toEqual([]);
+    expect(scanFile(target)).toEqual([]);
     expect(seenArgs).toContain('--config');
     const configIdx = (seenArgs as string[]).indexOf('--config');
     const configPath = (seenArgs as string[])[configIdx + 1];
     expect(configPath).toMatch(/\.gitleaks\.toml$/);
     expect(configPath).not.toBe(join(process.env.NOMAD_REPO!, '.gitleaks.toml'));
+  });
+
+  it.each([
+    ['projects/-enc/s.jsonl', 'shared/projects/-enc/s.jsonl'],
+    ['skills/demo/a.md', 'shared/skills/demo/a.md'],
+    ['../elsewhere/c.txt', 'c.txt'],
+  ])('stages %s at %s and scans it with protect --staged', async (local, staged) => {
+    const src = join(testHome, '.claude', local);
+    mkdirSync(dirname(src), { recursive: true });
+    writeFileSync(src, 'hello\n');
+    let stagedExists = false;
+    let gitleaksArgs: readonly string[] = [];
+    vi.doMock('node:child_process', async (importOriginal) => {
+      const actual = await importOriginal<typeof cpModule>();
+      return {
+        ...actual,
+        execFileSync: vi.fn((bin: string, args?: readonly string[], opts?: { cwd?: string }) => {
+          if (bin === 'git' && (args ?? []).includes('add')) {
+            stagedExists = existsSync(join(opts!.cwd!, staged));
+          }
+          if (bin === 'gitleaks') gitleaksArgs = args ?? [];
+          return Buffer.from('');
+        }),
+      };
+    });
+    const { scanFile } = await import('./gitleaks.scan.ts');
+    expect(scanFile(src)).toEqual([]);
+    expect(stagedExists).toBe(true);
+    expect(gitleaksArgs).toContain('protect');
+    expect(gitleaksArgs).toContain('--staged');
+    expect(gitleaksArgs).not.toContain('--redact');
   });
 
   it('returns null when gitleaks is absent (ENOENT)', async () => {
@@ -136,7 +170,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl')).toBeNull();
+    expect(scanFile(target)).toBeNull();
   });
 
   it('does NOT forward streams when crashing with default forwardStreams (omitted arg)', async () => {
@@ -161,7 +195,7 @@ describe('scanFile (mocked child_process)', () => {
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
     // Call without the second arg: the default must be false -> no stream write.
-    expect(scanFile('/some/file.jsonl')).toBeNull();
+    expect(scanFile(target)).toBeNull();
     const stderrLeaked = stderrSpy.mock.calls.some(
       (c: unknown[]) =>
         Buffer.isBuffer(c[0]) && c[0].toString().includes('scanfile-default-no-forward-stderr'),
@@ -181,7 +215,8 @@ describe('scanFile (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin !== 'gitleaks') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -212,7 +247,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl', false)).toBeNull();
+    expect(scanFile(target, false)).toBeNull();
   });
 
   it('returns parsed findings on exit-1 and does NOT forward streams when the report parses', async () => {
@@ -220,7 +255,8 @@ describe('scanFile (mocked child_process)', () => {
       const actual = await importOriginal<typeof cpModule>();
       return {
         ...actual,
-        execFileSync: vi.fn((_bin: string, args?: readonly string[]) => {
+        execFileSync: vi.fn((bin: string, args?: readonly string[]) => {
+          if (bin !== 'gitleaks') return Buffer.from('');
           const flag = (args ?? []).find((a) => a.startsWith('--report-path='));
           if (flag !== undefined) {
             const reportPath = flag.slice('--report-path='.length);
@@ -253,7 +289,7 @@ describe('scanFile (mocked child_process)', () => {
     const { scanFile } = await import('./gitleaks.scan.ts');
     // forwardStreams=true but the report parses, so the `report === null`
     // guard is false and stderr must NOT be forwarded.
-    const findings = scanFile('/some/file.jsonl', true);
+    const findings = scanFile(target, true);
     expect(findings).not.toBeNull();
     expect(findings!).toHaveLength(1);
     const leaked = stderrSpy.mock.calls.some(
@@ -279,7 +315,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl', true)).toBeNull();
+    expect(scanFile(target, true)).toBeNull();
     const forwarded = stderrSpy.mock.calls.some(
       (c: unknown[]) =>
         Buffer.isBuffer(c[0]) && c[0].toString().includes('crash-stderr-diagnostic'),
@@ -302,7 +338,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl', true)).toBeNull();
+    expect(scanFile(target, true)).toBeNull();
     expect(stderrSpy).toHaveBeenCalledWith('scan aborted: spawnSync gitleaks ENOBUFS (SIGTERM)\n');
   });
 
@@ -322,7 +358,7 @@ describe('scanFile (mocked child_process)', () => {
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
     const { GITLEAKS_SCAN_TIMEOUT_MS } = await import('../../core/config.ts');
-    scanFile('/some/file.jsonl');
+    scanFile(target);
     expect(capturedOpts?.timeout).toBe(GITLEAKS_SCAN_TIMEOUT_MS);
   });
 
@@ -341,7 +377,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    scanFile('/some/file.jsonl', false, 3_000);
+    scanFile(target, false, 3_000);
     expect(capturedOpts?.timeout).toBe(3_000);
   });
 
@@ -363,7 +399,7 @@ describe('scanFile (mocked child_process)', () => {
       };
     });
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl', true)).toBeNull();
+    expect(scanFile(target, true)).toBeNull();
     const forwarded = stdoutSpy.mock.calls.some(
       (c: unknown[]) =>
         Buffer.isBuffer(c[0]) && c[0].toString().includes('crash-stdout-diagnostic'),
@@ -754,6 +790,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
   let originalNomadRepo: string | undefined;
   let testHome: string;
   let repoHome: string;
+  let target: string;
 
   beforeEach(() => {
     originalHome = process.env.HOME;
@@ -763,6 +800,8 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     repoHome = join(testHome, 'repo');
     process.env.NOMAD_REPO = repoHome;
     mkdirSync(repoHome, { recursive: true });
+    target = join(testHome, 'file.jsonl');
+    writeFileSync(target, '{"text":"hello"}\n');
     vi.resetModules();
   });
 
@@ -863,7 +902,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     mockFsWithOverlay(rmSyncSpy);
     mockExecOk();
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl')).toEqual([]);
+    expect(scanFile(target)).toEqual([]);
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
       recursive: true,
       force: true,
@@ -875,7 +914,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     mockFsWithOverlay(rmSyncSpy);
     mockExecGitleaksFails();
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl')).toBeNull();
+    expect(scanFile(target)).toBeNull();
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
       recursive: true,
       force: true,
@@ -913,7 +952,7 @@ describe('scan-site temp-config cleanup (resolveTomlConfig wiring)', () => {
     });
     mockExecOk();
     const { scanFile } = await import('./gitleaks.scan.ts');
-    expect(scanFile('/some/file.jsonl')).toBeNull();
+    expect(scanFile(target)).toBeNull();
     expect(rmSyncSpy).toHaveBeenCalledWith(expect.stringContaining('nomad-gitleaks-cfg'), {
       recursive: true,
       force: true,

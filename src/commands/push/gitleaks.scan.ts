@@ -13,11 +13,11 @@
  */
 
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 
-import { GITLEAKS_SCAN_TIMEOUT_MS } from '../../core/config.ts';
+import { claudeHome, GITLEAKS_SCAN_TIMEOUT_MS } from '../../core/config.ts';
 import { resolveTomlConfig } from './gitleaks.config.ts';
 import { nowTimestamp } from '../../core/utils.fs.ts';
 
@@ -159,6 +159,48 @@ function resolveScanFailure(
 }
 
 /**
+ * Scan exec options for a repo dir. An inherited GIT_DIR/GIT_INDEX_FILE/
+ * GIT_WORK_TREE (e.g. from a git hook) would stage into the caller's repo
+ * instead of `repoDir`, so they are stripped.
+ */
+function repoExecOpts(repoDir: string): ExecFileSyncOptions {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_WORK_TREE;
+  return { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'] };
+}
+
+/**
+ * Run `git init` then `git <addArgs>` in the repo `opts` point at. The add
+ * call drops stdout and raises the stderr buffer: a per-file CRLF warning
+ * (Git for Windows default) across thousands of files would overflow the 1 MB
+ * default.
+ */
+function initAndStage(opts: ExecFileSyncOptions, addArgs: string[]): void {
+  execFileSync('git', ['init', '-q'], opts);
+  execFileSync('git', addArgs, {
+    ...opts,
+    stdio: ['ignore', 'ignore', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+/**
+ * Repo-relative path push stages a local file at, so the bundled `^shared/...`
+ * path-scoped allowlists apply to a re-scan exactly as on the push gate.
+ * Files outside projects/ and skills/ fall back to their basename.
+ */
+function stagedRelPath(filePath: string): string {
+  const abs = resolve(filePath);
+  for (const dir of ['projects', 'skills']) {
+    const root = join(claudeHome(), dir) + sep;
+    if (abs.startsWith(root)) return join('shared', dir, abs.slice(root.length));
+  }
+  return basename(abs);
+}
+
+/**
  * Scan the staged tree of a git repo with `gitleaks protect --staged`, the
  * single staged-scan mechanism shared by `nomad push` and the
  * `nomad doctor --check-shared` preflight. Routing both through one helper
@@ -191,6 +233,10 @@ function resolveScanFailure(
  * findings and the streams are suppressed.
  * `runGitleaksScan` passes `true`; the read-only `--check-shared` preflight
  * leaves it `false` so it never writes to streams on any path.
+ *
+ * `gitleaks detect --no-git` also diverges from this mechanism (it chunks large
+ * files and misses a keyword-gated match whose keyword is far away), which is
+ * why `scanFile` uses the same staged scan.
  */
 export function scanStagedTree(repoDir: string, forwardStreams = false): Finding[] | null {
   const cacheDir = join(homedir(), '.cache', 'claude-nomad');
@@ -207,23 +253,10 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
     `--report-path=${reportPath}`,
   ];
   if (toml !== null) args.push('--config', toml);
-  // An inherited GIT_DIR/GIT_INDEX_FILE/GIT_WORK_TREE (e.g. from a git hook)
-  // would stage into the caller's repo instead of `repoDir`.
-  const env = { ...process.env };
-  delete env.GIT_DIR;
-  delete env.GIT_INDEX_FILE;
-  delete env.GIT_WORK_TREE;
-  const opts: ExecFileSyncOptions = { cwd: repoDir, env, stdio: ['ignore', 'pipe', 'pipe'] };
+  const opts = repoExecOpts(repoDir);
   const gitleaksOpts: ExecFileSyncOptions = { ...opts, timeout: GITLEAKS_SCAN_TIMEOUT_MS };
   try {
-    execFileSync('git', ['init', '-q'], opts);
-    // A per-file CRLF warning (Git for Windows default) across thousands of
-    // files would overflow the 1 MB default stderr buffer.
-    execFileSync('git', ['add', '-A'], {
-      ...opts,
-      stdio: ['ignore', 'ignore', 'pipe'],
-      maxBuffer: 64 * 1024 * 1024,
-    });
+    initAndStage(opts, ['add', '-A']);
     execFileSync('gitleaks', args, gitleaksOpts);
     return [];
   } catch (err) {
@@ -237,7 +270,10 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
 }
 
 /**
- * Scan a single non-staged file with `gitleaks detect --no-git`. Returns a
+ * Scan a single non-staged file by staging a copy into a private temp repo at
+ * its push-layout path and running `gitleaks protect --staged` (the push gate's
+ * mechanism; `detect --no-git` chunks large files and misses a keyword-gated
+ * match whose keyword is far away). Returns a
  * `Finding[]` on success (empty when the file is clean, non-empty when secrets
  * are found), or `null` when the scan itself fails (gitleaks absent, gitleaks
  * crashed, or the report is missing or unparseable).
@@ -249,7 +285,8 @@ export function scanStagedTree(repoDir: string, forwardStreams = false): Finding
  * holds real secret values (unlike `scanStagedTree`, which passes `--redact`),
  * it is written into an owner-only (`0o700`) `mkdtempSync` scratch dir rather
  * than the shared `~/.cache/claude-nomad/` (mode ~`0o755`), so the transient
- * report is never world-readable while it exists. The whole scratch dir is
+ * report, the file copy and the repo objects are never world-readable while
+ * they exist. The whole scratch dir is
  * removed in a `finally` block on every path, and the process streams are never
  * written on the findings path, so the real secret is never emitted to
  * stdout/stderr.
@@ -308,20 +345,23 @@ export function scanFile(
     // recognizable.
     reportDir = mkdtempSync(join(cacheDir, `gitleaks-file-${nowTimestamp()}-${process.pid}-`));
     reportPath = join(reportDir, 'report.json');
+    // The report sits outside the repo so it is never staged.
+    const repo = join(reportDir, 'repo');
+    const dest = join(repo, stagedRelPath(filePath));
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(filePath, dest);
+    const opts = repoExecOpts(repo);
+    // autocrlf off keeps staged bytes equal to the local file so `Match` stays
+    // locatable; -f stops a global exclude from dropping the file (a fake clean).
+    initAndStage(opts, ['-c', 'core.autocrlf=false', 'add', '-f', '-A']);
     const args: string[] = [
-      'detect',
-      '--no-git',
-      '--source',
-      filePath,
+      'protect',
+      '--staged',
       '--report-format=json',
       `--report-path=${reportPath}`,
     ];
     if (toml !== null) args.push('--config', toml);
-    const opts: ExecFileSyncOptions = {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: timeoutMs,
-    };
-    execFileSync('gitleaks', args, opts);
+    execFileSync('gitleaks', args, { ...opts, timeout: timeoutMs });
     return [];
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: Buffer; stdout?: Buffer };
