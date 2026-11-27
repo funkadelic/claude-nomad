@@ -17,3 +17,25 @@ reviews:
     - '!docs-site/node_modules/**'
     - '!docs-site/.astro/**'
     - '!docs-site/package-lock.json'
+  # Review checklist: each item is something an earlier review pass missed.
+  path_instructions:
+    - path: 'src/**/*.ts'
+      instructions: |
+        - A block that only moved (see the moved-lines diff) is pre-existing: do not raise findings on it.
+        - In a fail-closed function (contract: return null or throw NomadFatal on any failure), check every callee for a throw outside its own try, including config resolution and temp-dir setup. A raw Error that escapes reaches the crash handler instead of failing closed.
+        - A loop of subprocess calls shares one deadline; giving each call the full timeout multiplies the bound.
+        - Presence checks before a removal use lstat, not existsSync, so a dangling symlink is not read as absent.
+        - Writes under the sync repo must not follow a symlinked ancestor out of the repo.
+        - Paths, filenames and keys printed to the terminal go through escapeUnsafe (src/sync/settings-classify.ts).
+    - path: 'src/commands/push/**/*.ts'
+      instructions: |
+        - A new step or gate in the push pipeline needs a caller-level test: when it throws, commit, push and the manifest write do not run, and it runs after any step that can change what it checks (leak recovery restages files).
+        - Dry-run output (preview, wouldPush, nothing-to-scan verdicts) must match what the real push stages, including when a filter such as the size cap or a deny set leaves a project empty.
+        - Push re-copies shared/projects/ and shared/extras/ from the host on every run, so recovery advice for those files must point at the source, not the sync repo.
+    - path: 'src/**/*.test.ts'
+      instructions: |
+        - A test of a default value must sit at the real boundary, so it fails if the default changes.
+        - Fixtures built on $HOME must save, delete and restore NOMAD_REPO, as src/sync/links.baseline.test.ts does.
+    - path: 'docs-site/src/content/docs/**'
+      instructions: |
+        - Check each claim against the code: scope (which files), guarantees (what is removed or kept) and recovery steps must hold on every path, including the manifest-skip and cold-start paths.
