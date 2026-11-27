@@ -29,7 +29,11 @@ import { assertSafeLogical } from '../../core/config.sharedDirs.guard.ts';
 import { copyExtras } from '../../sync/extras/extras.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { copyDirJsonlOnly } from '../../sync/remap.ts';
-import { applySelective } from '../../sync/remap.selective.ts';
+import {
+  applySelective,
+  assertPlainProjectsRoot,
+  selectionNeedsMirror,
+} from '../../sync/remap.selective.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './leak-verdict.ts';
 import { scanStagedTree } from './gitleaks.ts';
 import { copySkillsPush, isRootSkillExcluded } from '../../sync/skills-sync.ts';
@@ -40,24 +44,29 @@ import { encodePath } from '../../core/utils.json.ts';
 const NOTHING_TO_SCAN_ROW = `${dim(infoGlyph)} nothing to scan, no leaks`;
 
 /**
- * Copy one project directory into the staging tree. When `changed` is defined,
- * only the files present in that set and rooted under `localDir` are copied via
- * `applySelective`, which skips over-cap files like a real push. When `changed`
- * is `undefined` (cold start), falls back to `copyDirJsonlOnly` (full mirror).
+ * Copy one project directory into the staging tree. With a `selection`, only
+ * the changed files rooted under `localDir` are copied via `applySelective`,
+ * which skips over-cap files like a real push. Without one (cold start), or
+ * when the real repo copy is obstructed (`selectionNeedsMirror`, the same
+ * check `remapPush` makes), falls back to `copyDirJsonlOnly` (full mirror).
  * Returns `true` when at least one file was staged, so a mirror left empty by
  * the cap is not scanned.
  *
  * @param localDir - Absolute path to `~/.claude/projects/<encoded>/`.
  * @param dstDir - Absolute path to `<tmpRoot>/shared/projects/<logical>/`.
- * @param changed - Selected changed source paths, or `undefined` for full copy.
+ * @param repoDst - Absolute path to the real `<repo>/shared/projects/<logical>/`.
+ * @param selection - Manifest diff, or `undefined` for a full copy.
  * @returns `true` when files were staged, `false` when the dir was skipped.
  */
 function stageSessionDir(
   localDir: string,
   dstDir: string,
-  changed: Set<string> | undefined,
+  repoDst: string,
+  selection: ManifestDiff | undefined,
 ): boolean {
-  if (changed !== undefined) return applySelective({ changed, deleted: [] }, localDir, dstDir) > 0;
+  if (selection !== undefined && !selectionNeedsMirror(selection, localDir, repoDst)) {
+    return applySelective({ changed: selection.changed, deleted: [] }, localDir, dstDir) > 0;
+  }
   copyDirJsonlOnly(localDir, dstDir);
   return readdirSync(dstDir, { recursive: true, withFileTypes: true }).some(
     (e) => !e.isDirectory(),
@@ -70,16 +79,17 @@ function stageSessionDir(
  * encoded-dir-to-logical reverse map from `map.projects` (skipping TBD or
  * missing entries), then copies each matching `~/.claude/projects/<dir>/`.
  *
- * When `changed` is provided only source files in that set are staged (one
- * `applySelective` call per project dir); dirs with no matching files are
- * skipped entirely so their inode and mtime in the repo tree are not disturbed.
+ * When `selection` is provided only its changed source files are staged (one
+ * `applySelective` call per project dir), unless the project would be mirrored
+ * by the real push; dirs with no matching files are skipped entirely. A
+ * non-directory `shared/` or `shared/projects/` refuses, as the real push does.
  *
  * @param tmpRoot - Root of the throwaway staging tree.
  * @param map - Parsed `path-map.json`.
- * @param changed - Optional set of changed source paths from `ManifestDiff`.
+ * @param selection - Optional manifest diff.
  * @returns Number of session directories staged.
  */
-function stageSessions(tmpRoot: string, map: PathMap, changed?: Set<string>): number {
+function stageSessions(tmpRoot: string, map: PathMap, selection?: ManifestDiff): number {
   if (typeof map.projects !== 'object' || map.projects === null) return 0;
 
   const reverse = new Map<string, string>();
@@ -92,6 +102,8 @@ function stageSessions(tmpRoot: string, map: PathMap, changed?: Set<string>): nu
 
   const localProjects = join(claudeHome(), 'projects');
   if (!existsSync(localProjects)) return 0;
+  assertPlainProjectsRoot(repoHome());
+  const repoProjects = join(repoHome(), 'shared', 'projects');
 
   let staged = 0;
   for (const dir of readdirSync(localProjects)) {
@@ -99,7 +111,7 @@ function stageSessions(tmpRoot: string, map: PathMap, changed?: Set<string>): nu
     if (!logical) continue;
     const localDir = join(localProjects, dir);
     const dstDir = join(tmpRoot, 'shared', 'projects', logical);
-    if (stageSessionDir(localDir, dstDir, changed)) staged++;
+    if (stageSessionDir(localDir, dstDir, join(repoProjects, logical), selection)) staged++;
   }
   return staged;
 }
@@ -224,7 +236,7 @@ export function previewPushLeaks(
   const tmpRoot = join(cacheDir, `push-preview-tree-${stamp}`);
 
   try {
-    const sessionCount = stageSessions(tmpRoot, map, opts.selection?.changed);
+    const sessionCount = stageSessions(tmpRoot, map, opts.selection);
     const extrasCount = stageExtras(tmpRoot, map);
     const skillCount = stageSkills(tmpRoot);
     if (sessionCount + extrasCount + skillCount === 0) {

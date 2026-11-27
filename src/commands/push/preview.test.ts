@@ -829,6 +829,35 @@ describe('previewPushLeaks: path-traversal guard (fail-closed before copy)', () 
     expect(remaining).toHaveLength(0);
   });
 
+  it('refuses a non-directory shared/projects before scanning', async () => {
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: scanMock,
+    }));
+    const localPath = join(env.testHome, 'my-project');
+    const projectsDir = join(env.claudeHome, 'projects', encodePath(localPath));
+    mkdirSync(projectsDir, { recursive: true });
+    writeFileSync(join(projectsDir, 'a.jsonl'), '{}\n');
+    const shared = join(env.repoUnderHome, 'shared');
+    rmSync(shared, { recursive: true, force: true });
+    mkdirSync(shared, { recursive: true });
+    writeFileSync(join(shared, 'projects'), 'not a dir\n');
+
+    const { previewPushLeaks } = await import('./preview.ts');
+    const map = { projects: { 'my-project': { 'test-host': localPath } } };
+    const changed = new Set([join(projectsDir, 'a.jsonl')]);
+    expect(() => previewPushLeaks(map, { selection: { changed, deleted: [] } })).toThrow(
+      /not a real directory/,
+    );
+    expect(scanMock).not.toHaveBeenCalled();
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    const remaining = existsSync(cacheDir)
+      ? readdirSync(cacheDir).filter((n) => n.startsWith('push-preview-tree-'))
+      : [];
+    expect(remaining).toHaveLength(0);
+  });
+
   it('throws on an unsafe extras logical (..) before scanning', async () => {
     // An unsafe logical in the extras block must fail closed via
     // assertSafeLogical in stageExtras, before any copy or scan.
@@ -1039,6 +1068,35 @@ describe('previewPushLeaks: selective staging via selection.changed', () => {
     // Only session-a.jsonl was in selection.changed for this dir; session-b is absent.
     expect(stagedFiles).toEqual(['session-a.jsonl']);
     expect(verdict.leak).toBe(false);
+  });
+
+  it('stages the whole project when the real repo copy would be mirrored', async () => {
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    const projectsDir = join(env.claudeHome, 'projects', encodePath(localPath));
+    mkdirSync(join(projectsDir, 'a'), { recursive: true });
+    writeFileSync(join(projectsDir, 'a', 'x.jsonl'), '{"x":1}\n');
+    writeFileSync(join(projectsDir, 'a', 'y.jsonl'), '{"y":1}\n');
+    // The repo holds a file where this host now has a directory, so push mirrors.
+    const repoDst = join(env.repoUnderHome, 'shared', 'projects', logical);
+    mkdirSync(repoDst, { recursive: true });
+    writeFileSync(join(repoDst, 'a'), 'old\n');
+
+    let staged: string[] = [];
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+        staged = readdirSync(join(dir, 'shared', 'projects', logical, 'a')).sort();
+        return [];
+      }),
+    }));
+
+    const { previewPushLeaks } = await import('./preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    const changed = new Set([join(projectsDir, 'a', 'x.jsonl')]);
+    previewPushLeaks(map, { selection: { changed, deleted: [] } });
+
+    expect(staged).toEqual(['x.jsonl', 'y.jsonl']);
   });
 
   /** Cap staging at 16 bytes; returns the session dir and the mapped `projects` map. */

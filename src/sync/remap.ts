@@ -7,7 +7,12 @@ import { assertSafeLocalRoot } from './extras/guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { forgetPushed, isGrownEntry, listGrownLocally } from './remap.grown.ts';
-import { applySelective, skipForSelection } from './remap.selective.ts';
+import {
+  applySelective,
+  assertPlainProjectsRoot,
+  selectionNeedsMirror,
+  skipForSelection,
+} from './remap.selective.ts';
 import { skipOversize } from './remap.size.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
@@ -309,9 +314,12 @@ function buildReverseMap(map: PathMap): Map<string, string> {
  * provided, only files in `selection.changed` are copied and only files in
  * `selection.deleted` are removed from the repo; unchanged files are left
  * untouched so their destination inode and mtime remain valid for git's
- * stat-cache. When absent (cold start or full rescan), the entire project dir
- * is mirrored via `copyDirJsonlOnly`, preserving today's behavior including
- * stale-file cleanup.
+ * stat-cache. When absent (cold start or full rescan), or when a project's repo
+ * path holds a symlink, a file where a directory goes, or a directory where a
+ * file goes (`selectionNeedsMirror`), the entire project dir is mirrored via
+ * `copyDirJsonlOnly`, preserving today's behavior including stale-file cleanup.
+ * A `shared/` or `shared/projects/` that is not a real directory refuses the
+ * push (`assertPlainProjectsRoot`), in dry runs too.
  *
  * Returns `pushed` (logical names actually copied, wet mode) and `wouldPush`
  * (logical names under `dryRun`) alongside the counts so cmdPush can render a
@@ -349,6 +357,7 @@ export function remapPush(
   // Create the repo destination only after collision detection passes and we
   // know there is something to push, so a failing or no-op push is fully
   // side-effect-free (no empty shared/projects/ left behind).
+  assertPlainProjectsRoot(repo);
   if (!dryRun) mkdirSync(repoProjects, { recursive: true });
 
   for (const dir of readdirSync(localProjects)) {
@@ -373,8 +382,10 @@ export function remapPush(
     // path without this. Symmetric with remapPull's backupBeforeWrite.
     backupRepoWrite(repoDst, ts, repo);
     // A dir whose only changes were over-cap skips is not reported as pushed.
-    if (opts.selection === undefined) copyDirJsonlOnly(localDir, repoDst);
-    else if (applySelective(opts.selection, localDir, repoDst) === 0) continue;
+    const sel = opts.selection;
+    if (sel === undefined || selectionNeedsMirror(sel, localDir, repoDst)) {
+      copyDirJsonlOnly(localDir, repoDst);
+    } else if (applySelective(sel, localDir, repoDst) === 0) continue;
     pushed.push(logical);
   }
   return { unmapped, collisions: 0, pushed, wouldPush };

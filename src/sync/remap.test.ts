@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1709,6 +1709,168 @@ describe('remapPush selective', () => {
     // No files written.
     expect(existsSync(join(sharedProjects, 'foo', 'a.jsonl'))).toBe(false);
     expect(existsSync(join(sharedProjects, 'bar', 'b.jsonl'))).toBe(false);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses to push sessions through a symlinked shared/projects',
+    async () => {
+      const outside = join(testHome, 'outside');
+      mkdirSync(outside);
+      const localDir = join(claudeProjects, '-tmp-foo');
+      mkdirSync(localDir, { recursive: true });
+      writeFileSync(join(localDir, 'a.jsonl'), '{"a":1}\n');
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+      );
+      rmSync(sharedProjects, { recursive: true });
+      symlinkSync(outside, sharedProjects);
+
+      const { remapPush } = await import('./remap.ts');
+      expect(() => remapPush('20261127-000000')).toThrow(/not a real directory/);
+      expect(readdirSync(outside)).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'mirrors a project with a symlinked repo ancestor instead of writing through it',
+    async () => {
+      const outside = join(testHome, 'outside');
+      mkdirSync(outside);
+      const localDir = join(claudeProjects, '-tmp-foo');
+      mkdirSync(join(localDir, 'sub'), { recursive: true });
+      writeFileSync(join(localDir, 'a.jsonl'), '{"a":1}\n');
+      writeFileSync(join(localDir, 'sub', 'b.jsonl'), '{"b":1}\n');
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+      );
+      const repoDst = join(sharedProjects, 'foo');
+      mkdirSync(repoDst);
+      symlinkSync(outside, join(repoDst, 'sub'));
+      const selection: ManifestDiff = {
+        changed: new Set([join(localDir, 'sub', 'b.jsonl')]),
+        deleted: [],
+      };
+
+      const { remapPush } = await import('./remap.ts');
+      expect(remapPush('20261127-000000', { selection }).pushed).toEqual(['foo']);
+
+      expect(readdirSync(outside)).toEqual([]);
+      expect(lstatSync(join(repoDst, 'sub')).isDirectory()).toBe(true);
+      expect(readFileSync(join(repoDst, 'sub', 'b.jsonl'), 'utf8')).toBe('{"b":1}\n');
+      // The full mirror also carries the unchanged file.
+      expect(readFileSync(join(repoDst, 'a.jsonl'), 'utf8')).toBe('{"a":1}\n');
+    },
+  );
+});
+
+describe('applySelective destination safety', () => {
+  const skipSymlinks = process.platform === 'win32';
+  let root: string;
+  let localDir: string;
+  let repoDst: string;
+  let outside: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'nomad-selective-dst-'));
+    localDir = join(root, 'local');
+    repoDst = join(root, 'repo', 'shared', 'projects', 'foo');
+    outside = join(root, 'outside');
+    mkdirSync(localDir, { recursive: true });
+    mkdirSync(repoDst, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /** Write `body` at `rel` under the local project dir and return its absolute path. */
+  function local(rel: string, body = '{"v":1}\n'): string {
+    const p = join(localDir, rel);
+    mkdirSync(join(p, '..'), { recursive: true });
+    writeFileSync(p, body);
+    return p;
+  }
+
+  /** Build a diff from changed and deleted local paths. */
+  function diff(changed: string[], deleted: string[] = []): ManifestDiff {
+    return { changed: new Set(changed), deleted };
+  }
+
+  /** Whether the selection must fall back to the full mirror. */
+  async function needsMirror(changed: string[], deleted: string[] = []): Promise<boolean> {
+    const { selectionNeedsMirror } = await import('./remap.selective.ts');
+    return selectionNeedsMirror(diff(changed, deleted), localDir, repoDst);
+  }
+
+  it('does not need the mirror for plain directories or missing ones', async () => {
+    mkdirSync(join(repoDst, 'sub'));
+    expect(
+      await needsMirror([local('a.jsonl'), local('sub/b.jsonl'), local('new/c/d.jsonl')]),
+    ).toBe(false);
+  });
+
+  it.skipIf(skipSymlinks)('needs the mirror for a symlinked ancestor', async () => {
+    symlinkSync(outside, join(repoDst, 'sub'));
+    expect(await needsMirror([local('sub/a.jsonl')])).toBe(true);
+    expect(await needsMirror([], [join(localDir, 'sub', 'a.jsonl')])).toBe(true);
+  });
+
+  it.skipIf(skipSymlinks)('needs the mirror for a symlinked project root', async () => {
+    rmSync(repoDst, { recursive: true });
+    symlinkSync(outside, repoDst);
+    expect(await needsMirror([local('a.jsonl')])).toBe(true);
+  });
+
+  it('needs the mirror for a file ancestor (file to dir)', async () => {
+    writeFileSync(join(repoDst, 'a'), 'old\n');
+    expect(await needsMirror([local('a/x.jsonl')])).toBe(true);
+  });
+
+  it('needs the mirror for a directory at the destination (dir to file)', async () => {
+    mkdirSync(join(repoDst, 'a'));
+    expect(await needsMirror([local('a', 'new\n')])).toBe(true);
+  });
+
+  it('ignores entries outside the project dir', async () => {
+    writeFileSync(join(repoDst, 'a'), 'old\n');
+    expect(await needsMirror([join(root, 'elsewhere', 'a', 'x')])).toBe(false);
+  });
+
+  it('never removes outside the project for a ".." manifest key', async () => {
+    const sibling = join(repoDst, '..', 'victim.jsonl');
+    writeFileSync(sibling, 'keep\n');
+    const sel = diff([], [`${localDir}${sep}..${sep}victim.jsonl`]);
+    expect(await needsMirror([], sel.deleted)).toBe(false);
+    const { applySelective } = await import('./remap.selective.ts');
+    expect(applySelective(sel, localDir, repoDst)).toBe(0);
+    expect(readFileSync(sibling, 'utf8')).toBe('keep\n');
+  });
+
+  it.skipIf(skipSymlinks)('does not write through a symlink at the temp path', async () => {
+    writeFileSync(join(outside, 'target'), 'keep\n');
+    symlinkSync(join(outside, 'target'), join(repoDst, `a.jsonl.tmp.${process.pid}`));
+    const { applySelective } = await import('./remap.selective.ts');
+    expect(applySelective(diff([local('a.jsonl')]), localDir, repoDst)).toBe(1);
+    expect(readFileSync(join(outside, 'target'), 'utf8')).toBe('keep\n');
+    expect(lstatSync(join(repoDst, 'a.jsonl')).isFile()).toBe(true);
+    expect(readFileSync(join(repoDst, 'a.jsonl'), 'utf8')).toBe('{"v":1}\n');
+  });
+
+  it.skipIf(skipSymlinks)('refuses a symlinked shared/projects', async () => {
+    const repo = join(root, 'repo');
+    rmSync(join(repo, 'shared', 'projects'), { recursive: true });
+    symlinkSync(outside, join(repo, 'shared', 'projects'));
+    const { assertPlainProjectsRoot } = await import('./remap.selective.ts');
+    expect(() => assertPlainProjectsRoot(repo)).toThrow(/not a real directory/);
+  });
+
+  it('accepts real or missing shared directories', async () => {
+    const { assertPlainProjectsRoot } = await import('./remap.selective.ts');
+    expect(() => assertPlainProjectsRoot(join(root, 'repo'))).not.toThrow();
+    expect(() => assertPlainProjectsRoot(join(root, 'nothing'))).not.toThrow();
   });
 });
 
