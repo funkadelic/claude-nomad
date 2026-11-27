@@ -21,14 +21,15 @@
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 import { dim, infoGlyph } from '../../render/color.ts';
 import { claudeHome, repoHome, HOST, SUPPORTED_EXTRAS, type PathMap } from '../../core/config.ts';
 import { assertSafeLogical } from '../../core/config.sharedDirs.guard.ts';
 import { copyExtras } from '../../sync/extras/extras.ts';
 import { type ManifestDiff } from './manifest.ts';
-import { copyDirJsonlOnly, copyFileAtomic } from '../../sync/remap.ts';
+import { copyDirJsonlOnly } from '../../sync/remap.ts';
+import { applySelective } from '../../sync/remap.selective.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './leak-verdict.ts';
 import { scanStagedTree } from './gitleaks.ts';
 import { copySkillsPush, isRootSkillExcluded } from '../../sync/skills-sync.ts';
@@ -41,9 +42,10 @@ const NOTHING_TO_SCAN_ROW = `${dim(infoGlyph)} nothing to scan, no leaks`;
 /**
  * Copy one project directory into the staging tree. When `changed` is defined,
  * only the files present in that set and rooted under `localDir` are copied via
- * `copyFileAtomic`; dirs with no matching files return `false` (skipped). When
- * `changed` is `undefined` (cold start), falls back to `copyDirJsonlOnly`
- * (full mirror). Returns `true` when at least one file was staged.
+ * `applySelective`, which skips over-cap files like a real push. When `changed`
+ * is `undefined` (cold start), falls back to `copyDirJsonlOnly` (full mirror).
+ * Returns `true` when at least one file was staged, so a mirror left empty by
+ * the cap is not scanned.
  *
  * @param localDir - Absolute path to `~/.claude/projects/<encoded>/`.
  * @param dstDir - Absolute path to `<tmpRoot>/shared/projects/<logical>/`.
@@ -55,17 +57,11 @@ function stageSessionDir(
   dstDir: string,
   changed: Set<string> | undefined,
 ): boolean {
-  if (changed !== undefined) {
-    const prefix = `${localDir}${sep}`;
-    const matching = [...changed].filter((p) => p.startsWith(prefix));
-    if (matching.length === 0) return false;
-    for (const src of matching) {
-      copyFileAtomic(src, join(dstDir, relative(localDir, src)));
-    }
-    return true;
-  }
+  if (changed !== undefined) return applySelective({ changed, deleted: [] }, localDir, dstDir) > 0;
   copyDirJsonlOnly(localDir, dstDir);
-  return true;
+  return readdirSync(dstDir, { recursive: true, withFileTypes: true }).some(
+    (e) => !e.isDirectory(),
+  );
 }
 
 /**
@@ -75,8 +71,8 @@ function stageSessionDir(
  * missing entries), then copies each matching `~/.claude/projects/<dir>/`.
  *
  * When `changed` is provided only source files in that set are staged (one
- * `copyFileAtomic` per file); dirs with no matching files are skipped entirely
- * so their inode and mtime in the repo tree are not disturbed.
+ * `applySelective` call per project dir); dirs with no matching files are
+ * skipped entirely so their inode and mtime in the repo tree are not disturbed.
  *
  * @param tmpRoot - Root of the throwaway staging tree.
  * @param map - Parsed `path-map.json`.

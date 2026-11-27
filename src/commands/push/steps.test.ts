@@ -66,6 +66,8 @@ function mockCommitDeps(opts: {
   verdict?: TestVerdict;
   resolveSpy?: ReturnType<typeof vi.fn>;
   gitOrFatalSpy?: ReturnType<typeof vi.fn>;
+  sizeGateSpy?: ReturnType<typeof vi.fn>;
+  writeManifestSpy?: ReturnType<typeof vi.fn>;
 }): void {
   vi.doMock('../../core/utils.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof utilsModule>();
@@ -77,7 +79,7 @@ function mockCommitDeps(opts: {
   });
   vi.doMock('./manifest.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof pushManifestModule>();
-    return { ...actual, writeManifest: vi.fn() };
+    return { ...actual, writeManifest: opts.writeManifestSpy ?? vi.fn() };
   });
   vi.doMock('./global-config.ts', async (importOriginal) => {
     const actual = await importOriginal<typeof pushGlobalConfigModule>();
@@ -87,6 +89,7 @@ function mockCommitDeps(opts: {
     const actual = await importOriginal<typeof leakVerdictModule>();
     return { ...actual, scanPushVerdict: vi.fn(() => opts.verdict ?? CLEAN_VERDICT) };
   });
+  vi.doMock('./size-gate.ts', () => ({ assertStagedUnderCap: opts.sizeGateSpy ?? vi.fn() }));
   if (opts.resolveSpy !== undefined) {
     vi.doMock('./recovery/recovery.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof recoveryModule>();
@@ -540,5 +543,72 @@ describe('runPushCore compose mode', () => {
     expect(combined).toContain('push on host=');
     expect(combined).toContain('nothing to commit');
     expect(combined).toContain('Push summary');
+  });
+});
+
+describe('commitAndPush size gate', () => {
+  let env: PushEnv;
+
+  beforeEach(() => {
+    env = makePushEnv();
+  });
+
+  afterEach(() => {
+    teardownPushEnv(env);
+  });
+
+  /** Run `commitAndPush` with the given verdict and spies; resolves to the thrown error or null. */
+  const run = async (opts: Parameters<typeof mockCommitDeps>[0]): Promise<unknown> => {
+    mockCommitDeps(opts);
+    const { commitAndPush } = await import('./steps.ts');
+    return commitAndPush(
+      makeState(),
+      'ts',
+      { projects: {} },
+      NO_RESOLUTION,
+      env.repoUnderHome,
+      EMPTY_MANIFEST,
+      false,
+    ).then(
+      () => null,
+      (err: unknown) => err,
+    );
+  };
+
+  it('a throwing gate stops the commit, the push and the manifest write', async () => {
+    const gitOrFatalSpy = vi.fn();
+    const writeManifestSpy = vi.fn();
+    const gate = new Error('too big');
+    const err = await run({
+      statusLine: 'M  shared/CLAUDE.md\0',
+      gitOrFatalSpy,
+      writeManifestSpy,
+      sizeGateSpy: vi.fn(() => {
+        throw gate;
+      }),
+    });
+    expect(err).toBe(gate);
+    const gitCalls = gitOrFatalSpy.mock.calls.map((c) => (c[0] as string[])[0]);
+    expect(gitCalls).not.toContain('commit');
+    expect(gitCalls).not.toContain('push');
+    expect(writeManifestSpy).not.toHaveBeenCalled();
+  });
+
+  it('runs the gate after leak recovery and before the commit', async () => {
+    const gitOrFatalSpy = vi.fn();
+    const resolveSpy = vi.fn(() => CLEAN_VERDICT);
+    const sizeGateSpy = vi.fn();
+    const err = await run({
+      statusLine: 'M  shared/CLAUDE.md\0',
+      verdict: { leak: true, verdictRow: '✗ 1 leak found', recovery: 'body', findings: [] },
+      resolveSpy,
+      gitOrFatalSpy,
+      sizeGateSpy,
+    });
+    expect(err).toBeNull();
+    const commitIdx = gitOrFatalSpy.mock.calls.findIndex((c) => (c[0] as string[])[0] === 'commit');
+    const gateOrder = sizeGateSpy.mock.invocationCallOrder[0];
+    expect(resolveSpy.mock.invocationCallOrder[0]).toBeLessThan(gateOrder);
+    expect(gateOrder).toBeLessThan(gitOrFatalSpy.mock.invocationCallOrder[commitIdx]);
   });
 });

@@ -105,6 +105,7 @@ export function teardownPushEnv(env: PushEnv): void {
   vi.doUnmock('../../core/utils.lockfile.ts');
   vi.doUnmock('./allowlist.ts');
   vi.doUnmock('./recovery/recovery.ts');
+  vi.doUnmock('./size-gate.ts');
   vi.doUnmock('../../render/spinner.ts');
   vi.doUnmock('node:child_process');
   process.exitCode = env.originalExitCode;

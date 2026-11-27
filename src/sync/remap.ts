@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 import { assertSafeLogical } from '../core/config.sharedDirs.guard.ts';
 import { cpSyncGuarded, stripCollidingDstSymlinks } from './extras/core.ts';
@@ -7,6 +7,8 @@ import { assertSafeLocalRoot } from './extras/guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { forgetPushed, isGrownEntry, listGrownLocally } from './remap.grown.ts';
+import { applySelective, skipForSelection } from './remap.selective.ts';
+import { skipOversize } from './remap.size.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
 import { encodePath, readPathMap } from '../core/utils.json.ts';
@@ -96,67 +98,6 @@ function overlaySessionDir(src: string, dst: string, kept: string[]): void {
 }
 
 /**
- * Per-file atomic copy. Creates the destination parent directory, copies `src`
- * to a sibling temp file (`<dst>.tmp.<pid>`), then renames over `dst`. The
- * rename is atomic on the same filesystem (no EXDEV), so an interrupt leaves
- * either the old file or the new file intact, never a partial write. Unchanged
- * siblings are untouched, keeping their inode and mtime for git's stat-cache.
- *
- * @param src - Absolute source file path.
- * @param dst - Absolute destination file path.
- */
-export function copyFileAtomic(src: string, dst: string): void {
-  mkdirSync(dirname(dst), { recursive: true });
-  const tmp = `${dst}.tmp.${process.pid}`;
-  cpSync(src, tmp, { force: true, preserveTimestamps: true });
-  renameAtomicRetry(tmp, dst);
-}
-
-/**
- * Return `true` when `sel` contains any changed or deleted files whose
- * absolute source path starts with `localDir + sep`. Used to skip a project
- * dir that has no delta entries, avoiding a spurious `backupRepoWrite` call
- * for fully unchanged projects.
- */
-function hasDeltaForDir(sel: ManifestDiff, localDir: string): boolean {
-  const prefix = `${localDir}${sep}`;
-  const underDir = (p: string): boolean => p.startsWith(prefix);
-  return [...sel.changed].some(underDir) || sel.deleted.some(underDir);
-}
-
-/**
- * Return `true` when a selective push has a `selection` that contains no
- * changed or deleted files for `localDir`, meaning the dir can be skipped.
- * Extracted to keep `remapPush` under the cognitive-complexity gate.
- */
-function skipForSelection(sel: ManifestDiff | undefined, localDir: string): boolean {
-  return sel !== undefined && !hasDeltaForDir(sel, localDir);
-}
-
-/**
- * Apply a manifest delta to a single project dir pair. Copies each changed
- * file into `repoDst` via `copyFileAtomic`; removes repo-side copies of
- * deleted source files. Skips files outside `localDir`. Unchanged files are
- * never opened, so their destination inode and mtime are preserved.
- *
- * @param sel - Manifest diff from `diffManifest`.
- * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
- * @param repoDst - Absolute path of `shared/projects/<logical>/`.
- */
-function applySelective(sel: ManifestDiff, localDir: string, repoDst: string): void {
-  const prefix = `${localDir}${sep}`;
-  for (const src of sel.changed) {
-    if (!src.startsWith(prefix)) continue;
-    copyFileAtomic(src, join(repoDst, relative(localDir, src)));
-  }
-  for (const src of sel.deleted) {
-    if (!src.startsWith(prefix)) continue;
-    const dst = join(repoDst, relative(localDir, src));
-    if (existsSync(dst)) rmSync(dst);
-  }
-}
-
-/**
  * Push-side mirror copy: an `atomicMirror` with a depth-0 extension filter
  * restricting to *.jsonl files only. Subdirectory contents (subagents,
  * memory, tool-results, etc.) copy recursively with no further filtering.
@@ -169,15 +110,16 @@ function applySelective(sel: ManifestDiff, localDir: string, repoDst: string): v
  * curated by the push gate and local-only entries must survive. Uses the same
  * atomic temp-then-rename swap as the other push-side copies;
  * the filter keys off `relative(src, ...)` so it is unaffected by the staging
- * destination.
+ * destination. Files over `cap` at any depth are skipped with a warn line.
  */
-export function copyDirJsonlOnly(src: string, dst: string): void {
+export function copyDirJsonlOnly(src: string, dst: string, cap?: number): void {
   atomicMirror(src, dst, {
     recursive: true,
     force: true,
     filter: (srcPath) => {
       const rel = relative(src, srcPath);
       if (rel === '') return true;
+      if (skipOversize(srcPath, cap)) return false;
       if (rel.split(sep).length > 1) return true;
       if (statSync(srcPath).isDirectory()) return true;
       if (srcPath.endsWith('.jsonl')) return true;
@@ -430,11 +372,9 @@ export function remapPush(
     // only AFTER the commit step, so a corrupt local dir would have no rollback
     // path without this. Symmetric with remapPull's backupBeforeWrite.
     backupRepoWrite(repoDst, ts, repo);
-    if (opts.selection) {
-      applySelective(opts.selection, localDir, repoDst);
-    } else {
-      copyDirJsonlOnly(localDir, repoDst);
-    }
+    // A dir whose only changes were over-cap skips is not reported as pushed.
+    if (opts.selection === undefined) copyDirJsonlOnly(localDir, repoDst);
+    else if (applySelective(opts.selection, localDir, repoDst) === 0) continue;
     pushed.push(logical);
   }
   return { unmapped, collisions: 0, pushed, wouldPush };

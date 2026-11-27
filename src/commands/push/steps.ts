@@ -13,6 +13,7 @@ import { type DoctorSection, renderTree } from '../../render/output-tree.ts';
 import { collectGlobalConfigChanges } from './global-config.ts';
 import { scanPushVerdict } from './leak-verdict.ts';
 import { previewPushLeaks } from './preview.ts';
+import { assertStagedUnderCap } from './size-gate.ts';
 import { withSpinner } from '../../render/spinner.ts';
 import { fail, gitOrFatal, gitStatusPorcelainZ, log, warn } from '../../core/utils.ts';
 
@@ -102,6 +103,8 @@ export async function commitAndPush(
     // of that expectation alone.
     if (verdict.leak) throw leakBlockedFatal(verdict.recovery);
   }
+  // After recovery too: Redact can copy session files back into the index.
+  assertStagedUnderCap(repo);
   gitOrFatal(['commit', '-m', `chore: sync from ${HOST}`], 'git commit', repo);
   withSpinner('Pushing', () => gitOrFatal(['push'], 'git push', repo));
   // Persist the manifest only after the push succeeds so a failed or aborted

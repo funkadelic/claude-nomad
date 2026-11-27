@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './gitleaks.ts';
+import type * as configModule from '../../core/config.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 import { encodePath } from '../../core/utils.json.ts';
 
@@ -93,6 +94,7 @@ function makePreviEnv(): PreviewEnv {
 function teardownPreviewEnv(env: PreviewEnv): void {
   vi.restoreAllMocks();
   vi.doUnmock('./gitleaks.ts');
+  vi.doUnmock('../../core/config.ts');
   vi.doUnmock('node:child_process');
   vi.doUnmock('node:fs');
   process.exitCode = env.originalExitCode;
@@ -1037,6 +1039,74 @@ describe('previewPushLeaks: selective staging via selection.changed', () => {
     // Only session-a.jsonl was in selection.changed for this dir; session-b is absent.
     expect(stagedFiles).toEqual(['session-a.jsonl']);
     expect(verdict.leak).toBe(false);
+  });
+
+  /** Cap staging at 16 bytes; returns the session dir and the mapped `projects` map. */
+  const capAt16 = (): { projectsDir: string; map: configModule.PathMap } => {
+    vi.doMock('../../core/config.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof configModule>()),
+      MAX_SESSION_FILE_BYTES: 16,
+    }));
+    const localPath = join(env.testHome, 'my-project');
+    const projectsDir = join(env.claudeHome, 'projects', encodePath(localPath));
+    mkdirSync(projectsDir, { recursive: true });
+    return { projectsDir, map: { projects: { 'my-project': { 'test-host': localPath } } } };
+  };
+
+  it('does not stage a changed file over the per-file cap', async () => {
+    const { projectsDir, map } = capAt16();
+    const small = join(projectsDir, 'small.jsonl');
+    const big = join(projectsDir, 'big.jsonl');
+    writeFileSync(small, '{}\n');
+    writeFileSync(big, 'x'.repeat(64));
+    let stagedFiles: string[] = [];
+    vi.doMock('./gitleaks.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof scanModule>();
+      return {
+        ...actual,
+        scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+          stagedFiles = readdirSync(join(dir, 'shared', 'projects', 'my-project'));
+          return [];
+        }),
+      };
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { previewPushLeaks } = await import('./preview.ts');
+    previewPushLeaks(map, { selection: { changed: new Set([small, big]), deleted: [] } });
+    expect(stagedFiles).toEqual(['small.jsonl']);
+    expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(`not syncing ${big}`);
+  });
+
+  it('returns nothing-to-scan without scanning when every changed file is over the cap', async () => {
+    const { projectsDir, map } = capAt16();
+    const big = join(projectsDir, 'big.jsonl');
+    writeFileSync(big, 'x'.repeat(64));
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: scanMock,
+    }));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { previewPushLeaks } = await import('./preview.ts');
+    const verdict = previewPushLeaks(map, { selection: { changed: new Set([big]), deleted: [] } });
+    expect(scanMock).not.toHaveBeenCalled();
+    expect(verdict.leak).toBe(false);
+    expect(verdict.verdictRow).toMatch(/nothing to scan/i);
+  });
+
+  it('returns nothing-to-scan on a cold start when every file is over the cap', async () => {
+    const { projectsDir, map } = capAt16();
+    writeFileSync(join(projectsDir, 'big.jsonl'), 'x'.repeat(64));
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: scanMock,
+    }));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { previewPushLeaks } = await import('./preview.ts');
+    const verdict = previewPushLeaks(map);
+    expect(scanMock).not.toHaveBeenCalled();
+    expect(verdict.verdictRow).toMatch(/nothing to scan/i);
   });
 
   it('returns nothing-to-scan when selection.changed has no files for the mapped dir', async () => {

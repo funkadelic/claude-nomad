@@ -185,6 +185,9 @@ export const GITLEAKS_PINNED_VERSION = '8.30.1';
  */
 export const GITLEAKS_SCAN_TIMEOUT_MS = 900_000;
 
+/** GitHub's hard per-file push limit in bytes; session files above it stay local. */
+export const MAX_SESSION_FILE_BYTES = 100 * 1024 * 1024;
+
 /**
  * Resolved host identity used to pick `hosts/<HOST>.json` and key entries in
  * `path-map.json`. Reads `NOMAD_HOST` first, falls back to `hostname()`, then
