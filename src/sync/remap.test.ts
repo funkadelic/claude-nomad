@@ -1712,6 +1712,112 @@ describe('remapPush selective', () => {
   });
 });
 
+describe('applySelective destination safety', () => {
+  const skipSymlinks = process.platform === 'win32';
+  let root: string;
+  let localDir: string;
+  let repoDst: string;
+  let outside: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'nomad-selective-dst-'));
+    localDir = join(root, 'local');
+    repoDst = join(root, 'repo', 'shared', 'projects', 'foo');
+    outside = join(root, 'outside');
+    mkdirSync(localDir, { recursive: true });
+    mkdirSync(repoDst, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /** Write `body` at `rel` under the local project dir and return its absolute path. */
+  function local(rel: string, body = '{"v":1}\n'): string {
+    const p = join(localDir, rel);
+    mkdirSync(join(p, '..'), { recursive: true });
+    writeFileSync(p, body);
+    return p;
+  }
+
+  /** Run `applySelective` with the given changed and deleted local paths. */
+  async function apply(changed: string[], deleted: string[] = []): Promise<number> {
+    const { applySelective } = await import('./remap.selective.ts');
+    return applySelective({ changed: new Set(changed), deleted }, localDir, repoDst);
+  }
+
+  it.skipIf(skipSymlinks)(
+    'replaces a symlinked ancestor instead of writing through it',
+    async () => {
+      symlinkSync(outside, join(repoDst, 'sub'));
+      await apply([local('sub/a.jsonl')]);
+      expect(readdirSync(outside)).toEqual([]);
+      expect(lstatSync(join(repoDst, 'sub')).isDirectory()).toBe(true);
+      expect(lstatSync(join(repoDst, 'sub', 'a.jsonl')).isFile()).toBe(true);
+    },
+  );
+
+  it.skipIf(skipSymlinks)(
+    'replaces a symlinked project root instead of writing through it',
+    async () => {
+      rmSync(repoDst, { recursive: true });
+      symlinkSync(outside, repoDst);
+      await apply([local('a.jsonl')]);
+      expect(readdirSync(outside)).toEqual([]);
+      expect(lstatSync(repoDst).isDirectory()).toBe(true);
+      expect(readFileSync(join(repoDst, 'a.jsonl'), 'utf8')).toBe('{"v":1}\n');
+    },
+  );
+
+  it.skipIf(skipSymlinks)('replaces a symlink at the destination file itself', async () => {
+    writeFileSync(join(outside, 'target'), 'keep\n');
+    symlinkSync(join(outside, 'target'), join(repoDst, 'a.jsonl'));
+    await apply([local('a.jsonl')]);
+    expect(readFileSync(join(outside, 'target'), 'utf8')).toBe('keep\n');
+    expect(lstatSync(join(repoDst, 'a.jsonl')).isFile()).toBe(true);
+  });
+
+  it.skipIf(skipSymlinks)('does not delete through a symlinked ancestor', async () => {
+    writeFileSync(join(outside, 'x.jsonl'), 'keep\n');
+    symlinkSync(outside, join(repoDst, 'sub'));
+    expect(await apply([], [join(localDir, 'sub', 'x.jsonl')])).toBe(0);
+    expect(readFileSync(join(outside, 'x.jsonl'), 'utf8')).toBe('keep\n');
+  });
+
+  it('writes a file over a stale directory (dir to file)', async () => {
+    mkdirSync(join(repoDst, 'a'));
+    writeFileSync(join(repoDst, 'a', 'x.jsonl'), 'old\n');
+    expect(await apply([local('a', 'new\n')], [join(localDir, 'a', 'x.jsonl')])).toBe(2);
+    expect(readFileSync(join(repoDst, 'a'), 'utf8')).toBe('new\n');
+  });
+
+  it('writes under a path that was a file (file to dir)', async () => {
+    writeFileSync(join(repoDst, 'a'), 'old\n');
+    expect(await apply([local('a/x.jsonl')], [join(localDir, 'a')])).toBe(2);
+    expect(readFileSync(join(repoDst, 'a', 'x.jsonl'), 'utf8')).toBe('{"v":1}\n');
+  });
+
+  it('replaces a file blocking an ancestor even without a deletion entry', async () => {
+    writeFileSync(join(repoDst, 'a'), 'old\n');
+    await apply([local('a/b/x.jsonl')]);
+    expect(readFileSync(join(repoDst, 'a', 'b', 'x.jsonl'), 'utf8')).toBe('{"v":1}\n');
+  });
+
+  it('deletes an entry that is now a directory recursively', async () => {
+    mkdirSync(join(repoDst, 'a', 'b'), { recursive: true });
+    writeFileSync(join(repoDst, 'a', 'b', 'x.jsonl'), 'old\n');
+    expect(await apply([], [join(localDir, 'a')])).toBe(1);
+    expect(existsSync(join(repoDst, 'a'))).toBe(false);
+  });
+
+  it('leaves a file ancestor alone when deleting beneath it', async () => {
+    writeFileSync(join(repoDst, 'a'), 'keep\n');
+    expect(await apply([], [join(localDir, 'a', 'x.jsonl')])).toBe(0);
+    expect(readFileSync(join(repoDst, 'a'), 'utf8')).toBe('keep\n');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // scanLocalOnly: read-only count of local-only leaf files across mapped
 // projects (honest-count input for the wet pull summary and preview).
