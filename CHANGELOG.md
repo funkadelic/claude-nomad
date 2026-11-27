@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.69.12](https://github.com/funkadelic/claude-nomad/compare/v0.69.11...v0.69.12) (2026-11-27)
+
+
+### Fixed
+
+* make the secret scan fail instead of passing when it cannot read your changes ([#740](https://github.com/funkadelic/claude-nomad/issues/740)) ([19ec225](https://github.com/funkadelic/claude-nomad/commit/19ec225d9c6f1b177bb77ca2a054e1f15690ce06))
+* **push:** catch secrets in Git LFS and other filtered files ([#741](https://github.com/funkadelic/claude-nomad/issues/741)) ([2311a27](https://github.com/funkadelic/claude-nomad/commit/2311a2789a787cc3475e9de83b29db7fbe92ca89))
+* **push:** keep session copies inside the sync repo ([#745](https://github.com/funkadelic/claude-nomad/issues/745)) ([0e7bef4](https://github.com/funkadelic/claude-nomad/commit/0e7bef4354eeba9e1ab2fcf1aed7b08ea323d6fd))
+* **push:** skip session files over GitHub's 100 MiB limit ([#742](https://github.com/funkadelic/claude-nomad/issues/742)) ([b9c5069](https://github.com/funkadelic/claude-nomad/commit/b9c5069b21b2fc6c70073c2c26b192b3d0786833))
+* **push:** stop listing projects that only have oversized changes ([#746](https://github.com/funkadelic/claude-nomad/issues/746)) ([c491064](https://github.com/funkadelic/claude-nomad/commit/c4910641357af37d8ba2021a3e149973730ef4eb))
+* **redact:** leave values you already allowed alone ([#739](https://github.com/funkadelic/claude-nomad/issues/739)) ([1d8fd06](https://github.com/funkadelic/claude-nomad/commit/1d8fd063534b24ae526c510aa2dbf3948fc7ddae))
+* **redact:** scrub every secret the push scan flags ([#737](https://github.com/funkadelic/claude-nomad/issues/737)) ([1dc476a](https://github.com/funkadelic/claude-nomad/commit/1dc476ad5b4b5538a44a763b8d0430b2d16d9e1c))
+
+
+### Changed
+
+* **coderabbit:** add a review checklist ([#743](https://github.com/funkadelic/claude-nomad/issues/743)) ([6c418bb](https://github.com/funkadelic/claude-nomad/commit/6c418bb9fcdb7cbc8597462a13c02aa4d2a0ae0f))
+* **cubic:** add nomad-specific review agents ([#744](https://github.com/funkadelic/claude-nomad/issues/744)) ([e694781](https://github.com/funkadelic/claude-nomad/commit/e694781dd56e0987fc9854dc9e81827944ccb083))
+* **review:** say the test setup already unsets NOMAD_REPO ([8f75ccb](https://github.com/funkadelic/claude-nomad/commit/8f75ccb6ca84b1522c1ce2e6ac9844a3b87309a0))
+* **review:** stop flagging NOMAD_REPO in every test file ([#747](https://github.com/funkadelic/claude-nomad/issues/747)) ([8f75ccb](https://github.com/funkadelic/claude-nomad/commit/8f75ccb6ca84b1522c1ce2e6ac9844a3b87309a0))
+
 ## [0.69.11](https://github.com/funkadelic/claude-nomad/compare/v0.69.10...v0.69.11) (2026-11-24)
 
 
