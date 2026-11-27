@@ -1,39 +1,17 @@
 # yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
-# Nomad-specific review agents; generic ones come from the organization cubic-config repo.
+# Nomad-specific review agent; generic ones come from the organization cubic-config repo.
+# cubic runs at most 5 custom agents per repo, so this stays one agent.
 version: 1
 reviews:
   custom_rules:
-    - name: Nomad fail-closed and output conventions
-      description: >-
-        Failing closed here means returning null or throwing NomadFatal; a raw Error that
-        escapes reaches the crash handler and writes a crash report. Presence checks before a
-        removal use lstat, not existsSync, so a dangling symlink is not read as absent. Writes
-        under the sync repo must not follow a symlinked ancestor out of the repo. Paths and
-        filenames printed to the terminal go through escapeUnsafe; settings keys go through
-        keyLabel or escapeUnsafe (src/sync/settings-classify.ts).
+    - name: Nomad conventions
+      description: |-
+        Apply each rule only where it fits the file under review.
+
+        - In src/: failing closed means returning null or throwing NomadFatal; a raw Error that escapes reaches the crash handler and writes a crash report. Presence checks before a removal use lstat, not existsSync, so a dangling symlink is not read as absent. Writes under the sync repo must not follow a symlinked ancestor out of the repo. Paths and filenames printed to the terminal go through escapeUnsafe; settings keys go through keyLabel or escapeUnsafe (src/sync/settings-classify.ts).
+        - In src/commands/push/ and src/sync/: a push gate's caller-level test checks that commit, push and the manifest write do not run when it throws, and that it runs after leak recovery (which restages files). Dry-run output (preview, wouldPush, nothing-to-scan verdicts) must match what the real push stages, including when the size cap or a deny set leaves a project empty. Push re-copies shared/projects/ and shared/extras/ from the host on every run, so recovery advice for those files must point at the source, not the sync repo.
+        - In src/**/*.test.ts: fixtures built on $HOME must save, delete and restore NOMAD_REPO, as src/sync/links.baseline.test.ts does.
+        - In docs-site/src/content/docs/: push docs must hold on the manifest-skip and cold-start paths too, not only a full push.
       include:
-        - 'src/**/*.ts'
-      exclude:
-        - 'src/**/*.test.ts'
-    - name: Push pipeline
-      description: >-
-        A push gate's caller-level test checks that commit, push and the manifest write do not
-        run when it throws, and that it runs after leak recovery (which restages files). Dry-run
-        output (preview, wouldPush, nothing-to-scan verdicts) must match what the real push
-        stages, including when the size cap or a deny set leaves a project empty. Push re-copies
-        shared/projects/ and shared/extras/ from the host on every run, so recovery advice for
-        those files must point at the source, not the sync repo.
-      include:
-        - 'src/commands/push/**/*.ts'
-        - 'src/sync/**/*.ts'
-    - name: Nomad test isolation
-      description: >-
-        Fixtures built on $HOME must save, delete and restore NOMAD_REPO, as
-        src/sync/links.baseline.test.ts does.
-      include:
-        - 'src/**/*.test.ts'
-    - name: Push docs cover every path
-      description: >-
-        Push docs must hold on the manifest-skip and cold-start paths too, not only a full push.
-      include:
+        - 'src/**'
         - 'docs-site/src/content/docs/**'
