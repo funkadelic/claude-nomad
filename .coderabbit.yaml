@@ -3,17 +3,27 @@
 # only its generated/vendored output is excluded (gitignore already keeps
 # dist/node_modules/.astro out of diffs, these are defense-in-depth) plus the
 # lockfile to skip dep-bump noise.
-#
-# Snyk security-bump PRs (title "deps: [Snyk] ...") are pushed through the repo
-# owner's own account, not a bot account, so CodeRabbit does not auto-skip them
-# the way it skips release-please and Dependabot PRs. The title-keyword filter
-# below drops them to conserve the review-based quota.
 reviews:
-  auto_review:
-    ignore_title_keywords:
-      - '[Snyk]'
   path_filters:
     - '!docs-site/dist/**'
     - '!docs-site/node_modules/**'
     - '!docs-site/.astro/**'
     - '!docs-site/package-lock.json'
+  # Nomad-specific review checklist; generic items live in the CodeRabbit global overrides.
+  path_instructions:
+    - path: 'src/**/*.ts'
+      instructions: |
+        - Failing closed here means returning null or throwing NomadFatal; a raw Error that escapes reaches the crash handler and writes a crash report.
+        - Writes under the sync repo must not follow a symlinked ancestor out of the repo.
+        - Paths and filenames printed to the terminal go through escapeUnsafe; settings keys go through keyLabel or escapeUnsafe (src/sync/settings-classify.ts).
+    - path: 'src/commands/push/**/*.ts'
+      instructions: |
+        - A push gate's caller-level test checks that commit, push and the manifest write do not run when it throws, and that it runs after leak recovery (which restages files).
+        - Dry-run output (preview, wouldPush, nothing-to-scan verdicts) must match what the real push stages, including when the size cap or a deny set leaves a project empty.
+        - Push re-copies shared/projects/ and shared/extras/ from the host on every run, so recovery advice for those files must point at the source, not the sync repo.
+    - path: 'src/**/*.test.ts'
+      instructions: |
+        - Fixtures built on $HOME must save, delete and restore NOMAD_REPO, as src/sync/links.baseline.test.ts does.
+    - path: 'docs-site/src/content/docs/**'
+      instructions: |
+        - Push docs must hold on the manifest-skip and cold-start paths too, not only a full push.
