@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { MAX_SESSION_FILE_BYTES } from '../core/config.ts';
@@ -34,28 +34,45 @@ export function skipOversize(srcPath: string, cap = MAX_SESSION_FILE_BYTES): boo
   return true;
 }
 
-/** `true` when `dir` exists and holds at least one non-directory entry at any depth. */
-export function hasAnyFile(dir: string): boolean {
-  return (
-    existsSync(dir) &&
-    readdirSync(dir, { recursive: true, withFileTypes: true }).some((e) => !e.isDirectory())
-  );
+/**
+ * `true` when some non-directory entry under `root` satisfies `pred`. Never
+ * descends into a symlink, matching `cpSync`, which copies a link as-is.
+ */
+function someEntry(root: string, pred: (path: string, atRoot: boolean) => boolean): boolean {
+  const walk = (dir: string): boolean =>
+    readdirSync(dir, { withFileTypes: true }).some((e) => {
+      const p = join(dir, e.name);
+      return e.isDirectory() ? walk(p) : pred(p, dir === root);
+    });
+  return walk(root);
 }
 
 /**
- * `true` when `copyDirJsonlOnly(src, ...)` would stage at least one entry: a
- * non-directory under the cap that is either below the root or a root `*.jsonl`.
- * A root symlink to a directory is copied as a link, so it counts too. Keep in
- * step with `copyDirJsonlOnly`'s filter.
+ * `true` when `dir` holds at least one non-directory entry at any depth, or is
+ * itself something other than a directory (a mirror replaces it, which is a
+ * change). `false` when it is absent.
+ *
+ * @param dir - Directory to inspect.
+ */
+export function hasAnyFile(dir: string): boolean {
+  const st = lstatSync(dir, { throwIfNoEntry: false });
+  if (st === undefined) return false;
+  return !st.isDirectory() || someEntry(dir, () => true);
+}
+
+/**
+ * `true` when `copyDirJsonlOnly(src, ...)` would stage at least one entry, with
+ * its filter applied in the same order: under the cap, then anything below the
+ * root, a root entry that stats as a directory (a symlinked dir is copied as a
+ * link), or a root `*.jsonl`. Keep in step with `copyDirJsonlOnly`.
  *
  * @param src - Local project dir.
  * @param cap - Per-file byte limit.
  */
 export function mirrorWouldStage(src: string, cap = MAX_SESSION_FILE_BYTES): boolean {
-  return readdirSync(src, { recursive: true, withFileTypes: true }).some((e) => {
-    if (e.isDirectory()) return false;
-    const p = join(e.parentPath, e.name);
-    const kept = e.parentPath !== src || e.name.endsWith('.jsonl') || statSync(p).isDirectory();
-    return kept && !isOversize(p, cap);
-  });
+  return someEntry(
+    src,
+    (p, atRoot) =>
+      !isOversize(p, cap) && (!atRoot || statSync(p).isDirectory() || p.endsWith('.jsonl')),
+  );
 }

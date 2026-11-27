@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -14,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { MAX_SESSION_FILE_BYTES } from '../core/config.ts';
 import type { ManifestDiff } from './manifest.ts';
@@ -1542,7 +1543,7 @@ describe('remapPush selective', () => {
 
   describe('pushed and would-push lists follow the size cap', () => {
     let localDir: string;
-    let errSpy: ReturnType<typeof vi.spyOn>;
+    let errSpy: MockInstance<typeof console.error>;
 
     beforeEach(() => {
       localDir = join(claudeProjects, '-tmp-foo');
@@ -1562,81 +1563,101 @@ describe('remapPush selective', () => {
       truncateSync(p, MAX_SESSION_FILE_BYTES + 1);
       return p;
     };
-    /** Run remapPush and return the list for the mode. */
-    const run = async (dryRun: boolean, selection?: ManifestDiff): Promise<string[]> => {
+    /**
+     * Dry run, then the real push, on the same fixture. Asserts the dry run
+     * printed no skip warning and that both lists agree, then returns the list.
+     */
+    const both = async (selection?: ManifestDiff): Promise<string[]> => {
       const { remapPush } = await import('./remap.ts');
-      const r = remapPush('20261127-000000', { dryRun, selection });
-      return dryRun ? r.wouldPush : r.pushed;
+      errSpy.mockClear();
+      const dry = remapPush('20261127-000000', { dryRun: true, selection }).wouldPush;
+      expect(errSpy).not.toHaveBeenCalled();
+      const wet = remapPush('20261127-000001', { selection }).pushed;
+      expect(wet).toEqual(dry);
+      return wet;
     };
     const repoFoo = (): string => join(sharedProjects, 'foo');
+    const changed = (...p: string[]): ManifestDiff => ({ changed: new Set(p), deleted: [] });
 
-    it('cold start: a project left empty by the cap is neither pushed nor would-push', async () => {
+    it('cold start: a project left empty by the cap is not listed', async () => {
       big();
-      expect(await run(true)).toEqual([]);
-      expect(errSpy).not.toHaveBeenCalled();
-      expect(await run(false)).toEqual([]);
+      expect(await both()).toEqual([]);
     });
 
     it('cold start: removing an over-cap file the repo still holds counts', async () => {
       big();
       mkdirSync(repoFoo(), { recursive: true });
       writeFileSync(join(repoFoo(), 'big.jsonl'), 'old\n');
-      expect(await run(true)).toEqual(['foo']);
-      expect(await run(false)).toEqual(['foo']);
+      expect(await both()).toEqual(['foo']);
       expect(existsSync(join(repoFoo(), 'big.jsonl'))).toBe(false);
     });
 
-    it('cold start: lists a project the mirror stages, ignoring root non-jsonl', async () => {
+    it('cold start: root non-jsonl files alone are not listed', async () => {
       writeFileSync(join(localDir, 'notes.txt'), 'x\n');
-      expect(await run(true)).toEqual([]);
-      writeFileSync(join(localDir, 'memory.md'), 'x\n');
+      expect(await both()).toEqual([]);
+    });
+
+    it('cold start: a file below the root is listed', async () => {
       mkdirSync(join(localDir, 'memory'));
       writeFileSync(join(localDir, 'memory', 'a.md'), 'x\n');
-      expect(await run(true)).toEqual(['foo']);
+      expect(await both()).toEqual(['foo']);
+    });
+
+    it('cold start: a repo copy that is a file is replaced and listed', async () => {
+      writeFileSync(join(localDir, 'a.jsonl'), '{}\n');
+      mkdirSync(sharedProjects, { recursive: true });
+      writeFileSync(repoFoo(), 'not a dir\n');
+      expect(await both()).toEqual(['foo']);
+      expect(readFileSync(join(repoFoo(), 'a.jsonl'), 'utf8')).toBe('{}\n');
     });
 
     it.skipIf(process.platform === 'win32')(
-      'cold start: a root symlink to a directory counts, as the mirror copies it',
+      'cold start: a root symlink to a directory counts and is never walked into',
       async () => {
         const target = join(testHome, 'linked');
-        mkdirSync(target);
+        mkdirSync(join(target, 'locked'), { recursive: true });
+        chmodSync(join(target, 'locked'), 0o000);
         symlinkSync(target, join(localDir, 'memory'));
-        expect(await run(true)).toEqual(['foo']);
+        try {
+          expect(await both()).toEqual(['foo']);
+          expect(lstatSync(join(repoFoo(), 'memory')).isSymbolicLink()).toBe(true);
+        } finally {
+          chmodSync(join(target, 'locked'), 0o755);
+        }
       },
     );
 
-    it('dry run: an over-cap-only change is not would-push and does not warn', async () => {
-      const sel: ManifestDiff = { changed: new Set([big()]), deleted: [] };
-      expect(await run(true, sel)).toEqual([]);
-      expect(errSpy).not.toHaveBeenCalled();
+    it('selective: an over-cap-only change is not listed', async () => {
+      expect(await both(changed(big()))).toEqual([]);
     });
 
-    it('dry run: an over-cap change whose repo copy will be removed is would-push', async () => {
+    it('selective: an over-cap change whose repo copy is removed is listed', async () => {
       const p = big();
       mkdirSync(repoFoo(), { recursive: true });
       writeFileSync(join(repoFoo(), 'big.jsonl'), 'old\n');
-      expect(await run(true, { changed: new Set([p]), deleted: [] })).toEqual(['foo']);
+      expect(await both(changed(p))).toEqual(['foo']);
     });
 
-    it('dry run: a deletion counts only when the repo still has the file', async () => {
+    it('selective: a deletion counts only when the repo still has the file', async () => {
       const sel: ManifestDiff = { changed: new Set(), deleted: [join(localDir, 'gone.jsonl')] };
-      expect(await run(true, sel)).toEqual([]);
+      expect(await both(sel)).toEqual([]);
       mkdirSync(repoFoo(), { recursive: true });
       writeFileSync(join(repoFoo(), 'gone.jsonl'), 'old\n');
-      expect(await run(true, sel)).toEqual(['foo']);
+      expect(await both(sel)).toEqual(['foo']);
     });
 
-    it('dry run: an ordinary change is would-push', async () => {
+    it('selective: an ordinary change is listed', async () => {
       writeFileSync(join(localDir, 'a.jsonl'), '{}\n');
-      const sel: ManifestDiff = { changed: new Set([join(localDir, 'a.jsonl')]), deleted: [] };
-      expect(await run(true, sel)).toEqual(['foo']);
+      expect(await both(changed(join(localDir, 'a.jsonl')))).toEqual(['foo']);
     });
 
-    it('dry run: an obstructed project uses the mirror rule', async () => {
-      const p = big('a/x.jsonl');
-      mkdirSync(repoFoo(), { recursive: true });
-      writeFileSync(join(repoFoo(), 'a'), 'old\n');
-      expect(await run(true, { changed: new Set([p]), deleted: [] })).toEqual(['foo']);
+    it('obstructed: an empty stale directory falls to the mirror rule', async () => {
+      // A directory where the file goes routes to the mirror; it holds no files.
+      mkdirSync(join(repoFoo(), 'big.jsonl'), { recursive: true });
+      expect(await both(changed(big()))).toEqual([]);
+      writeFileSync(join(localDir, 'a.jsonl'), '{}\n');
+      mkdirSync(join(repoFoo(), 'a.jsonl'), { recursive: true });
+      expect(await both(changed(join(localDir, 'a.jsonl')))).toEqual(['foo']);
     });
   });
 

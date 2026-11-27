@@ -141,6 +141,11 @@ export function copyDirJsonlOnly(src: string, dst: string, cap?: number): void {
  * over-cap skip, or the mirror left an empty dir that held nothing before.
  * `backup` snapshots the repo side first: git history exists only after the
  * commit, so a corrupt local dir would otherwise have no rollback path.
+ *
+ * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
+ * @param repoDst - Absolute path of `shared/projects/<logical>/`.
+ * @param sel - Manifest diff, or `undefined` for a full mirror.
+ * @param backup - Runs before the first write.
  */
 function copyProject(
   localDir: string,
@@ -157,7 +162,14 @@ function copyProject(
   return had || hasAnyFile(repoDst);
 }
 
-/** Dry-run twin of `copyProject`: whether it would stage anything, with no copy or warning. */
+/**
+ * Dry-run twin of `copyProject`: whether it would stage anything, with no copy
+ * or warning.
+ *
+ * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
+ * @param repoDst - Absolute path of `shared/projects/<logical>/`.
+ * @param sel - Manifest diff, or `undefined` for a full mirror.
+ */
 function projectWouldChange(
   localDir: string,
   repoDst: string,
@@ -358,7 +370,9 @@ function buildReverseMap(map: PathMap): Map<string, string> {
  *
  * Returns `pushed` (logical names actually copied, wet mode) and `wouldPush`
  * (logical names under `dryRun`) alongside the counts so cmdPush can render a
- * grouped tree. This function no longer logs per-project `pushed X -> Y` /
+ * grouped tree. Both lists leave out a project the size cap leaves nothing to
+ * stage. A mirrored project is listed when its repo copy holds files before or
+ * after, even if the bytes come out identical (git status decides what commits). This function no longer logs per-project `pushed X -> Y` /
  * `skip ... not in path-map` / `would push:` lines inline; the
  * `copyDirJsonlOnly` extension-skip log is a separate file-filter concern and
  * is preserved, as are the degenerate early-return `log(...)` lines.
