@@ -6,59 +6,75 @@ import { type ManifestDiff } from './manifest.ts';
 import { skipOversize } from './remap.size.ts';
 
 /**
- * Walk each component from `repoDst` down to `dirname(dst)` with lstat only, so a
- * symlink below `repoDst` never redirects a write or removal out of the repo.
- * With `replace`, a symlink, file or gap in the way becomes a real directory (as
- * the full mirror would leave it); without it, the walk stops and touches nothing.
- *
- * @param repoDst - Absolute path of `shared/projects/<logical>/`.
- * @param dst - Absolute destination path under `repoDst`.
- * @param replace - Whether to replace a non-directory component instead of stopping.
- * @returns `true` when every component is now a real directory.
+ * Map a local source path under `localDir` to its repo-side counterpart, or
+ * `undefined` when it is not under `localDir` or resolves outside it (a `..`
+ * key from a corrupt manifest), so nothing is written or removed outside `repoDst`.
  */
-function prepareDestination(repoDst: string, dst: string, replace: boolean): boolean {
-  let dir = repoDst;
-  for (const part of ['', ...relative(repoDst, dirname(dst)).split(sep)]) {
-    dir = join(dir, part);
-    if (lstatSync(dir, { throwIfNoEntry: false })?.isDirectory() === true) continue;
-    if (!replace) return false;
-    rmSync(dir, { force: true });
-    mkdirSync(dir, { recursive: true });
-  }
-  return true;
+function repoPath(localDir: string, repoDst: string, src: string): string | undefined {
+  const rel = relative(localDir, src);
+  return src.startsWith(`${localDir}${sep}`) && rel.split(sep)[0] !== '..'
+    ? join(repoDst, rel)
+    : undefined;
 }
 
 /**
- * Remove `dst` (a symlink, dangling or not, or a whole directory) without
- * following a symlinked ancestor. Returns 1 when something was removed, else 0.
+ * `true` when a per-file copy to `dst` would have to go through something other
+ * than real directories: a symlink or file at or below `repoDst` on the way to
+ * `dst`, or a directory at `dst` itself. Missing components are fine.
  */
-function removeIfPresent(repoDst: string, dst: string): number {
-  if (!prepareDestination(repoDst, dst, false)) return 0;
+function isObstructed(repoDst: string, dst: string): boolean {
+  let dir = repoDst;
+  for (const part of relative(repoDst, dst).split(sep)) {
+    const st = lstatSync(dir, { throwIfNoEntry: false });
+    if (st === undefined) return false;
+    if (!st.isDirectory()) return true;
+    dir = join(dir, part);
+  }
+  return lstatSync(dst, { throwIfNoEntry: false })?.isDirectory() === true;
+}
+
+/**
+ * `true` when any delta entry for `localDir` is obstructed (see `isObstructed`),
+ * so the project must go through the full mirror instead. The mirror replaces
+ * symlinks and file/directory flips wholesale, keeping the repo identical to a
+ * cold-start push.
+ *
+ * @param sel - Manifest diff from `diffManifest`.
+ * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
+ * @param repoDst - Absolute path of `shared/projects/<logical>/`.
+ */
+export function selectionNeedsMirror(
+  sel: ManifestDiff,
+  localDir: string,
+  repoDst: string,
+): boolean {
+  return [...sel.changed, ...sel.deleted].some((src) => {
+    const dst = repoPath(localDir, repoDst, src);
+    return dst !== undefined && isObstructed(repoDst, dst);
+  });
+}
+
+/** Remove `dst` (a dangling symlink included); returns 1 when something was removed, else 0. */
+function removeIfPresent(dst: string): number {
   if (lstatSync(dst, { throwIfNoEntry: false }) === undefined) return 0;
-  rmSync(dst, { recursive: true });
+  rmSync(dst);
   return 1;
 }
 
 /**
- * Per-file atomic copy. Makes the path from `repoDst` to the parent of `dst` real
- * directories (see `prepareDestination`), clears a directory left at `dst`, copies
- * `src` to a sibling temp file (`<dst>.tmp.<pid>`), then renames over `dst`. A
- * symlink at `dst` is replaced by the rename, never written through. The
+ * Per-file atomic copy. Creates the destination parent directory, copies `src`
+ * to a sibling temp file (`<dst>.tmp.<pid>`), then renames over `dst`. The
  * rename is atomic on the same filesystem (no EXDEV), so an interrupt leaves
  * either the old file or the new file intact, never a partial write. Unchanged
  * siblings are untouched, keeping their inode and mtime for git's stat-cache.
+ * Callers rule out a symlinked ancestor first (`selectionNeedsMirror`).
  *
  * @param src - Absolute source file path.
  * @param dst - Absolute destination file path.
- * @param repoDst - Repo-side project root containing `dst`; nothing at or below it is followed.
  */
-export function copyFileAtomic(src: string, dst: string, repoDst: string): void {
-  prepareDestination(repoDst, dst, true);
-  if (lstatSync(dst, { throwIfNoEntry: false })?.isDirectory() === true) {
-    rmSync(dst, { recursive: true });
-  }
+export function copyFileAtomic(src: string, dst: string): void {
+  mkdirSync(dirname(dst), { recursive: true });
   const tmp = `${dst}.tmp.${process.pid}`;
-  rmSync(tmp, { recursive: true, force: true });
   cpSync(src, tmp, { force: true, preserveTimestamps: true });
   renameAtomicRetry(tmp, dst);
 }
@@ -88,8 +104,10 @@ export function skipForSelection(sel: ManifestDiff | undefined, localDir: string
  * Apply a manifest delta to a single project dir pair. Copies each changed
  * file into `repoDst` via `copyFileAtomic`; removes repo-side copies of
  * deleted source files and of over-cap files (as a full mirror would). Skips
- * files outside `localDir`. Unchanged files are never opened, so their
- * destination inode and mtime are preserved.
+ * files outside `localDir` and keys that resolve outside it. Callers route an
+ * obstructed project (`selectionNeedsMirror`) to the full mirror first.
+ * Unchanged files are never opened, so their destination inode and mtime are
+ * preserved.
  *
  * @param sel - Manifest diff from `diffManifest`.
  * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
@@ -103,23 +121,21 @@ export function applySelective(
   repoDst: string,
   cap?: number,
 ): number {
-  const prefix = `${localDir}${sep}`;
+  const target = (src: string): string | undefined => repoPath(localDir, repoDst, src);
   let changed = 0;
-  // Deletions first, so a file/directory flip clears the old entry before the new one is written.
-  for (const src of sel.deleted) {
-    if (src.startsWith(prefix)) {
-      changed += removeIfPresent(repoDst, join(repoDst, relative(localDir, src)));
-    }
-  }
   for (const src of sel.changed) {
-    if (!src.startsWith(prefix)) continue;
-    const dst = join(repoDst, relative(localDir, src));
+    const dst = target(src);
+    if (dst === undefined) continue;
     if (skipOversize(src, cap)) {
-      changed += removeIfPresent(repoDst, dst);
+      changed += removeIfPresent(dst);
       continue;
     }
-    copyFileAtomic(src, dst, repoDst);
+    copyFileAtomic(src, dst);
     changed++;
+  }
+  for (const src of sel.deleted) {
+    const dst = target(src);
+    if (dst !== undefined) changed += removeIfPresent(dst);
   }
   return changed;
 }

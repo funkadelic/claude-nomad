@@ -7,7 +7,7 @@ import { assertSafeLocalRoot } from './extras/guards.ts';
 import { claudeHome, repoHome, HOST, type PathMap } from '../core/config.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { forgetPushed, isGrownEntry, listGrownLocally } from './remap.grown.ts';
-import { applySelective, skipForSelection } from './remap.selective.ts';
+import { applySelective, selectionNeedsMirror, skipForSelection } from './remap.selective.ts';
 import { skipOversize } from './remap.size.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
@@ -373,8 +373,10 @@ export function remapPush(
     // path without this. Symmetric with remapPull's backupBeforeWrite.
     backupRepoWrite(repoDst, ts, repo);
     // A dir whose only changes were over-cap skips is not reported as pushed.
-    if (opts.selection === undefined) copyDirJsonlOnly(localDir, repoDst);
-    else if (applySelective(opts.selection, localDir, repoDst) === 0) continue;
+    const sel = opts.selection;
+    if (sel === undefined || selectionNeedsMirror(sel, localDir, repoDst)) {
+      copyDirJsonlOnly(localDir, repoDst);
+    } else if (applySelective(sel, localDir, repoDst) === 0) continue;
     pushed.push(logical);
   }
   return { unmapped, collisions: 0, pushed, wouldPush };
