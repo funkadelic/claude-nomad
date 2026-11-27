@@ -18,7 +18,6 @@
 
 * **coderabbit:** add a review checklist ([#743](https://github.com/funkadelic/claude-nomad/issues/743)) ([6c418bb](https://github.com/funkadelic/claude-nomad/commit/6c418bb9fcdb7cbc8597462a13c02aa4d2a0ae0f))
 * **cubic:** add nomad-specific review agents ([#744](https://github.com/funkadelic/claude-nomad/issues/744)) ([e694781](https://github.com/funkadelic/claude-nomad/commit/e694781dd56e0987fc9854dc9e81827944ccb083))
-* **review:** say the test setup already unsets NOMAD_REPO ([8f75ccb](https://github.com/funkadelic/claude-nomad/commit/8f75ccb6ca84b1522c1ce2e6ac9844a3b87309a0))
 * **review:** stop flagging NOMAD_REPO in every test file ([#747](https://github.com/funkadelic/claude-nomad/issues/747)) ([8f75ccb](https://github.com/funkadelic/claude-nomad/commit/8f75ccb6ca84b1522c1ce2e6ac9844a3b87309a0))
 
 ## [0.69.11](https://github.com/funkadelic/claude-nomad/compare/v0.69.10...v0.69.11) (2026-11-24)
