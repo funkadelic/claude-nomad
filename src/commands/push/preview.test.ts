@@ -829,6 +829,35 @@ describe('previewPushLeaks: path-traversal guard (fail-closed before copy)', () 
     expect(remaining).toHaveLength(0);
   });
 
+  it('refuses a non-directory shared/projects before scanning', async () => {
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: scanMock,
+    }));
+    const localPath = join(env.testHome, 'my-project');
+    const projectsDir = join(env.claudeHome, 'projects', encodePath(localPath));
+    mkdirSync(projectsDir, { recursive: true });
+    writeFileSync(join(projectsDir, 'a.jsonl'), '{}\n');
+    const shared = join(env.repoUnderHome, 'shared');
+    rmSync(shared, { recursive: true, force: true });
+    mkdirSync(shared, { recursive: true });
+    writeFileSync(join(shared, 'projects'), 'not a dir\n');
+
+    const { previewPushLeaks } = await import('./preview.ts');
+    const map = { projects: { 'my-project': { 'test-host': localPath } } };
+    const changed = new Set([join(projectsDir, 'a.jsonl')]);
+    expect(() => previewPushLeaks(map, { selection: { changed, deleted: [] } })).toThrow(
+      /not a real directory/,
+    );
+    expect(scanMock).not.toHaveBeenCalled();
+    const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+    const remaining = existsSync(cacheDir)
+      ? readdirSync(cacheDir).filter((n) => n.startsWith('push-preview-tree-'))
+      : [];
+    expect(remaining).toHaveLength(0);
+  });
+
   it('throws on an unsafe extras logical (..) before scanning', async () => {
     // An unsafe logical in the extras block must fail closed via
     // assertSafeLogical in stageExtras, before any copy or scan.

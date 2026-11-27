@@ -29,7 +29,11 @@ import { assertSafeLogical } from '../../core/config.sharedDirs.guard.ts';
 import { copyExtras } from '../../sync/extras/extras.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { copyDirJsonlOnly } from '../../sync/remap.ts';
-import { applySelective, selectionNeedsMirror } from '../../sync/remap.selective.ts';
+import {
+  applySelective,
+  assertPlainProjectsRoot,
+  selectionNeedsMirror,
+} from '../../sync/remap.selective.ts';
 import { type LeakVerdict, verdictFromFindings, verdictScanError } from './leak-verdict.ts';
 import { scanStagedTree } from './gitleaks.ts';
 import { copySkillsPush, isRootSkillExcluded } from '../../sync/skills-sync.ts';
@@ -77,7 +81,8 @@ function stageSessionDir(
  *
  * When `selection` is provided only its changed source files are staged (one
  * `applySelective` call per project dir), unless the project would be mirrored
- * by the real push; dirs with no matching files are skipped entirely.
+ * by the real push; dirs with no matching files are skipped entirely. A
+ * non-directory `shared/` or `shared/projects/` refuses, as the real push does.
  *
  * @param tmpRoot - Root of the throwaway staging tree.
  * @param map - Parsed `path-map.json`.
@@ -97,6 +102,7 @@ function stageSessions(tmpRoot: string, map: PathMap, selection?: ManifestDiff):
 
   const localProjects = join(claudeHome(), 'projects');
   if (!existsSync(localProjects)) return 0;
+  assertPlainProjectsRoot(repoHome());
   const repoProjects = join(repoHome(), 'shared', 'projects');
 
   let staged = 0;
