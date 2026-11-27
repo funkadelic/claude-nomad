@@ -1041,6 +1041,35 @@ describe('previewPushLeaks: selective staging via selection.changed', () => {
     expect(verdict.leak).toBe(false);
   });
 
+  it('stages the whole project when the real repo copy would be mirrored', async () => {
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    const projectsDir = join(env.claudeHome, 'projects', encodePath(localPath));
+    mkdirSync(join(projectsDir, 'a'), { recursive: true });
+    writeFileSync(join(projectsDir, 'a', 'x.jsonl'), '{"x":1}\n');
+    writeFileSync(join(projectsDir, 'a', 'y.jsonl'), '{"y":1}\n');
+    // The repo holds a file where this host now has a directory, so push mirrors.
+    const repoDst = join(env.repoUnderHome, 'shared', 'projects', logical);
+    mkdirSync(repoDst, { recursive: true });
+    writeFileSync(join(repoDst, 'a'), 'old\n');
+
+    let staged: string[] = [];
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: vi.fn((dir: string): scanModule.Finding[] | null => {
+        staged = readdirSync(join(dir, 'shared', 'projects', logical, 'a')).sort();
+        return [];
+      }),
+    }));
+
+    const { previewPushLeaks } = await import('./preview.ts');
+    const map = { projects: { [logical]: { 'test-host': localPath } } };
+    const changed = new Set([join(projectsDir, 'a', 'x.jsonl')]);
+    previewPushLeaks(map, { selection: { changed, deleted: [] } });
+
+    expect(staged).toEqual(['x.jsonl', 'y.jsonl']);
+  });
+
   /** Cap staging at 16 bytes; returns the session dir and the mapped `projects` map. */
   const capAt16 = (): { projectsDir: string; map: configModule.PathMap } => {
     vi.doMock('../../core/config.ts', async (importOriginal) => ({

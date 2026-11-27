@@ -37,7 +37,8 @@ function isObstructed(repoDst: string, dst: string): boolean {
  * `true` when any delta entry for `localDir` is obstructed (see `isObstructed`),
  * so the project must go through the full mirror instead. The mirror replaces
  * symlinks and file/directory flips wholesale, keeping the repo identical to a
- * cold-start push.
+ * cold-start push. A symlinked local subtree therefore re-mirrors on every push
+ * that touches it, trading the incremental copy for a correct tree.
  *
  * @param sel - Manifest diff from `diffManifest`.
  * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
