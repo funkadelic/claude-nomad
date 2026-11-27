@@ -15,7 +15,7 @@ reviews:
       instructions: |
         - Failing closed here means returning null or throwing NomadFatal; a raw Error that escapes reaches the crash handler and writes a crash report.
         - Writes under the sync repo must not follow a symlinked ancestor out of the repo.
-        - Paths, filenames and keys printed to the terminal go through escapeUnsafe (src/sync/settings-classify.ts).
+        - Paths and filenames printed to the terminal go through escapeUnsafe; settings keys go through keyLabel or escapeUnsafe (src/sync/settings-classify.ts).
     - path: 'src/commands/push/**/*.ts'
       instructions: |
         - A push gate's caller-level test checks that commit, push and the manifest write do not run when it throws, and that it runs after leak recovery (which restages files).
