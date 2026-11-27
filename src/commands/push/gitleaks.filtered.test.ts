@@ -249,6 +249,16 @@ describe('withFilteredFindings and scanStagedTree clean-filter re-scan', () => {
     expect(write).toHaveBeenCalledWith('scan aborted: could not re-scan a.txt\n');
   });
 
+  it('fails closed when a per-file scan throws, naming the cause', () => {
+    stageAttributed('a.txt filter=fake\n');
+    const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const scan = (): never => {
+      throw new Error('bad config\nmore');
+    };
+    expect(withFilteredFindings(scanRoot, [], scan, true)).toBeNull();
+    expect(write).toHaveBeenCalledWith('scan aborted: could not re-scan a.txt: bad config\n');
+  });
+
   it('fails closed when the listing fails, naming the cause only when forwarding', () => {
     const write = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     const missing = join(scanRoot, 'nope');

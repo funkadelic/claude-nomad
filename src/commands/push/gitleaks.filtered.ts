@@ -131,13 +131,18 @@ export function withFilteredFindings(
   for (const rel of paths) {
     const timeoutMs = deadline - Date.now();
     if (timeoutMs <= 0) return abort(`timed out before re-scanning ${rel}`);
-    const found = scan(join(repoDir, rel), {
-      timeoutMs,
-      stagedRel: rel,
-      redact: true,
-      repoDir,
-      forwardStreams,
-    });
+    let found: Finding[] | null;
+    try {
+      found = scan(join(repoDir, rel), {
+        timeoutMs,
+        stagedRel: rel,
+        redact: true,
+        repoDir,
+        forwardStreams,
+      });
+    } catch (err) {
+      return abort(`could not re-scan ${rel}: ${String((err as Error).message).split('\n')[0]}`);
+    }
     if (found === null) return abort(`could not re-scan ${rel}`);
     merged.push(...found.filter((f) => !stagedKeys.has(findingKey(f))));
   }
