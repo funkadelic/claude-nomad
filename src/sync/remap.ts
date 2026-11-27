@@ -372,7 +372,8 @@ function buildReverseMap(map: PathMap): Map<string, string> {
  * (logical names under `dryRun`) alongside the counts so cmdPush can render a
  * grouped tree. Both lists leave out a project the size cap leaves nothing to
  * stage. A mirrored project is listed when its repo copy holds files before or
- * after, even if the bytes come out identical (git status decides what commits). This function no longer logs per-project `pushed X -> Y` /
+ * after, even if the bytes come out identical (git status decides what
+ * commits). This function no longer logs per-project `pushed X -> Y` /
  * `skip ... not in path-map` / `would push:` lines inline; the
  * `copyDirJsonlOnly` extension-skip log is a separate file-filter concern and
  * is preserved, as are the degenerate early-return `log(...)` lines.
