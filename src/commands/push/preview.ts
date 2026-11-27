@@ -29,6 +29,7 @@ import { assertSafeLogical } from '../../core/config.sharedDirs.guard.ts';
 import { copyExtras } from '../../sync/extras/extras.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { copyDirJsonlOnly } from '../../sync/remap.ts';
+import { hasAnyFile } from '../../sync/remap.size.ts';
 import {
   applySelective,
   assertPlainProjectsRoot,
@@ -68,9 +69,7 @@ function stageSessionDir(
     return applySelective({ changed: selection.changed, deleted: [] }, localDir, dstDir) > 0;
   }
   copyDirJsonlOnly(localDir, dstDir);
-  return readdirSync(dstDir, { recursive: true, withFileTypes: true }).some(
-    (e) => !e.isDirectory(),
-  );
+  return hasAnyFile(dstDir);
 }
 
 /**

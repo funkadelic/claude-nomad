@@ -11,9 +11,10 @@ import {
   applySelective,
   assertPlainProjectsRoot,
   selectionNeedsMirror,
+  selectiveWouldChange,
   skipForSelection,
 } from './remap.selective.ts';
-import { skipOversize } from './remap.size.ts';
+import { hasAnyFile, mirrorWouldStage, skipOversize } from './remap.size.ts';
 import { die, item, log } from '../core/utils.ts';
 import { backupBeforeWrite, backupRepoWrite, renameAtomicRetry } from '../core/utils.fs.ts';
 import { encodePath, readPathMap } from '../core/utils.json.ts';
@@ -132,6 +133,52 @@ export function copyDirJsonlOnly(src: string, dst: string, cap?: number): void {
       return false;
     },
   });
+}
+
+/**
+ * Copy one project into the repo, per file or as a full mirror (see
+ * `remapPush`). Returns `false` when nothing was staged: every change was an
+ * over-cap skip, or the mirror left an empty dir that held nothing before.
+ * `backup` snapshots the repo side first: git history exists only after the
+ * commit, so a corrupt local dir would otherwise have no rollback path.
+ *
+ * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
+ * @param repoDst - Absolute path of `shared/projects/<logical>/`.
+ * @param sel - Manifest diff, or `undefined` for a full mirror.
+ * @param backup - Runs before the first write.
+ */
+function copyProject(
+  localDir: string,
+  repoDst: string,
+  sel: ManifestDiff | undefined,
+  backup: () => void,
+): boolean {
+  backup();
+  if (sel !== undefined && !selectionNeedsMirror(sel, localDir, repoDst)) {
+    return applySelective(sel, localDir, repoDst) > 0;
+  }
+  const had = hasAnyFile(repoDst);
+  copyDirJsonlOnly(localDir, repoDst);
+  return had || hasAnyFile(repoDst);
+}
+
+/**
+ * Dry-run twin of `copyProject`: whether it would stage anything, with no copy
+ * or warning.
+ *
+ * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
+ * @param repoDst - Absolute path of `shared/projects/<logical>/`.
+ * @param sel - Manifest diff, or `undefined` for a full mirror.
+ */
+function projectWouldChange(
+  localDir: string,
+  repoDst: string,
+  sel: ManifestDiff | undefined,
+): boolean {
+  if (sel !== undefined && !selectionNeedsMirror(sel, localDir, repoDst)) {
+    return selectiveWouldChange(sel, localDir, repoDst);
+  }
+  return hasAnyFile(repoDst) || mirrorWouldStage(localDir);
 }
 
 /**
@@ -323,7 +370,10 @@ function buildReverseMap(map: PathMap): Map<string, string> {
  *
  * Returns `pushed` (logical names actually copied, wet mode) and `wouldPush`
  * (logical names under `dryRun`) alongside the counts so cmdPush can render a
- * grouped tree. This function no longer logs per-project `pushed X -> Y` /
+ * grouped tree. Both lists leave out a project the size cap leaves nothing to
+ * stage. A mirrored project is listed when its repo copy holds files before or
+ * after, even if the bytes come out identical (git status decides what
+ * commits). This function no longer logs per-project `pushed X -> Y` /
  * `skip ... not in path-map` / `would push:` lines inline; the
  * `copyDirJsonlOnly` extension-skip log is a separate file-filter concern and
  * is preserved, as are the degenerate early-return `log(...)` lines.
@@ -360,6 +410,7 @@ export function remapPush(
   assertPlainProjectsRoot(repo);
   if (!dryRun) mkdirSync(repoProjects, { recursive: true });
 
+  const listed = dryRun ? wouldPush : pushed;
   for (const dir of readdirSync(localProjects)) {
     // Ignore staging dirs left by a copy interrupted before its rename swap;
     // they are not projects and a later remap of the real dir cleans them up.
@@ -373,20 +424,11 @@ export function remapPush(
     const repoDst = join(repoProjects, logical);
     // With a selection, skip logicals that have no changed or deleted files.
     if (skipForSelection(opts.selection, localDir)) continue;
-    if (dryRun) {
-      wouldPush.push(logical);
-      continue;
-    }
-    // Snapshot repo-side destination before any mutation. Git history exists
-    // only AFTER the commit step, so a corrupt local dir would have no rollback
-    // path without this. Symmetric with remapPull's backupBeforeWrite.
-    backupRepoWrite(repoDst, ts, repo);
-    // A dir whose only changes were over-cap skips is not reported as pushed.
     const sel = opts.selection;
-    if (sel === undefined || selectionNeedsMirror(sel, localDir, repoDst)) {
-      copyDirJsonlOnly(localDir, repoDst);
-    } else if (applySelective(sel, localDir, repoDst) === 0) continue;
-    pushed.push(logical);
+    const staged = dryRun
+      ? projectWouldChange(localDir, repoDst, sel)
+      : copyProject(localDir, repoDst, sel, () => backupRepoWrite(repoDst, ts, repo));
+    if (staged) listed.push(logical);
   }
   return { unmapped, collisions: 0, pushed, wouldPush };
 }
