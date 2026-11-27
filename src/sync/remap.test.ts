@@ -1712,6 +1712,27 @@ describe('remapPush selective', () => {
   });
 
   it.skipIf(process.platform === 'win32')(
+    'refuses to push sessions through a symlinked shared/projects',
+    async () => {
+      const outside = join(testHome, 'outside');
+      mkdirSync(outside);
+      const localDir = join(claudeProjects, '-tmp-foo');
+      mkdirSync(localDir, { recursive: true });
+      writeFileSync(join(localDir, 'a.jsonl'), '{"a":1}\n');
+      writeFileSync(
+        join(repoUnderHome, 'path-map.json'),
+        JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+      );
+      rmSync(sharedProjects, { recursive: true });
+      symlinkSync(outside, sharedProjects);
+
+      const { remapPush } = await import('./remap.ts');
+      expect(() => remapPush('20261127-000000')).toThrow(/not a real directory/);
+      expect(readdirSync(outside)).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
     'mirrors a project with a symlinked repo ancestor instead of writing through it',
     async () => {
       const outside = join(testHome, 'outside');
@@ -1835,6 +1856,21 @@ describe('applySelective destination safety', () => {
     expect(applySelective(diff([local('a.jsonl')]), localDir, repoDst)).toBe(1);
     expect(readFileSync(join(outside, 'target'), 'utf8')).toBe('keep\n');
     expect(lstatSync(join(repoDst, 'a.jsonl')).isFile()).toBe(true);
+    expect(readFileSync(join(repoDst, 'a.jsonl'), 'utf8')).toBe('{"v":1}\n');
+  });
+
+  it.skipIf(skipSymlinks)('refuses a symlinked shared/projects', async () => {
+    const repo = join(root, 'repo');
+    rmSync(join(repo, 'shared', 'projects'), { recursive: true });
+    symlinkSync(outside, join(repo, 'shared', 'projects'));
+    const { assertPlainProjectsRoot } = await import('./remap.selective.ts');
+    expect(() => assertPlainProjectsRoot(repo)).toThrow(/not a real directory/);
+  });
+
+  it('accepts real or missing shared directories', async () => {
+    const { assertPlainProjectsRoot } = await import('./remap.selective.ts');
+    expect(() => assertPlainProjectsRoot(join(root, 'repo'))).not.toThrow();
+    expect(() => assertPlainProjectsRoot(join(root, 'nothing'))).not.toThrow();
   });
 });
 

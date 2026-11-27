@@ -1,9 +1,26 @@
 import { cpSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
+import { die } from '../core/utils.ts';
 import { renameAtomicRetry } from '../core/utils.fs.ts';
+import { escapeUnsafe } from './settings-classify.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { skipOversize } from './remap.size.ts';
+
+/**
+ * Refuse (`NomadFatal`) when `<repo>/shared` or `<repo>/shared/projects` exists
+ * as anything but a real directory, since both copy paths write beneath them.
+ *
+ * @param repo - Sync repo root.
+ */
+export function assertPlainProjectsRoot(repo: string): void {
+  for (const dir of [join(repo, 'shared'), join(repo, 'shared', 'projects')]) {
+    const st = lstatSync(dir, { throwIfNoEntry: false });
+    if (st !== undefined && !st.isDirectory()) {
+      die(`${escapeUnsafe(dir)} is not a real directory; move it aside before pushing sessions`);
+    }
+  }
+}
 
 /**
  * Map a local source path under `localDir` to its repo-side counterpart, or
