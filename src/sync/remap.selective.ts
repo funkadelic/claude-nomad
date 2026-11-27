@@ -5,7 +5,7 @@ import { die } from '../core/utils.ts';
 import { renameAtomicRetry } from '../core/utils.fs.ts';
 import { escapeUnsafe } from './settings-classify.ts';
 import { type ManifestDiff } from './manifest.ts';
-import { skipOversize } from './remap.size.ts';
+import { isOversize, skipOversize } from './remap.size.ts';
 
 /**
  * Refuse (`NomadFatal`) when `<repo>/shared` or `<repo>/shared/projects` exists
@@ -156,4 +156,33 @@ export function applySelective(
     if (dst !== undefined) changed += removeIfPresent(dst);
   }
   return changed;
+}
+
+/**
+ * Dry-run twin of `applySelective`: `true` when it would write or remove at
+ * least one repo-side file, without copying or warning.
+ *
+ * @param sel - Manifest diff from `diffManifest`.
+ * @param localDir - Absolute path of `~/.claude/projects/<encoded>/`.
+ * @param repoDst - Absolute path of `shared/projects/<logical>/`.
+ * @param cap - Per-file byte limit.
+ */
+export function selectiveWouldChange(
+  sel: ManifestDiff,
+  localDir: string,
+  repoDst: string,
+  cap?: number,
+): boolean {
+  const present = (dst: string): boolean => lstatSync(dst, { throwIfNoEntry: false }) !== undefined;
+  const changes = [...sel.changed].some((src) => {
+    const dst = repoPath(localDir, repoDst, src);
+    return dst !== undefined && (!isOversize(src, cap) || present(dst));
+  });
+  return (
+    changes ||
+    sel.deleted.some((src) => {
+      const dst = repoPath(localDir, repoDst, src);
+      return dst !== undefined && present(dst);
+    })
+  );
 }
