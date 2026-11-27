@@ -55,22 +55,32 @@ function someEntry(root: string, pred: (path: string, atRoot: boolean) => boolea
  * @param dir - Directory to inspect.
  */
 export function hasAnyFile(dir: string): boolean {
-  const st = lstatSync(dir, { throwIfNoEntry: false });
+  return rootHas(dir, () => true);
+}
+
+/**
+ * `someEntry` behind a root check: an absent root has nothing, and a root that
+ * is not a real directory (a file, or a symlink `cpSync` copies as one link)
+ * counts as one entry without being walked.
+ */
+function rootHas(root: string, pred: (path: string, atRoot: boolean) => boolean): boolean {
+  const st = lstatSync(root, { throwIfNoEntry: false });
   if (st === undefined) return false;
-  return !st.isDirectory() || someEntry(dir, () => true);
+  return !st.isDirectory() || someEntry(root, pred);
 }
 
 /**
  * `true` when `copyDirJsonlOnly(src, ...)` would stage at least one entry, with
  * its filter applied in the same order: under the cap, then anything below the
  * root, a root entry that stats as a directory (a symlinked dir is copied as a
- * link), or a root `*.jsonl`. Keep in step with `copyDirJsonlOnly`.
+ * link), or a root `*.jsonl`. A `src` that is itself a file or symlink is
+ * copied whole, so it counts. Keep in step with `copyDirJsonlOnly`.
  *
  * @param src - Local project dir.
  * @param cap - Per-file byte limit.
  */
 export function mirrorWouldStage(src: string, cap = MAX_SESSION_FILE_BYTES): boolean {
-  return someEntry(
+  return rootHas(
     src,
     (p, atRoot) =>
       !isOversize(p, cap) && (!atRoot || statSync(p).isDirectory() || p.endsWith('.jsonl')),

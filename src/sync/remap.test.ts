@@ -1627,6 +1627,30 @@ describe('remapPush selective', () => {
       },
     );
 
+    it.skipIf(process.platform === 'win32')(
+      'cold start: a project dir that is itself a symlink is listed, not walked',
+      async () => {
+        const target = join(testHome, 'real-project');
+        mkdirSync(join(target, 'locked'), { recursive: true });
+        chmodSync(join(target, 'locked'), 0o000);
+        rmSync(localDir, { recursive: true });
+        symlinkSync(target, localDir);
+        try {
+          expect(await both()).toEqual(['foo']);
+        } finally {
+          chmodSync(join(target, 'locked'), 0o755);
+        }
+      },
+    );
+
+    it('cold start: a project dir that is itself a file is listed', async () => {
+      const { mirrorWouldStage } = await import('./remap.size.ts');
+      rmSync(localDir, { recursive: true });
+      writeFileSync(localDir, 'x\n');
+      expect(mirrorWouldStage(localDir)).toBe(true);
+      expect(mirrorWouldStage(join(testHome, 'absent'))).toBe(false);
+    });
+
     it('selective: an over-cap-only change is not listed', async () => {
       expect(await both(changed(big()))).toEqual([]);
     });
