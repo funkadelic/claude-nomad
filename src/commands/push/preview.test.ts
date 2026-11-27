@@ -1094,6 +1094,21 @@ describe('previewPushLeaks: selective staging via selection.changed', () => {
     expect(verdict.verdictRow).toMatch(/nothing to scan/i);
   });
 
+  it('returns nothing-to-scan on a cold start when every file is over the cap', async () => {
+    const { projectsDir, map } = capAt16();
+    writeFileSync(join(projectsDir, 'big.jsonl'), 'x'.repeat(64));
+    const scanMock = vi.fn((): scanModule.Finding[] | null => []);
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: scanMock,
+    }));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { previewPushLeaks } = await import('./preview.ts');
+    const verdict = previewPushLeaks(map);
+    expect(scanMock).not.toHaveBeenCalled();
+    expect(verdict.verdictRow).toMatch(/nothing to scan/i);
+  });
+
   it('returns nothing-to-scan when selection.changed has no files for the mapped dir', async () => {
     // The dir is in the reverse map, but selection.changed points elsewhere.
     // stageSessionDir must return false -> staged=0 -> nothing-to-scan verdict.

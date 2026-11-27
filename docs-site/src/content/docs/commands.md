@@ -168,8 +168,8 @@ setting in the sync repo's own git config still stops gitleaks from reading your
 `diff.orderFile` naming a missing file, say), push stops with a scan error rather than pushing
 unscanned.
 
-A session file over 100 MiB is left out of the sync, because GitHub rejects files over 100 MiB. Push
-warns and names the file under `~/.claude/projects/`; it stays on this machine, and the rest of the
+A session file over 100 MiB is left out of the sync, and any copy of it already in the sync repo is
+removed, because GitHub rejects files over 100 MiB. Push warns and names the file under `~/.claude/projects/`; it stays on this machine, and the rest of the
 push goes ahead. If any other staged file is over 100 MiB, push stops before committing and names
 it, so you can remove or shrink it in the sync repo (or run `nomad drop-session <id>` for a session)
 and push again.

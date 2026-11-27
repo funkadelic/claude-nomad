@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { copyDirJsonlOnly } from './remap.ts';
 import { applySelective } from './remap.selective.ts';
 import { skipOversize } from './remap.size.ts';
+import { MAX_SESSION_FILE_BYTES } from '../core/config.ts';
 
 /** Test cap: 1 MiB, so fixtures stay small on every platform. */
 const CAP = 1024 * 1024;
@@ -65,8 +75,18 @@ describe('per-file size cap', () => {
     });
 
     it('uses the 100 MiB default cap', () => {
-      const p = put(src, 'a.jsonl', 8);
+      const p = put(src, 'a.jsonl', 0);
+      // Sparse, so the boundary fixtures cost no disk.
+      truncateSync(p, MAX_SESSION_FILE_BYTES);
       expect(skipOversize(p)).toBe(false);
+      truncateSync(p, MAX_SESSION_FILE_BYTES + 1);
+      expect(skipOversize(p)).toBe(true);
+    });
+
+    it.skipIf(process.platform === 'win32')('escapes control characters in the warned path', () => {
+      const p = put(src, 'a\nb.jsonl', OVER);
+      expect(skipOversize(p, CAP)).toBe(true);
+      expect(warned()).toContain(String.raw`a\u000ab.jsonl`);
     });
   });
 
@@ -139,6 +159,17 @@ describe('per-file size cap', () => {
       const big = put(src, 'big.jsonl', OVER);
       expect(applySelective({ changed: new Set([big]), deleted: [] }, src, dst, CAP)).toBe(0);
     });
+
+    it.skipIf(process.platform === 'win32')(
+      'removes a dangling repo symlink of a deleted file',
+      () => {
+        mkdirSync(dst, { recursive: true });
+        symlinkSync(join(root, 'missing'), join(dst, 'gone.jsonl'));
+        const sel = { changed: new Set<string>(), deleted: [join(src, 'gone.jsonl')] };
+        expect(applySelective(sel, src, dst, CAP)).toBe(1);
+        expect(existsSync(join(dst, 'gone.jsonl'))).toBe(false);
+      },
+    );
 
     it('counts a removed repo copy of a deleted source file', () => {
       mkdirSync(dst, { recursive: true });

@@ -1,13 +1,13 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
 import { renameAtomicRetry } from '../core/utils.fs.ts';
 import { type ManifestDiff } from './manifest.ts';
 import { skipOversize } from './remap.size.ts';
 
-/** Remove `dst` when present; returns 1 when something was removed, else 0. */
+/** Remove `dst` (a dangling symlink included); returns 1 when something was removed, else 0. */
 function removeIfPresent(dst: string): number {
-  if (!existsSync(dst)) return 0;
+  if (lstatSync(dst, { throwIfNoEntry: false }) === undefined) return 0;
   rmSync(dst);
   return 1;
 }

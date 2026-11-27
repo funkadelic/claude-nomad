@@ -44,7 +44,8 @@ const NOTHING_TO_SCAN_ROW = `${dim(infoGlyph)} nothing to scan, no leaks`;
  * only the files present in that set and rooted under `localDir` are copied via
  * `applySelective`, which skips over-cap files like a real push. When `changed`
  * is `undefined` (cold start), falls back to `copyDirJsonlOnly` (full mirror).
- * Returns `true` when at least one file was staged.
+ * Returns `true` when at least one file was staged, so a mirror left empty by
+ * the cap is not scanned.
  *
  * @param localDir - Absolute path to `~/.claude/projects/<encoded>/`.
  * @param dstDir - Absolute path to `<tmpRoot>/shared/projects/<logical>/`.
@@ -58,7 +59,9 @@ function stageSessionDir(
 ): boolean {
   if (changed !== undefined) return applySelective({ changed, deleted: [] }, localDir, dstDir) > 0;
   copyDirJsonlOnly(localDir, dstDir);
-  return true;
+  return readdirSync(dstDir, { recursive: true, withFileTypes: true }).some(
+    (e) => !e.isDirectory(),
+  );
 }
 
 /**
