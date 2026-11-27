@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -22,6 +22,7 @@ describe('assertStagedUnderCap', () => {
 
   /** Write `n` bytes at `rel` and stage it. */
   const stage = (rel: string, n: number): void => {
+    mkdirSync(dirname(join(repo, rel)), { recursive: true });
     writeFileSync(join(repo, rel), 'x'.repeat(n));
     git('add', '--', rel);
   };
@@ -55,6 +56,12 @@ describe('assertStagedUnderCap', () => {
     expect(err.message).toContain('big.jsonl (1 MiB)');
     expect(err.message).not.toContain('small.jsonl');
     expect(err.message).toContain('nomad drop-session <id>');
+    expect(err.message).not.toContain('shared/extras/');
+  });
+
+  it('points an over-cap extra at its project copy', () => {
+    stage('shared/extras/foo/.planning/big.md', 64);
+    expect(thrown(16).message).toContain('copied from your project on every push: change it there');
   });
 
   it('checks only what changed since HEAD and passes when it is under the cap', () => {

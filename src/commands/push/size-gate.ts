@@ -66,10 +66,15 @@ export function assertStagedUnderCap(repo: string, cap = MAX_SESSION_FILE_BYTES)
   const over = sizes.filter((s) => s.size > cap);
   if (over.length === 0) return;
   const list = over.map((s) => `  ${s.path} (${mib(s.size)} MiB)`).join('\n');
+  // Push re-copies shared/extras/ from each project, so a repo-side edit would not stick.
+  const extras = over.some((s) => s.path.startsWith('shared/extras/'))
+    ? 'A file under shared/extras/ is copied from your project on every push: change it there. '
+    : '';
   throw new NomadFatal(
     `GitHub rejects files over ${mib(cap)} MiB, so nothing was committed. Too big:\n${list}\n` +
-      `Remove or shrink each file in ${repo}, or run \`nomad drop-session <id>\` for a session, ` +
-      'then run `nomad push` again.',
+      extras +
+      `Remove or shrink each other file in ${repo}, or run \`nomad drop-session <id>\` for a ` +
+      'session, then run `nomad push` again.',
     { code: EXIT.GENERIC_FAILURE },
   );
 }
