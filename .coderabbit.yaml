@@ -23,7 +23,7 @@ reviews:
         - Push re-copies shared/projects/ and shared/extras/ from the host on every run, so recovery advice for those files must point at the source, not the sync repo.
     - path: 'src/**/*.test.ts'
       instructions: |
-        - Fixtures built on $HOME must save, delete and restore NOMAD_REPO, as src/sync/links.baseline.test.ts does.
+        - vitest.setup.ts unsets NOMAD_REPO for the whole suite, so a test only needs to handle it when it sets NOMAD_REPO itself: restore the old value (or delete it) afterwards.
     - path: 'docs-site/src/content/docs/**'
       instructions: |
         - Push docs must hold on the manifest-skip and cold-start paths too, not only a full push.

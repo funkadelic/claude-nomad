@@ -10,7 +10,7 @@ reviews:
 
         - In src/: failing closed means returning null or throwing NomadFatal; a raw Error that escapes reaches the crash handler and writes a crash report. A presence check on the path being removed or overwritten uses lstat, not existsSync, so a dangling symlink is not read as absent; existsSync is right for a different path whose symlink must resolve (for example a repo counterpart). Writes under the sync repo must not follow a symlinked ancestor out of the repo. Paths and filenames printed to the terminal go through escapeUnsafe; settings keys go through keyLabel or escapeUnsafe (src/sync/settings-classify.ts).
         - In src/commands/push/ and src/sync/: a push gate's caller-level test checks that commit, push and the manifest write do not run when it throws, and that it runs after leak recovery (which restages files). Dry-run output (preview, wouldPush, nothing-to-scan verdicts) must match what the real push stages, including when the size cap or a deny set leaves a project empty. Push re-copies shared/projects/ and shared/extras/ from the host on every run, so recovery advice for those files must point at the source, not the sync repo.
-        - In src/**/*.test.ts: fixtures built on $HOME must save, delete and restore NOMAD_REPO, as src/sync/links.baseline.test.ts does.
+        - In src/**/*.test.ts: vitest.setup.ts unsets NOMAD_REPO for the whole suite, so a test only needs to handle it when it sets NOMAD_REPO itself: restore the old value (or delete it) afterwards.
         - In docs-site/src/content/docs/: push docs must hold on the manifest-skip and cold-start paths too, not only a full push.
       include:
         - 'src/**'
