@@ -38,6 +38,7 @@ const hasGitleaks = ((): boolean => {
 /** Shared sandbox state used by every describe block. */
 type PreviewEnv = {
   originalHome: string | undefined;
+  originalUserProfile: string | undefined;
   originalNomadHost: string | undefined;
   originalNomadRepo: string | undefined;
   originalExitCode: typeof process.exitCode;
@@ -56,12 +57,15 @@ type PreviewEnv = {
  */
 function makePreviEnv(): PreviewEnv {
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalNomadHost = process.env.NOMAD_HOST;
   const originalNomadRepo = process.env.NOMAD_REPO;
   const originalExitCode = process.exitCode;
 
   const testHome = mkdtempSync(join(tmpdir(), 'nomad-push-preview-test-'));
   process.env.HOME = testHome;
+  // os.homedir() reads USERPROFILE on Windows; keep the preview cache in the sandbox.
+  process.env.USERPROFILE = testHome;
   process.env.NOMAD_HOST = 'test-host';
 
   const repoUnderHome = join(testHome, 'claude-nomad');
@@ -78,6 +82,7 @@ function makePreviEnv(): PreviewEnv {
   vi.resetModules();
   return {
     originalHome,
+    originalUserProfile,
     originalNomadHost,
     originalNomadRepo,
     originalExitCode,
@@ -102,6 +107,8 @@ function teardownPreviewEnv(env: PreviewEnv): void {
   process.exitCode = env.originalExitCode;
   if (env.originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = env.originalHome;
+  if (env.originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = env.originalUserProfile;
   if (env.originalNomadHost === undefined) delete process.env.NOMAD_HOST;
   else process.env.NOMAD_HOST = env.originalNomadHost;
   if (env.originalNomadRepo === undefined) delete process.env.NOMAD_REPO;
