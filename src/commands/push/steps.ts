@@ -138,7 +138,7 @@ export async function commitAndPush(
  * `process.exitCode` to `EXIT.LEAK_BLOCKED` (5) on a leak OR an unscannable
  * staged tree, the scan ran but produced no parseable report, both failing
  * closed like a real push; only a scan that could not run at all, gitleaks or
- * git missing, exits `1`), renders the push tree with the verdict row in the
+ * git missing or a staging failure, exits `1`), renders the push tree with the verdict row in the
  * Leak scan
  * section, and prints the recovery body BELOW the tree via `fail` (stderr) when
  * one is present.

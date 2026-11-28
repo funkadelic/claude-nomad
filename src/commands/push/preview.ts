@@ -10,7 +10,7 @@
  * `process.exitCode = EXIT.LEAK_BLOCKED` (5, matching a real push); a scan that
  * ran but produced no parseable report also fails closed to `5` (matching the
  * real push); only a scan that threw before any report (gitleaks/git absent)
- * sets `1` (see `verdictFromFindings`/`verdictScanError`).
+ * or a staging failure (EACCES, ENOSPC) sets `1` (see `verdictFromFindings`/`verdictScanError`).
  *
  * This module is the push-dry-run-only path. The `nomad doctor --check-shared`
  * preflight (session-only scan, no extras) is unchanged and lives in
@@ -142,11 +142,11 @@ function stageExtras(tmpRoot: string, map: PathMap): number {
     assertSafeLogical(logical);
     const localRoot = map.projects[logical]?.[HOST];
     if (!localRoot || localRoot === 'TBD') continue;
-    for (const dirname of dirnames) {
-      if (!whitelist.includes(dirname)) continue;
-      const src = join(localRoot, dirname);
+    for (const name of dirnames) {
+      if (!whitelist.includes(name)) continue;
+      const src = join(localRoot, name);
       if (!existsSync(src)) continue;
-      const dst = join(tmpRoot, 'shared', 'extras', logical, dirname);
+      const dst = join(tmpRoot, 'shared', 'extras', logical, name);
       copyExtras(src, dst);
       staged++;
     }
@@ -271,10 +271,14 @@ export function previewPushLeaks(
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         return verdictScanError('scan error (git or gitleaks not on PATH)');
       }
-      return verdictScanError(`scan error: ${(err as Error).message}`);
+      return verdictScanError(`scan error: ${escapeUnsafe((err as Error).message)}`);
     }
     return verdictFromFindings(findings);
   } finally {
-    rmSync(tmpRoot, { recursive: true, force: true });
+    try {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    } catch {
+      // Best effort: a cleanup failure must not replace the verdict with a crash report.
+    }
   }
 }

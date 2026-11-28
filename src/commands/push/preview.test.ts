@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -487,6 +488,35 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
       vi.doUnmock('../../sync/remap.ts');
     }
   });
+
+  it('maps a cache path that is a file to a staging-failed row', async () => {
+    plantSession(env, 'my-project', join(env.testHome, 'my-project'), '{}\n');
+    mkdirSync(join(env.testHome, '.cache'));
+    writeFileSync(join(env.testHome, '.cache', 'claude-nomad'), 'not a dir\n');
+    const { previewPushLeaks } = await import('./preview.ts');
+    const map = { projects: { 'my-project': { 'test-host': join(env.testHome, 'my-project') } } };
+    expect(previewPushLeaks(map).verdictRow).toMatch(/staging failed: EEXIST/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'keeps the staging-failed row when the temp tree cannot be removed',
+    async () => {
+      plantSession(env, 'my-project', join(env.testHome, 'my-project'), '{}\n');
+      const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+      mkdirSync(cacheDir, { recursive: true });
+      chmodSync(cacheDir, 0o000);
+      try {
+        const { previewPushLeaks } = await import('./preview.ts');
+        const map = {
+          projects: { 'my-project': { 'test-host': join(env.testHome, 'my-project') } },
+        };
+        expect(previewPushLeaks(map).verdictRow).toMatch(/staging failed: EACCES/);
+      } finally {
+        chmodSync(cacheDir, 0o755);
+      }
+    },
+  );
 });
 
 describe('previewPushLeaks: REPO_HOME/shared non-mutation', () => {
