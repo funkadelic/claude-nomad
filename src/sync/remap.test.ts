@@ -1907,9 +1907,7 @@ describe('remapPush selective', () => {
 });
 
 describe('applySelective destination safety', () => {
-  // Directory links use 'junction' (ignored on POSIX) so they run on Windows
-  // without admin; only the file symlink case stays POSIX-only.
-  const skipSymlinks = process.platform === 'win32';
+  // Directory links use 'junction' (type ignored on POSIX) so these run on Windows too.
   let root: string;
   let localDir: string;
   let repoDst: string;
@@ -1992,7 +1990,7 @@ describe('applySelective destination safety', () => {
     expect(readFileSync(sibling, 'utf8')).toBe('keep\n');
   });
 
-  it.skipIf(skipSymlinks)('does not write through a symlink at the temp path', async () => {
+  it('does not write through a symlink at the temp path', async () => {
     writeFileSync(join(outside, 'target'), 'keep\n');
     symlinkSync(join(outside, 'target'), join(repoDst, `a.jsonl.tmp.${process.pid}`));
     const { applySelective } = await import('./remap.selective.ts');
