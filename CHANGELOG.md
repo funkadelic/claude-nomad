@@ -3,6 +3,14 @@
 ## [0.69.12](https://github.com/funkadelic/claude-nomad/compare/v0.69.11...v0.69.12) (2026-11-27)
 
 
+### What's new
+
+* If a git setting in your sync repo stops the secret scan from reading your changes, push now stops instead of reporting no leaks. The scan also catches secrets inside Git LFS files and other files git stores through a filter, and works when the sync repo's local git attributes file is read-only.
+* `nomad redact` now finds every secret the push scan flags, including ones deep in long session transcripts, and leaves alone values you already allowed in `.gitleaksignore`, the same ones push lets through. One bad project name in `path-map.json` no longer stops it from finding your other sessions.
+* A session file over GitHub's 100 MiB limit now stays on this machine with a warning, and push stops before committing anything GitHub would reject. The push summary and `nomad push --dry-run` no longer list a project whose only change was one of those files.
+* Push no longer writes or deletes outside your sync repo when a session folder in it is a symlink, and a session file that turned into a folder, or the reverse, no longer breaks the push.
+
+
 ### Fixed
 
 * make the secret scan fail instead of passing when it cannot read your changes ([#740](https://github.com/funkadelic/claude-nomad/issues/740)) ([19ec225](https://github.com/funkadelic/claude-nomad/commit/19ec225d9c6f1b177bb77ca2a054e1f15690ce06))
