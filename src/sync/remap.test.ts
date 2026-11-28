@@ -1856,61 +1856,59 @@ describe('remapPush selective', () => {
     expect(existsSync(join(sharedProjects, 'bar', 'b.jsonl'))).toBe(false);
   });
 
-  it.skipIf(process.platform === 'win32')(
-    'refuses to push sessions through a symlinked shared/projects',
-    async () => {
-      const outside = join(testHome, 'outside');
-      mkdirSync(outside);
-      const localDir = join(claudeProjects, '-tmp-foo');
-      mkdirSync(localDir, { recursive: true });
-      writeFileSync(join(localDir, 'a.jsonl'), '{"a":1}\n');
-      writeFileSync(
-        join(repoUnderHome, 'path-map.json'),
-        JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
-      );
-      rmSync(sharedProjects, { recursive: true });
-      symlinkSync(outside, sharedProjects);
+  it('refuses to push sessions through a symlinked shared/projects', async () => {
+    const outside = join(testHome, 'outside');
+    mkdirSync(outside);
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(localDir, { recursive: true });
+    writeFileSync(join(localDir, 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    rmSync(sharedProjects, { recursive: true });
+    symlinkSync(outside, sharedProjects, 'junction');
 
-      const { remapPush } = await import('./remap.ts');
-      expect(() => remapPush('20261127-000000')).toThrow(/not a real directory/);
-      expect(readdirSync(outside)).toEqual([]);
-    },
-  );
+    const { remapPush } = await import('./remap.ts');
+    expect(() => remapPush('20261127-000000')).toThrow(/not a real directory/);
+    expect(readdirSync(outside)).toEqual([]);
+  });
 
-  it.skipIf(process.platform === 'win32')(
-    'mirrors a project with a symlinked repo ancestor instead of writing through it',
-    async () => {
-      const outside = join(testHome, 'outside');
-      mkdirSync(outside);
-      const localDir = join(claudeProjects, '-tmp-foo');
-      mkdirSync(join(localDir, 'sub'), { recursive: true });
-      writeFileSync(join(localDir, 'a.jsonl'), '{"a":1}\n');
-      writeFileSync(join(localDir, 'sub', 'b.jsonl'), '{"b":1}\n');
-      writeFileSync(
-        join(repoUnderHome, 'path-map.json'),
-        JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
-      );
-      const repoDst = join(sharedProjects, 'foo');
-      mkdirSync(repoDst);
-      symlinkSync(outside, join(repoDst, 'sub'));
-      const selection: ManifestDiff = {
-        changed: new Set([join(localDir, 'sub', 'b.jsonl')]),
-        deleted: [],
-      };
+  it('mirrors a project with a symlinked repo ancestor instead of writing through it', async () => {
+    const outside = join(testHome, 'outside');
+    mkdirSync(outside);
+    writeFileSync(join(outside, 'keep.jsonl'), 'keep\n');
+    const localDir = join(claudeProjects, '-tmp-foo');
+    mkdirSync(join(localDir, 'sub'), { recursive: true });
+    writeFileSync(join(localDir, 'a.jsonl'), '{"a":1}\n');
+    writeFileSync(join(localDir, 'sub', 'b.jsonl'), '{"b":1}\n');
+    writeFileSync(
+      join(repoUnderHome, 'path-map.json'),
+      JSON.stringify({ projects: { foo: { 'test-host': '/tmp/foo' } } }) + '\n',
+    );
+    const repoDst = join(sharedProjects, 'foo');
+    mkdirSync(repoDst);
+    symlinkSync(outside, join(repoDst, 'sub'), 'junction');
+    const selection: ManifestDiff = {
+      changed: new Set([join(localDir, 'sub', 'b.jsonl')]),
+      deleted: [],
+    };
 
-      const { remapPush } = await import('./remap.ts');
-      expect(remapPush('20261127-000000', { selection }).pushed).toEqual(['foo']);
+    const { remapPush } = await import('./remap.ts');
+    expect(remapPush('20261127-000000', { selection }).pushed).toEqual(['foo']);
 
-      expect(readdirSync(outside)).toEqual([]);
-      expect(lstatSync(join(repoDst, 'sub')).isDirectory()).toBe(true);
-      expect(readFileSync(join(repoDst, 'sub', 'b.jsonl'), 'utf8')).toBe('{"b":1}\n');
-      // The full mirror also carries the unchanged file.
-      expect(readFileSync(join(repoDst, 'a.jsonl'), 'utf8')).toBe('{"a":1}\n');
-    },
-  );
+    // Replacing the link removed it without deleting through it.
+    expect(readdirSync(outside)).toEqual(['keep.jsonl']);
+    expect(lstatSync(join(repoDst, 'sub')).isDirectory()).toBe(true);
+    expect(readFileSync(join(repoDst, 'sub', 'b.jsonl'), 'utf8')).toBe('{"b":1}\n');
+    // The full mirror also carries the unchanged file.
+    expect(readFileSync(join(repoDst, 'a.jsonl'), 'utf8')).toBe('{"a":1}\n');
+  });
 });
 
 describe('applySelective destination safety', () => {
+  // Directory links use 'junction' (ignored on POSIX) so they run on Windows
+  // without admin; only the file symlink case stays POSIX-only.
   const skipSymlinks = process.platform === 'win32';
   let root: string;
   let localDir: string;
@@ -1957,15 +1955,15 @@ describe('applySelective destination safety', () => {
     ).toBe(false);
   });
 
-  it.skipIf(skipSymlinks)('needs the mirror for a symlinked ancestor', async () => {
-    symlinkSync(outside, join(repoDst, 'sub'));
+  it('needs the mirror for a symlinked ancestor', async () => {
+    symlinkSync(outside, join(repoDst, 'sub'), 'junction');
     expect(await needsMirror([local('sub/a.jsonl')])).toBe(true);
     expect(await needsMirror([], [join(localDir, 'sub', 'a.jsonl')])).toBe(true);
   });
 
-  it.skipIf(skipSymlinks)('needs the mirror for a symlinked project root', async () => {
+  it('needs the mirror for a symlinked project root', async () => {
     rmSync(repoDst, { recursive: true });
-    symlinkSync(outside, repoDst);
+    symlinkSync(outside, repoDst, 'junction');
     expect(await needsMirror([local('a.jsonl')])).toBe(true);
   });
 
@@ -2004,10 +2002,10 @@ describe('applySelective destination safety', () => {
     expect(readFileSync(join(repoDst, 'a.jsonl'), 'utf8')).toBe('{"v":1}\n');
   });
 
-  it.skipIf(skipSymlinks)('refuses a symlinked shared/projects', async () => {
+  it('refuses a symlinked shared/projects', async () => {
     const repo = join(root, 'repo');
     rmSync(join(repo, 'shared', 'projects'), { recursive: true });
-    symlinkSync(outside, join(repo, 'shared', 'projects'));
+    symlinkSync(outside, join(repo, 'shared', 'projects'), 'junction');
     const { assertPlainProjectsRoot } = await import('./remap.selective.ts');
     expect(() => assertPlainProjectsRoot(repo)).toThrow(/not a real directory/);
   });
