@@ -130,8 +130,8 @@ export function verdictFromFindings(findings: Finding[] | null): LeakVerdict {
 }
 
 /**
- * Verdict for a scan that threw before producing a report (e.g. gitleaks/git
- * absent, or staging failed, on the dry-run path). Sets `process.exitCode = 1` and yields a ✗ row
+ * Verdict for a dry-run scan that could not run: gitleaks/git absent, the scan
+ * threw before producing a report, or staging the temp tree failed. Sets `process.exitCode = 1` and yields a ✗ row
  * with `recovery=null`. Does not mark `leak` so the caller never throws.
  *
  * @param text - The ✗ row message text.

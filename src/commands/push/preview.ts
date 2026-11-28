@@ -39,7 +39,7 @@ import { type LeakVerdict, verdictFromFindings, verdictScanError } from './leak-
 import { scanStagedTree } from './gitleaks.ts';
 import { copySkillsPush, isRootSkillExcluded } from '../../sync/skills-sync.ts';
 import { nowTimestamp } from '../../core/utils.fs.ts';
-import { NomadFatal } from '../../core/utils.ts';
+import { NomadFatal, warn } from '../../core/utils.ts';
 import { escapeUnsafe } from '../../sync/settings-classify.ts';
 import { encodePath } from '../../core/utils.json.ts';
 
@@ -237,7 +237,8 @@ function stageAll(tmpRoot: string, map: PathMap, selection: ManifestDiff | undef
  * `..`) raised by `assertSafeLogical` in the staging step propagates out as a
  * `NomadFatal` to `cmdPush`, and the `finally` still removes the temp tree.
  * Any other staging failure (EACCES, ENOSPC, a file that became a folder)
- * maps to a ✗ "staging failed" row with `exitCode = 1` instead of a crash report.
+ * maps to a ✗ "staging failed" row with `exitCode = 1` instead of a crash report;
+ * an error with no `code` (a bug) still reaches the crash report.
  *
  * @param map - Parsed `path-map.json` (already in scope from `cmdPush`).
  * @param opts - Optional `selection` from `ManifestDiff`; when provided only
@@ -258,7 +259,8 @@ export function previewPushLeaks(
     try {
       staged = stageAll(tmpRoot, map, opts.selection);
     } catch (err) {
-      if (err instanceof NomadFatal) throw err;
+      // Only system errors (with a `code`) are expected; a bug still reaches the crash report.
+      if (err instanceof NomadFatal || (err as NodeJS.ErrnoException).code === undefined) throw err;
       return verdictScanError(`staging failed: ${escapeUnsafe((err as Error).message)}`);
     }
     if (staged === 0) {
@@ -278,7 +280,8 @@ export function previewPushLeaks(
     try {
       rmSync(tmpRoot, { recursive: true, force: true });
     } catch {
-      // Best effort: a cleanup failure must not replace the verdict with a crash report.
+      // A cleanup failure must not replace the verdict with a crash report.
+      warn(`could not remove the preview copy at ${escapeUnsafe(tmpRoot)}; delete it by hand`);
     }
   }
 }

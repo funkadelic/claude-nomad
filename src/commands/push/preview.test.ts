@@ -475,7 +475,9 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     }));
     vi.doMock('../../sync/remap.ts', async (importOriginal) => ({
       ...(await importOriginal<typeof remapModule>()),
-      copyDirJsonlOnly: vi.fn(() => {
+      copyDirJsonlOnly: vi.fn((_src: string, dst: string) => {
+        // Create the temp tree first so the cleanup assertion below can fail.
+        mkdirSync(dst, { recursive: true });
         throw Object.assign(new Error('ENOSPC: no space left on device\u001b[2J'), {
           code: 'ENOSPC',
         });
@@ -491,6 +493,23 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
       expect(scan).not.toHaveBeenCalled();
       const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
       expect(readdirSync(cacheDir).filter((n) => n.startsWith('push-preview-tree-'))).toEqual([]);
+    } finally {
+      vi.doUnmock('../../sync/remap.ts');
+    }
+  });
+
+  it('lets an error with no code (a bug) reach the crash report', async () => {
+    plantSession(env, 'my-project', join(env.testHome, 'my-project'), '{}\n');
+    vi.doMock('../../sync/remap.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof remapModule>()),
+      copyDirJsonlOnly: vi.fn(() => {
+        throw new TypeError('boom');
+      }),
+    }));
+    try {
+      const { previewPushLeaks } = await import('./preview.ts');
+      const map = { projects: { 'my-project': { 'test-host': join(env.testHome, 'my-project') } } };
+      expect(() => previewPushLeaks(map)).toThrow(TypeError);
     } finally {
       vi.doUnmock('../../sync/remap.ts');
     }
@@ -519,6 +538,9 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
           projects: { 'my-project': { 'test-host': join(env.testHome, 'my-project') } },
         };
         expect(previewPushLeaks(map).verdictRow).toMatch(/staging failed: EACCES/);
+        expect(vi.mocked(console.error).mock.calls.flat().join('\n')).toMatch(
+          /could not remove the preview copy/,
+        );
       } finally {
         chmodSync(cacheDir, 0o755);
       }
