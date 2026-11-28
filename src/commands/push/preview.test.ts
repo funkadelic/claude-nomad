@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './gitleaks.ts';
+import type * as remapModule from '../../sync/remap.ts';
 import type * as configModule from '../../core/config.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 import { encodePath } from '../../core/utils.json.ts';
@@ -452,6 +453,39 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     expect(verdict.recovery).toBeNull();
     expect(verdict.verdictRow).toMatch(/permission denied/);
     expect(verdict.verdictRow).not.toMatch(/not on PATH/i);
+  });
+
+  it('maps a raw staging fs error to a staging-failed row, exitCode 1, and removes the temp tree', async () => {
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+
+    const scan = vi.fn();
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: scan,
+    }));
+    vi.doMock('../../sync/remap.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof remapModule>()),
+      copyDirJsonlOnly: vi.fn(() => {
+        throw Object.assign(new Error('ENOSPC: no space left on device\u001b[2J'), {
+          code: 'ENOSPC',
+        });
+      }),
+    }));
+    try {
+      const { previewPushLeaks } = await import('./preview.ts');
+      const verdict = previewPushLeaks({ projects: { [logical]: { 'test-host': localPath } } });
+      expect(process.exitCode).toBe(1);
+      expect(verdict.leak).toBe(false);
+      expect(verdict.verdictRow).toMatch(/staging failed: ENOSPC/);
+      expect(verdict.verdictRow).not.toContain('\u001b');
+      expect(scan).not.toHaveBeenCalled();
+      const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+      expect(readdirSync(cacheDir).filter((n) => n.startsWith('push-preview-tree-'))).toEqual([]);
+    } finally {
+      vi.doUnmock('../../sync/remap.ts');
+    }
   });
 });
 

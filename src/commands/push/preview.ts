@@ -21,7 +21,7 @@
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { dim, infoGlyph } from '../../render/color.ts';
 import { claudeHome, repoHome, HOST, SUPPORTED_EXTRAS, type PathMap } from '../../core/config.ts';
@@ -39,6 +39,8 @@ import { type LeakVerdict, verdictFromFindings, verdictScanError } from './leak-
 import { scanStagedTree } from './gitleaks.ts';
 import { copySkillsPush, isRootSkillExcluded } from '../../sync/skills-sync.ts';
 import { nowTimestamp } from '../../core/utils.fs.ts';
+import { NomadFatal } from '../../core/utils.ts';
+import { escapeUnsafe } from '../../sync/settings-classify.ts';
 import { encodePath } from '../../core/utils.json.ts';
 
 /** Rendered neutral Leak scan row when there was nothing to scan. */
@@ -186,6 +188,23 @@ function stageSkills(tmpRoot: string): number {
 }
 
 /**
+ * Create the cache dir and stage sessions, extras and skills into `tmpRoot`,
+ * copying the repo `.gitleaksignore` alongside when anything was staged.
+ *
+ * @returns Total number of entries staged.
+ */
+function stageAll(tmpRoot: string, map: PathMap, selection: ManifestDiff | undefined): number {
+  mkdirSync(dirname(tmpRoot), { recursive: true });
+  const staged =
+    stageSessions(tmpRoot, map, selection) + stageExtras(tmpRoot, map) + stageSkills(tmpRoot);
+  const ignoreFile = join(repoHome(), '.gitleaksignore');
+  if (staged > 0 && existsSync(ignoreFile)) {
+    copyFileSync(ignoreFile, join(tmpRoot, '.gitleaksignore'));
+  }
+  return staged;
+}
+
+/**
  * Run a read-only gitleaks leak preview of what `nomad push` would stage for
  * this host: mapped session transcripts
  * (`shared/projects/<logical>/*.jsonl`), opted-in extras
@@ -217,6 +236,8 @@ function stageSkills(tmpRoot: string): number {
  * Fails closed before any copy: an unsafe `logical` key (path separator or
  * `..`) raised by `assertSafeLogical` in the staging step propagates out as a
  * `NomadFatal` to `cmdPush`, and the `finally` still removes the temp tree.
+ * Any other staging failure (EACCES, ENOSPC, a file that became a folder)
+ * maps to a ✗ "staging failed" row with `exitCode = 1` instead of a crash report.
  *
  * @param map - Parsed `path-map.json` (already in scope from `cmdPush`).
  * @param opts - Optional `selection` from `ManifestDiff`; when provided only
@@ -229,21 +250,19 @@ export function previewPushLeaks(
   map: PathMap,
   opts: { selection?: ManifestDiff } = {},
 ): LeakVerdict {
-  const cacheDir = join(homedir(), '.cache', 'claude-nomad');
-  mkdirSync(cacheDir, { recursive: true });
   const stamp = `${nowTimestamp()}-${process.pid}-${randomBytes(4).toString('hex')}`;
-  const tmpRoot = join(cacheDir, `push-preview-tree-${stamp}`);
+  const tmpRoot = join(homedir(), '.cache', 'claude-nomad', `push-preview-tree-${stamp}`);
 
   try {
-    const sessionCount = stageSessions(tmpRoot, map, opts.selection);
-    const extrasCount = stageExtras(tmpRoot, map);
-    const skillCount = stageSkills(tmpRoot);
-    if (sessionCount + extrasCount + skillCount === 0) {
-      return { leak: false, verdictRow: NOTHING_TO_SCAN_ROW, recovery: null, findings: [] };
+    let staged: number;
+    try {
+      staged = stageAll(tmpRoot, map, opts.selection);
+    } catch (err) {
+      if (err instanceof NomadFatal) throw err;
+      return verdictScanError(`staging failed: ${escapeUnsafe((err as Error).message)}`);
     }
-    const ignoreFile = join(repoHome(), '.gitleaksignore');
-    if (existsSync(ignoreFile)) {
-      copyFileSync(ignoreFile, join(tmpRoot, '.gitleaksignore'));
+    if (staged === 0) {
+      return { leak: false, verdictRow: NOTHING_TO_SCAN_ROW, recovery: null, findings: [] };
     }
     let findings: ReturnType<typeof scanStagedTree>;
     try {
