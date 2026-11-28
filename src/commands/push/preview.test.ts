@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as scanModule from './gitleaks.ts';
+import type * as remapModule from '../../sync/remap.ts';
 import type * as configModule from '../../core/config.ts';
 import { EXIT } from '../../core/exit-codes.ts';
 import { encodePath } from '../../core/utils.json.ts';
@@ -36,6 +38,7 @@ const hasGitleaks = ((): boolean => {
 /** Shared sandbox state used by every describe block. */
 type PreviewEnv = {
   originalHome: string | undefined;
+  originalUserProfile: string | undefined;
   originalNomadHost: string | undefined;
   originalNomadRepo: string | undefined;
   originalExitCode: typeof process.exitCode;
@@ -54,12 +57,15 @@ type PreviewEnv = {
  */
 function makePreviEnv(): PreviewEnv {
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   const originalNomadHost = process.env.NOMAD_HOST;
   const originalNomadRepo = process.env.NOMAD_REPO;
   const originalExitCode = process.exitCode;
 
   const testHome = mkdtempSync(join(tmpdir(), 'nomad-push-preview-test-'));
   process.env.HOME = testHome;
+  // os.homedir() reads USERPROFILE on Windows; keep the preview cache in the sandbox.
+  process.env.USERPROFILE = testHome;
   process.env.NOMAD_HOST = 'test-host';
 
   const repoUnderHome = join(testHome, 'claude-nomad');
@@ -76,6 +82,7 @@ function makePreviEnv(): PreviewEnv {
   vi.resetModules();
   return {
     originalHome,
+    originalUserProfile,
     originalNomadHost,
     originalNomadRepo,
     originalExitCode,
@@ -100,6 +107,8 @@ function teardownPreviewEnv(env: PreviewEnv): void {
   process.exitCode = env.originalExitCode;
   if (env.originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = env.originalHome;
+  if (env.originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = env.originalUserProfile;
   if (env.originalNomadHost === undefined) delete process.env.NOMAD_HOST;
   else process.env.NOMAD_HOST = env.originalNomadHost;
   if (env.originalNomadRepo === undefined) delete process.env.NOMAD_REPO;
@@ -453,6 +462,90 @@ describe('previewPushLeaks: scan crash (null findings)', () => {
     expect(verdict.verdictRow).toMatch(/permission denied/);
     expect(verdict.verdictRow).not.toMatch(/not on PATH/i);
   });
+
+  it('maps a raw staging fs error to a staging-failed row, exitCode 1, and removes the temp tree', async () => {
+    const logical = 'my-project';
+    const localPath = join(env.testHome, 'my-project');
+    plantSession(env, logical, localPath, '{"role":"user","text":"hello"}\n');
+
+    const scan = vi.fn();
+    vi.doMock('./gitleaks.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof scanModule>()),
+      scanStagedTree: scan,
+    }));
+    vi.doMock('../../sync/remap.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof remapModule>()),
+      copyDirJsonlOnly: vi.fn((_src: string, dst: string) => {
+        // Create the temp tree first so the cleanup assertion below can fail.
+        mkdirSync(dst, { recursive: true });
+        throw Object.assign(new Error('ENOSPC: no space left on device\u001b[2J'), {
+          code: 'ENOSPC',
+        });
+      }),
+    }));
+    try {
+      const { previewPushLeaks } = await import('./preview.ts');
+      const verdict = previewPushLeaks({ projects: { [logical]: { 'test-host': localPath } } });
+      expect(process.exitCode).toBe(1);
+      expect(verdict.leak).toBe(false);
+      expect(verdict.verdictRow).toMatch(/staging failed: ENOSPC/);
+      expect(verdict.verdictRow).not.toContain('\u001b');
+      expect(scan).not.toHaveBeenCalled();
+      const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+      expect(readdirSync(cacheDir).filter((n) => n.startsWith('push-preview-tree-'))).toEqual([]);
+    } finally {
+      vi.doUnmock('../../sync/remap.ts');
+    }
+  });
+
+  it('lets an error with no code (a bug) reach the crash report', async () => {
+    plantSession(env, 'my-project', join(env.testHome, 'my-project'), '{}\n');
+    vi.doMock('../../sync/remap.ts', async (importOriginal) => ({
+      ...(await importOriginal<typeof remapModule>()),
+      copyDirJsonlOnly: vi.fn(() => {
+        throw new TypeError('boom');
+      }),
+    }));
+    try {
+      const { previewPushLeaks } = await import('./preview.ts');
+      const map = { projects: { 'my-project': { 'test-host': join(env.testHome, 'my-project') } } };
+      expect(() => previewPushLeaks(map)).toThrow(TypeError);
+    } finally {
+      vi.doUnmock('../../sync/remap.ts');
+    }
+  });
+
+  it('maps a cache path that is a file to a staging-failed row', async () => {
+    plantSession(env, 'my-project', join(env.testHome, 'my-project'), '{}\n');
+    mkdirSync(join(env.testHome, '.cache'));
+    writeFileSync(join(env.testHome, '.cache', 'claude-nomad'), 'not a dir\n');
+    const { previewPushLeaks } = await import('./preview.ts');
+    const map = { projects: { 'my-project': { 'test-host': join(env.testHome, 'my-project') } } };
+    expect(previewPushLeaks(map).verdictRow).toMatch(/staging failed: EEXIST/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'keeps the staging-failed row when the temp tree cannot be removed',
+    async () => {
+      plantSession(env, 'my-project', join(env.testHome, 'my-project'), '{}\n');
+      const cacheDir = join(env.testHome, '.cache', 'claude-nomad');
+      mkdirSync(cacheDir, { recursive: true });
+      chmodSync(cacheDir, 0o000);
+      try {
+        const { previewPushLeaks } = await import('./preview.ts');
+        const map = {
+          projects: { 'my-project': { 'test-host': join(env.testHome, 'my-project') } },
+        };
+        expect(previewPushLeaks(map).verdictRow).toMatch(/staging failed: EACCES/);
+        expect(vi.mocked(console.error).mock.calls.flat().join('\n')).toMatch(
+          /could not remove the preview copy/,
+        );
+      } finally {
+        chmodSync(cacheDir, 0o755);
+      }
+    },
+  );
 });
 
 describe('previewPushLeaks: REPO_HOME/shared non-mutation', () => {
